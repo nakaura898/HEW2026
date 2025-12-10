@@ -9,6 +9,10 @@ reviews:
     base_branches:
       - master
 
+  # ガチレビュー設定
+  profile: assertive          # 厳しめのレビュー（chill/assertive）
+  request_changes_workflow: true  # 問題があれば「変更をリクエスト」
+
   # レビュー対象外
   path_filters:
     - "!external/**"
@@ -17,3 +21,18 @@ reviews:
     - "!obj/**"
     - "!*.sln"
     - "!*.vcxproj*"
+
+  # レビュー観点
+  review_instructions: |
+    以下の観点で厳しくレビューしてください：
+    - バグや潜在的な問題
+    - パフォーマンス改善の余地
+    - メモリリークの可能性
+    - スレッドセーフティ
+    - コードの可読性
+    - DirectX11のベストプラクティス
+
+    問題を見つけたら、具体的な修正案（コード例）を必ず提示してください。
+
+chat:
+  auto_reply: true  # コメントに自動返信
