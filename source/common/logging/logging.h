@@ -42,6 +42,51 @@ public:
 };
 
 //----------------------------------------------------------------------------
+// コンソール出力実装
+//----------------------------------------------------------------------------
+class ConsoleLogOutput : public ILogOutput {
+public:
+    ConsoleLogOutput() {
+        // コンソールウィンドウを割り当て
+        if (AllocConsole()) {
+            FILE* fp = nullptr;
+            freopen_s(&fp, "CONOUT$", "w", stdout);
+            freopen_s(&fp, "CONOUT$", "w", stderr);
+            SetConsoleOutputCP(CP_UTF8);
+        }
+    }
+
+    void write(LogLevel level, const std::string& message) override {
+        // レベルに応じて色を変更
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        WORD color = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;  // 白
+        switch (level) {
+            case LogLevel::Debug:   color = FOREGROUND_GREEN | FOREGROUND_BLUE; break;  // シアン
+            case LogLevel::Info:    color = FOREGROUND_GREEN; break;  // 緑
+            case LogLevel::Warning: color = FOREGROUND_RED | FOREGROUND_GREEN; break;  // 黄
+            case LogLevel::Error:   color = FOREGROUND_RED; break;  // 赤
+        }
+        SetConsoleTextAttribute(hConsole, color);
+        printf("%s", message.c_str());
+        SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);  // リセット
+    }
+};
+
+//----------------------------------------------------------------------------
+// デバッグ + コンソール両方出力
+//----------------------------------------------------------------------------
+class MultiLogOutput : public ILogOutput {
+public:
+    void write(LogLevel level, const std::string& message) override {
+        debug_.write(level, message);
+        console_.write(level, message);
+    }
+private:
+    DebugLogOutput debug_;
+    ConsoleLogOutput console_;
+};
+
+//----------------------------------------------------------------------------
 // グローバルログシステム
 //----------------------------------------------------------------------------
 class LogSystem {

@@ -19,6 +19,11 @@
 // シェーダーコンパイラ（グローバルインスタンス）
 static std::unique_ptr<D3DShaderCompiler> g_shaderCompiler;
 
+// コンソールログ出力（デバッグ用）
+#ifdef _DEBUG
+static MultiLogOutput g_consoleLog;
+#endif
+
 //----------------------------------------------------------------------------
 Game::Game()
     : sceneManager_(SceneManager::Get())
@@ -28,6 +33,11 @@ Game::Game()
 //----------------------------------------------------------------------------
 bool Game::Initialize()
 {
+#ifdef _DEBUG
+    // コンソールログを有効化
+    LogSystem::setOutput(&g_consoleLog);
+#endif
+
     // 1. InputManager初期化
     if (!InputManager::Initialize()) {
         LOG_ERROR("[Game] InputManagerの初期化に失敗");
