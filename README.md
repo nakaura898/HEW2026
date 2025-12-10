@@ -44,9 +44,34 @@ bin\Debug-windows-x64\game\game.exe
 
 ```
 source/
-├── dx11/     # DirectX 11 ラッパーライブラリ
-├── engine/   # ゲームエンジン層
-└── game/     # ゲーム本体
+├── dx11/                   # DirectX 11 ラッパーライブラリ
+│   ├── gpu_common.h        # 共通ヘッダー（ComPtr, NonCopyable等）
+│   ├── graphics_device     # D3D11デバイス管理（シングルトン）
+│   ├── graphics_context    # D3D11コンテキスト管理
+│   ├── swap_chain          # スワップチェーン
+│   ├── gpu/                # GPUリソース（Buffer, Texture, Shader）
+│   ├── graphics/           # シェーダーシステム
+│   │   └── compile/        # シェーダーコンパイラ・キャッシュ
+│   ├── texture/            # テクスチャ管理（ローダー、キャッシュ）
+│   ├── view/               # リソースビュー（SRV, RTV, DSV, UAV）
+│   ├── state/              # パイプラインステート
+│   ├── format/             # DXGIフォーマットユーティリティ
+│   ├── fs/                 # ファイルシステム抽象化
+│   ├── platform/           # アプリケーションフレームワーク
+│   ├── Input/              # 入力システム（キーボード、マウス、ゲームパッド）
+│   ├── logging/            # ログ出力
+│   └── utility/            # ユーティリティ
+│
+├── engine/                 # ゲームエンジン層
+│   ├── engine.h            # エンジン初期化
+│   ├── scene/              # シーン管理
+│   ├── component/          # コンポーネント（Transform2D, SpriteRenderer等）
+│   └── graphics2d/         # 2D描画（SpriteBatch）
+│
+└── game/                   # ゲーム本体
+    ├── main.cpp            # エントリーポイント
+    ├── game.h/.cpp         # ゲームクラス
+    └── scenes/             # ゲームシーン
 ```
 
 ## 開発の流れ
