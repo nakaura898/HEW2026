@@ -1,0 +1,19 @@
+# CodeRabbit設定
+# https://docs.coderabbit.ai/configuration
+
+language: ja-JP
+
+reviews:
+  auto_review:
+    enabled: true
+    base_branches:
+      - master
+
+  # レビュー対象外
+  path_filters:
+    - "!external/**"
+    - "!build/**"
+    - "!bin/**"
+    - "!obj/**"
+    - "!*.sln"
+    - "!*.vcxproj*"
