@@ -49,6 +49,10 @@ bool GraphicsContext::Initialize() noexcept
 //===========================================================================
 void GraphicsContext::Shutdown() noexcept
 {
+    if (context_) {
+        context_->ClearState();  // パイプラインから全状態をアンバインド
+        context_->Flush();       // 保留中のコマンドをフラッシュ
+    }
     context_.Reset();
 }
 
