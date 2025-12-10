@@ -12,6 +12,8 @@ reviews:
   # ガチレビュー設定
   profile: assertive          # 厳しめのレビュー（chill/assertive）
   request_changes_workflow: true  # 問題があれば「変更をリクエスト」
+  high_level_summary: true    # 概要サマリーを出力
+  poem: false                 # 詩は不要
 
   # レビュー対象外
   path_filters:
