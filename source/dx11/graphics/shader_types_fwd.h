@@ -11,6 +11,7 @@
 // コンパイラ・キャッシュ
 class IShaderCompiler;
 class IShaderCache;
+class IShaderResourceCache;
 
 // ファイルシステム
 class IReadableFileSystem;

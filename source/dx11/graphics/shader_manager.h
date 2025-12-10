@@ -60,7 +60,8 @@ public:
     void Initialize(
         IReadableFileSystem* fileSystem,
         IShaderCompiler* compiler,
-        IShaderCache* cache = nullptr);
+        IShaderCache* bytecodeCache = nullptr,
+        IShaderResourceCache* resourceCache = nullptr);
 
     void Shutdown();
 
@@ -239,13 +240,12 @@ private:
     bool initialized_ = false;
     IReadableFileSystem* fileSystem_ = nullptr;
     IShaderCompiler* compiler_ = nullptr;
-    IShaderCache* cache_ = nullptr;
+    IShaderCache* bytecodeCache_ = nullptr;
 
     // シェーダーリソースキャッシュ
-    std::unordered_map<uint64_t, ShaderPtr> shaderCache_;
+    std::unique_ptr<IShaderResourceCache> ownedResourceCache_;  //!< 内部所有（外部指定なしの場合）
+    IShaderResourceCache* resourceCache_ = nullptr;             //!< 使用するキャッシュ
 
     // グローバルシェーダーキャッシュ
     std::unordered_map<std::type_index, std::unique_ptr<GlobalShader>> globalShaders_;
-
-    ShaderCacheStats stats_;
 };

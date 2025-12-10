@@ -68,3 +68,51 @@ void ShaderCache::resetStats() noexcept
     hitCount_ = 0;
     missCount_ = 0;
 }
+
+//============================================================================
+// ShaderResourceCache 実装
+//============================================================================
+
+ShaderPtr ShaderResourceCache::Get(uint64_t key)
+{
+    auto it = cache_.find(key);
+    if (it != cache_.end()) {
+        ++hitCount_;
+        return it->second;
+    }
+
+    ++missCount_;
+    return nullptr;
+}
+
+void ShaderResourceCache::Put(uint64_t key, ShaderPtr shader)
+{
+    if (!shader) return;
+    cache_[key] = std::move(shader);
+}
+
+void ShaderResourceCache::Clear()
+{
+    cache_.clear();
+}
+
+size_t ShaderResourceCache::Count() const noexcept
+{
+    return cache_.size();
+}
+
+ShaderCacheStats ShaderResourceCache::GetStats() const noexcept
+{
+    ShaderCacheStats stats;
+    stats.hitCount = hitCount_;
+    stats.missCount = missCount_;
+    stats.entryCount = cache_.size();
+    stats.totalSize = 0;  // Shaderオブジェクトのサイズ計算は省略
+    return stats;
+}
+
+void ShaderResourceCache::ResetStats() noexcept
+{
+    hitCount_ = 0;
+    missCount_ = 0;
+}

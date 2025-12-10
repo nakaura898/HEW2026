@@ -131,7 +131,8 @@ ShaderManager& ShaderManager::Get() noexcept
 void ShaderManager::Initialize(
     IReadableFileSystem* fileSystem,
     IShaderCompiler* compiler,
-    IShaderCache* cache)
+    IShaderCache* bytecodeCache,
+    IShaderResourceCache* resourceCache)
 {
     if (!GetD3D11Device()) {
         LOG_ERROR("[ShaderManager] D3D11Deviceが初期化されていません");
@@ -151,18 +152,29 @@ void ShaderManager::Initialize(
     initialized_ = true;
     fileSystem_ = fileSystem;
     compiler_ = compiler;
-    cache_ = cache;
+    bytecodeCache_ = bytecodeCache;
+
+    // リソースキャッシュ：外部指定があればそれを使う、なければデフォルト作成
+    if (resourceCache) {
+        resourceCache_ = resourceCache;
+    } else {
+        ownedResourceCache_ = std::make_unique<ShaderResourceCache>();
+        resourceCache_ = ownedResourceCache_.get();
+    }
 }
 
 void ShaderManager::Shutdown()
 {
     globalShaders_.clear();
-    shaderCache_.clear();
+    if (resourceCache_) {
+        resourceCache_->Clear();
+    }
+    ownedResourceCache_.reset();
     initialized_ = false;
     fileSystem_ = nullptr;
     compiler_ = nullptr;
-    cache_ = nullptr;
-    stats_ = {};
+    bytecodeCache_ = nullptr;
+    resourceCache_ = nullptr;
 }
 
 //----------------------------------------------------------------------------
@@ -181,13 +193,10 @@ ShaderPtr ShaderManager::LoadShader(
     // キャッシュキー計算
     uint64_t key = ComputeCacheKey(path, type, defines);
 
-    // キャッシュ検索
-    auto it = shaderCache_.find(key);
-    if (it != shaderCache_.end()) {
-        stats_.hitCount++;
-        return it->second;
+    // リソースキャッシュ検索
+    if (auto cached = resourceCache_->Get(key)) {
+        return cached;
     }
-    stats_.missCount++;
 
     // バイトコードコンパイル
     auto bytecode = CompileBytecode(path, type, defines);
@@ -198,9 +207,7 @@ ShaderPtr ShaderManager::LoadShader(
     if (!shader) return nullptr;
 
     // キャッシュ登録
-    shaderCache_[key] = shader;
-    stats_.entryCount = shaderCache_.size();
-    stats_.totalSize += shader->GpuSize();
+    resourceCache_->Put(key, shader);
 
     return shader;
 }
@@ -318,8 +325,8 @@ ComPtr<ID3DBlob> ShaderManager::CompileBytecode(
     uint64_t key = ComputeCacheKey(path, type, defines);
 
     // バイトコードキャッシュヒット確認
-    if (cache_) {
-        if (auto* cached = cache_->find(key)) {
+    if (bytecodeCache_) {
+        if (auto* cached = bytecodeCache_->find(key)) {
             return cached;
         }
     }
@@ -345,8 +352,8 @@ ComPtr<ID3DBlob> ShaderManager::CompileBytecode(
     }
 
     // バイトコードキャッシュに保存
-    if (cache_) {
-        cache_->store(key, compileResult.bytecode.Get());
+    if (bytecodeCache_) {
+        bytecodeCache_->store(key, compileResult.bytecode.Get());
     }
 
     return compileResult.bytecode;
@@ -398,16 +405,14 @@ void ShaderManager::ClearCache()
 
 void ShaderManager::ClearBytecodeCache()
 {
-    if (cache_) {
-        cache_->clear();
+    if (bytecodeCache_) {
+        bytecodeCache_->clear();
     }
 }
 
 void ShaderManager::ClearResourceCache()
 {
-    shaderCache_.clear();
-    stats_.entryCount = 0;
-    stats_.totalSize = 0;
+    resourceCache_->Clear();
 }
 
 void ShaderManager::ClearGlobalShaderCache()
@@ -417,7 +422,7 @@ void ShaderManager::ClearGlobalShaderCache()
 
 ShaderCacheStats ShaderManager::GetCacheStats() const
 {
-    return stats_;
+    return resourceCache_->GetStats();
 }
 
 //----------------------------------------------------------------------------
