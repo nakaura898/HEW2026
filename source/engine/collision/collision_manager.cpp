@@ -260,7 +260,18 @@ Collider2D* CollisionManager::GetCollider(ColliderHandle handle) const
 // 更新
 //----------------------------------------------------------------------------
 
-void CollisionManager::Update()
+void CollisionManager::Update(float deltaTime)
+{
+    accumulator_ += deltaTime;
+
+    // 固定タイムステップで衝突判定を実行
+    while (accumulator_ >= kFixedDeltaTime) {
+        FixedUpdate();
+        accumulator_ -= kFixedDeltaTime;
+    }
+}
+
+void CollisionManager::FixedUpdate()
 {
     // グリッド再構築
     RebuildGrid();

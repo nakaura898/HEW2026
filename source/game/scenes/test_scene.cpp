@@ -158,8 +158,8 @@ void TestScene::Update()
         obj->Update(dt);
     }
 
-    // 衝突判定実行
-    CollisionManager::Get().Update();
+    // 衝突判定実行（固定タイムステップ）
+    CollisionManager::Get().Update(dt);
 }
 
 //----------------------------------------------------------------------------

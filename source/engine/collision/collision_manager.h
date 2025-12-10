@@ -130,8 +130,12 @@ public:
     // 更新
     //------------------------------------------------------------------------
 
-    //! @brief 衝突判定を実行
-    void Update();
+    //! @brief 衝突判定を実行（固定タイムステップ）
+    //! @param deltaTime フレームの経過時間
+    void Update(float deltaTime);
+
+    //! @brief 固定タイムステップの間隔を取得
+    [[nodiscard]] static constexpr float GetFixedDeltaTime() noexcept { return kFixedDeltaTime; }
 
     //------------------------------------------------------------------------
     // 設定・統計
@@ -151,6 +155,9 @@ public:
 private:
     CollisionManager() = default;
     ~CollisionManager() = default;
+
+    //! @brief 固定タイムステップの衝突判定（内部用）
+    void FixedUpdate();
 
     //------------------------------------------------------------------------
     // インデックス管理
@@ -235,4 +242,8 @@ private:
     // フラグビット定義
     static constexpr uint8_t kFlagEnabled = 0x01;
     static constexpr uint8_t kFlagTrigger = 0x02;
+
+    // 固定タイムステップ
+    static constexpr float kFixedDeltaTime = 1.0f / 60.0f;  //!< 60Hz
+    float accumulator_ = 0.0f;
 };
