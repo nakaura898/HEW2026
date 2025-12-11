@@ -30,7 +30,7 @@ if not exist "build\HEW2026.sln" (
 )
 
 :: game.exeが存在すればビルドをスキップ
-if exist "bin\Debug-windows-x86_64\game\game.exe" goto :skip_build
+if exist "build\bin\Debug-windows-x86_64\game\game.exe" goto :skip_build
 
 echo.
 echo Debug ビルド中...

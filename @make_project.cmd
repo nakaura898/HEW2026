@@ -11,7 +11,7 @@
 ::
 :: 出力:
 ::   - build/HEW2026.sln (Visual Studioソリューション)
-::   - bin/Debug-windows-x64/game/game.exe (ゲーム実行ファイル)
+::   - build/bin/Debug-windows-x86_64/game/game.exe (ゲーム実行ファイル)
 ::============================================================================
 call tools\_common.cmd :init
 
