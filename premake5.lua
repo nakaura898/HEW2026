@@ -40,106 +40,10 @@ bindir = "build/bin/" .. outputdir
 objdir_base = "build/obj/" .. outputdir
 
 --============================================================================
--- 外部ライブラリ
+-- 外部ライブラリ（ビルド済みバイナリを使用）
 --============================================================================
-group "External"
-
-project "DirectXTex"
-    kind "StaticLib"
-    language "C++"
-    cppdialect "C++17"
-    location "build/DirectXTex"
-
-    targetdir (bindir .. "/%{prj.name}")
-    objdir (objdir_base .. "/%{prj.name}")
-
-    files {
-        "external/DirectXTex/DirectXTex/*.h",
-        "external/DirectXTex/DirectXTex/*.cpp"
-    }
-
-    removefiles {
-        -- Xbox specific
-        "external/DirectXTex/DirectXTex/*_xbox*",
-        "external/DirectXTex/DirectXTex/BC*Xbox*",
-        -- D3D12 (requires d3dx12.h)
-        "external/DirectXTex/DirectXTex/DirectXTexD3D12.cpp",
-        -- GPU compute (requires pre-compiled shader headers)
-        "external/DirectXTex/DirectXTex/BCDirectCompute.cpp",
-        "external/DirectXTex/DirectXTex/DirectXTexCompressGPU.cpp"
-    }
-
-    includedirs {
-        "external/DirectXTex/DirectXTex"
-    }
-
-    defines {
-        "_WIN32_WINNT=0x0A00",
-        "WIN32_LEAN_AND_MEAN"
-    }
-
-    filter "configurations:Debug"
-        runtime "Debug"
-
-    filter "configurations:Release"
-        runtime "Release"
-
-    filter {}
-
---============================================================================
--- DirectXTK (外部依存)
---============================================================================
-project "DirectXTK"
-    kind "StaticLib"
-    language "C++"
-    cppdialect "C++17"
-    location "build/DirectXTK"
-
-    targetdir (bindir .. "/%{prj.name}")
-    objdir (objdir_base .. "/%{prj.name}")
-
-    files {
-        "external/DirectXTK/Inc/*.h",
-        "external/DirectXTK/Src/*.h",
-        "external/DirectXTK/Src/*.cpp"
-    }
-
-    removefiles {
-        -- Xbox specific
-        "external/DirectXTK/Src/*Xbox*",
-        -- D3D12
-        "external/DirectXTK/Src/*12*",
-        -- Effects (require compiled shaders)
-        "external/DirectXTK/Src/*Effect*.cpp",
-        "external/DirectXTK/Src/SpriteBatch.cpp",
-        "external/DirectXTK/Src/SpriteFont.cpp",
-        "external/DirectXTK/Src/*PostProcess*.cpp",
-        "external/DirectXTK/Src/ToneMapPostProcess.cpp",
-        "external/DirectXTK/Src/PrimitiveBatch.cpp",
-        "external/DirectXTK/Src/GeometricPrimitive.cpp",
-        "external/DirectXTK/Src/Model*.cpp",
-        "external/DirectXTK/Src/DGSL*.cpp"
-    }
-
-    includedirs {
-        "external/DirectXTK/Inc",
-        "external/DirectXTK/Src"
-    }
-
-    defines {
-        "_WIN32_WINNT=0x0A00",
-        "WIN32_LEAN_AND_MEAN"
-    }
-
-    filter "configurations:Debug"
-        runtime "Debug"
-
-    filter "configurations:Release"
-        runtime "Release"
-
-    filter {}
-
-group ""
+-- DirectXTex と DirectXTK は external/lib/ にビルド済み.libを配置
+-- ビルド時間短縮のため、ソースからのビルドは行わない
 
 --============================================================================
 -- dx11ライブラリ
@@ -166,6 +70,11 @@ project "dx11"
         "source",
         "external/DirectXTex/DirectXTex",
         "external/DirectXTK/Inc"
+    }
+
+    -- ビルド済み外部ライブラリのパス
+    libdirs {
+        "external/lib/%{cfg.buildcfg}"
     }
 
     links {
@@ -213,6 +122,11 @@ project "engine"
         "external/DirectXTK/Inc"
     }
 
+    -- ビルド済み外部ライブラリのパス
+    libdirs {
+        "external/lib/%{cfg.buildcfg}"
+    }
+
     links {
         "dx11",
         "DirectXTK"
@@ -246,6 +160,11 @@ project "game"
         "source",
         "source/engine",
         "external/DirectXTK/Inc"
+    }
+
+    -- ビルド済み外部ライブラリのパス
+    libdirs {
+        "external/lib/%{cfg.buildcfg}"
     }
 
     links {
