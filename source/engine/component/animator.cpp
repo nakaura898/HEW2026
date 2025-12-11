@@ -4,6 +4,7 @@
 //----------------------------------------------------------------------------
 
 #include "animator.h"
+#include <cassert>
 
 Animator::Animator(uint32_t rows, uint32_t cols, uint32_t frameInterval)
     : rowCount_(rows > 0 ? rows : 1)
@@ -50,11 +51,18 @@ void Animator::Reset()
 void Animator::SetRow(uint32_t row)
 {
     currentRow_ = row % rowCount_;
-    Reset();
+    // フレーム位置が現在の行の制限を超える場合のみ調整
+    uint32_t limit = GetCurrentRowFrameLimit();
+    if (currentCol_ >= limit) {
+        currentCol_ = 0;
+    }
+    counter_ = 0;
 }
 
 void Animator::SetRowFrameCount(uint32_t row, uint32_t frameCount)
 {
+    assert(row < rowCount_ && "SetRowFrameCount: row out of range");
+    assert(row < kMaxRows && "SetRowFrameCount: row exceeds kMaxRows");
     if (row >= rowCount_ || row >= kMaxRows) return;
 
     // 0または列数を超える場合は「全列使用」として0を格納
@@ -67,6 +75,8 @@ void Animator::SetRowFrameCount(uint32_t row, uint32_t frameCount)
 
 uint32_t Animator::GetRowFrameCount(uint32_t row) const
 {
+    assert(row < rowCount_ && "GetRowFrameCount: row out of range");
+    assert(row < kMaxRows && "GetRowFrameCount: row exceeds kMaxRows");
     if (row >= rowCount_ || row >= kMaxRows) return colCount_;
 
     uint32_t limit = rowFrameCounts_[row];

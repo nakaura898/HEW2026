@@ -21,6 +21,9 @@ public:
     //! @brief 行ごとの最大列数を格納できる最大行数
     static constexpr uint32_t kMaxRows = 16;
 
+    //! @brief 想定フレームレート（SetFrameDuration用）
+    static constexpr float kAssumedFrameRate = 60.0f;
+
     //------------------------------------------------------------------------
     //! @brief コンストラクタ
     //! @param rows シート縦方向の分割数（アニメーションの種類数）
@@ -58,9 +61,9 @@ public:
     void SetFrameInterval(uint32_t frames) noexcept { frameInterval_ = frames > 0 ? frames : 1; }
     [[nodiscard]] uint32_t GetFrameInterval() const noexcept { return frameInterval_; }
 
-    //! @brief フレーム間隔を秒で設定（60FPS前提）
+    //! @brief フレーム間隔を秒で設定（kAssumedFrameRate前提）
     void SetFrameDuration(float seconds) noexcept {
-        frameInterval_ = static_cast<uint32_t>(seconds * 60.0f);
+        frameInterval_ = static_cast<uint32_t>(seconds * kAssumedFrameRate);
         if (frameInterval_ < 1) frameInterval_ = 1;
     }
 
