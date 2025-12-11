@@ -18,11 +18,11 @@
 #include "dx11/graphics_device.h"
 #include "dx11/graphics_context.h"
 #include "dx11/gpu/gpu.h"
-#include "dx11/texture/texture_manager.h"
-#include "dx11/fs/file_system_manager.h"
-#include "dx11/fs/host_file_system.h"
-#include "dx11/fs/memory_file_system.h"
-#include "dx11/logging/logging.h"
+#include "engine/texture/texture_manager.h"
+#include "engine/fs/file_system_manager.h"
+#include "engine/fs/host_file_system.h"
+#include "engine/fs/memory_file_system.h"
+#include "common/logging/logging.h"
 #include <cassert>
 #include <iostream>
 #include <cmath>

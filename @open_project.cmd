@@ -1,68 +1,59 @@
 @echo off
-chcp 65001 >nul
-cd /d "%~dp0"
+::============================================================================
+:: @open_project.cmd
+:: 必要に応じてビルドし、Visual Studioを起動するスクリプト
+::
+:: 処理内容:
+::   1. UTF-8モード設定 & 作業ディレクトリ移動 (:init)
+::   2. ソリューションが無ければ生成 (:generate_project)
+::   3. game.exeが無ければDebugビルド実行
+::   4. Visual Studioでソリューションを開く
+::
+:: 用途:
+::   開発開始時にダブルクリックで環境を準備
+::============================================================================
+call tools\_common.cmd :init
 
-echo Current directory: %CD%
+echo 現在のディレクトリ: %CD%
 echo.
 
-:: Generate project if needed
+:: ソリューションが無ければ生成
 if not exist "build\HEW2026.sln" (
-    echo Generating project...
-    tools\premake5.exe vs2022
+    echo プロジェクト生成中...
+    call tools\_common.cmd :generate_project
     if errorlevel 1 (
-        echo [ERROR] Generation failed
         pause
         exit /b 1
     )
-    echo [OK] Project generated
 ) else (
-    echo [OK] build\HEW2026.sln exists
+    echo [OK] build\HEW2026.sln 確認済み
 )
 
-:: Build if needed
-if not exist "bin\Debug-windows-x86_64\game\game.exe" (
-    echo.
-    echo Building Debug...
-
-    set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-)
-
-if not exist "bin\Debug-windows-x86_64\game\game.exe" (
-    if not exist "%VSWHERE%" (
-        echo [ERROR] vswhere.exe not found. Please install Visual Studio 2022.
-        pause
-        exit /b 1
-    )
-
-    for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe`) do (
-        set "MSBUILD_PATH=%%i"
-    )
-)
-
-if not exist "bin\Debug-windows-x86_64\game\game.exe" (
-    if not defined MSBUILD_PATH (
-        echo [ERROR] MSBuild not found. Please install Visual Studio 2022 with C++ workload.
-        pause
-        exit /b 1
-    )
-
-    echo Using: %MSBUILD_PATH%
-    "%MSBUILD_PATH%" build\HEW2026.sln -p:Configuration=Debug -p:Platform=x64 -m -v:minimal
-
-    if errorlevel 1 (
-        echo [ERROR] Build failed
-        pause
-        exit /b 1
-    )
-    echo [OK] Build succeeded
-) else (
-    echo [OK] game.exe already exists
-)
+:: game.exeが存在すればビルドをスキップ
+if exist "build\bin\Debug-windows-x86_64\game\game.exe" goto :skip_build
 
 echo.
-echo Opening Visual Studio...
+echo Debug ビルド中...
+call tools\_common.cmd :find_msbuild_exe
+if errorlevel 1 (
+    pause
+    exit /b 1
+)
+echo 使用: %MSBUILD_PATH%
+"%MSBUILD_PATH%" build\HEW2026.sln -p:Configuration=Debug -p:Platform=x64 -m -v:minimal
+if errorlevel 1 (
+    echo [ERROR] ビルド失敗
+    pause
+    exit /b 1
+)
+echo [OK] ビルド成功
+goto :open_vs
+
+:skip_build
+echo [OK] game.exe 確認済み
+
+:open_vs
+
+echo.
+echo Visual Studio を起動中...
 start "" "build\HEW2026.sln"
-
-echo.
-echo Done. Press any key to close...
-pause

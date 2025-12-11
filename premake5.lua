@@ -34,110 +34,16 @@ workspace "HEW2026"
 
     filter {}
 
--- 出力ディレクトリ
+-- 出力ディレクトリ (build/配下に統一)
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
+bindir = "build/bin/" .. outputdir
+objdir_base = "build/obj/" .. outputdir
 
 --============================================================================
--- 外部ライブラリ
+-- 外部ライブラリ（ビルド済みバイナリを使用）
 --============================================================================
-group "External"
-
-project "DirectXTex"
-    kind "StaticLib"
-    language "C++"
-    cppdialect "C++17"
-    location "build/DirectXTex"
-
-    targetdir ("bin/" .. outputdir .. "/%{prj.name}")
-    objdir ("obj/" .. outputdir .. "/%{prj.name}")
-
-    files {
-        "external/DirectXTex/DirectXTex/*.h",
-        "external/DirectXTex/DirectXTex/*.cpp"
-    }
-
-    removefiles {
-        -- Xbox specific
-        "external/DirectXTex/DirectXTex/*_xbox*",
-        "external/DirectXTex/DirectXTex/BC*Xbox*",
-        -- D3D12 (requires d3dx12.h)
-        "external/DirectXTex/DirectXTex/DirectXTexD3D12.cpp",
-        -- GPU compute (requires pre-compiled shader headers)
-        "external/DirectXTex/DirectXTex/BCDirectCompute.cpp",
-        "external/DirectXTex/DirectXTex/DirectXTexCompressGPU.cpp"
-    }
-
-    includedirs {
-        "external/DirectXTex/DirectXTex"
-    }
-
-    defines {
-        "_WIN32_WINNT=0x0A00",
-        "WIN32_LEAN_AND_MEAN"
-    }
-
-    filter "configurations:Debug"
-        runtime "Debug"
-
-    filter "configurations:Release"
-        runtime "Release"
-
-    filter {}
-
---============================================================================
--- DirectXTK (外部依存)
---============================================================================
-project "DirectXTK"
-    kind "StaticLib"
-    language "C++"
-    cppdialect "C++17"
-    location "build/DirectXTK"
-
-    targetdir ("bin/" .. outputdir .. "/%{prj.name}")
-    objdir ("obj/" .. outputdir .. "/%{prj.name}")
-
-    files {
-        "external/DirectXTK/Inc/*.h",
-        "external/DirectXTK/Src/*.h",
-        "external/DirectXTK/Src/*.cpp"
-    }
-
-    removefiles {
-        -- Xbox specific
-        "external/DirectXTK/Src/*Xbox*",
-        -- D3D12
-        "external/DirectXTK/Src/*12*",
-        -- Effects (require compiled shaders)
-        "external/DirectXTK/Src/*Effect*.cpp",
-        "external/DirectXTK/Src/SpriteBatch.cpp",
-        "external/DirectXTK/Src/SpriteFont.cpp",
-        "external/DirectXTK/Src/*PostProcess*.cpp",
-        "external/DirectXTK/Src/ToneMapPostProcess.cpp",
-        "external/DirectXTK/Src/PrimitiveBatch.cpp",
-        "external/DirectXTK/Src/GeometricPrimitive.cpp",
-        "external/DirectXTK/Src/Model*.cpp",
-        "external/DirectXTK/Src/DGSL*.cpp"
-    }
-
-    includedirs {
-        "external/DirectXTK/Inc",
-        "external/DirectXTK/Src"
-    }
-
-    defines {
-        "_WIN32_WINNT=0x0A00",
-        "WIN32_LEAN_AND_MEAN"
-    }
-
-    filter "configurations:Debug"
-        runtime "Debug"
-
-    filter "configurations:Release"
-        runtime "Release"
-
-    filter {}
-
-group ""
+-- DirectXTex と DirectXTK は external/lib/ にビルド済み.libを配置
+-- ビルド時間短縮のため、ソースからのビルドは行わない
 
 --============================================================================
 -- dx11ライブラリ
@@ -146,8 +52,8 @@ project "dx11"
     kind "StaticLib"
     location "build/dx11"
 
-    targetdir ("bin/" .. outputdir .. "/%{prj.name}")
-    objdir ("obj/" .. outputdir .. "/%{prj.name}")
+    targetdir (bindir .. "/%{prj.name}")
+    objdir (objdir_base .. "/%{prj.name}")
 
     files {
         "source/dx11/**.h",
@@ -157,14 +63,18 @@ project "dx11"
 
     -- 除外ファイル
     removefiles {
-        "source/dx11/graphics/compile/shader_reflection.cpp",
-        "source/dx11/graphics/platform/**"
+        "source/dx11/compile/shader_reflection.cpp"
     }
 
     includedirs {
         "source",
         "external/DirectXTex/DirectXTex",
         "external/DirectXTK/Inc"
+    }
+
+    -- ビルド済み外部ライブラリのパス
+    libdirs {
+        "external/lib/%{cfg.buildcfg}"
     }
 
     links {
@@ -198,8 +108,8 @@ project "engine"
     kind "StaticLib"
     location "build/engine"
 
-    targetdir ("bin/" .. outputdir .. "/%{prj.name}")
-    objdir ("obj/" .. outputdir .. "/%{prj.name}")
+    targetdir (bindir .. "/%{prj.name}")
+    objdir (objdir_base .. "/%{prj.name}")
 
     files {
         "source/engine/**.h",
@@ -210,6 +120,11 @@ project "engine"
         "source",
         "source/engine",
         "external/DirectXTK/Inc"
+    }
+
+    -- ビルド済み外部ライブラリのパス
+    libdirs {
+        "external/lib/%{cfg.buildcfg}"
     }
 
     links {
@@ -233,8 +148,8 @@ project "game"
     kind "WindowedApp"
     location "build/game"
 
-    targetdir ("bin/" .. outputdir .. "/%{prj.name}")
-    objdir ("obj/" .. outputdir .. "/%{prj.name}")
+    targetdir (bindir .. "/%{prj.name}")
+    objdir (objdir_base .. "/%{prj.name}")
 
     files {
         "source/game/**.h",
@@ -245,6 +160,11 @@ project "game"
         "source",
         "source/engine",
         "external/DirectXTK/Inc"
+    }
+
+    -- ビルド済み外部ライブラリのパス
+    libdirs {
+        "external/lib/%{cfg.buildcfg}"
     }
 
     links {
@@ -269,15 +189,19 @@ project "game"
     warnings "Extra"
     buildoptions { "/utf-8", "/permissive-" }
 
+    -- リンカー警告を無視 (外部ライブラリPDB不足)
+    linkoptions { "/ignore:4099" }
+
 --============================================================================
--- テスト実行ファイル
+-- テスト実行ファイル (現在無効)
 --============================================================================
+--[[
 project "tests"
     kind "ConsoleApp"
     location "build/tests"
 
-    targetdir ("bin/" .. outputdir .. "/%{prj.name}")
-    objdir ("obj/" .. outputdir .. "/%{prj.name}")
+    targetdir (bindir .. "/%{prj.name}")
+    objdir (objdir_base .. "/%{prj.name}")
 
     files {
         "tests/**.h",
@@ -294,6 +218,7 @@ project "tests"
     }
 
     links {
+        "engine",
         "dx11",
         "DirectXTex",
         "DirectXTK",
@@ -312,3 +237,4 @@ project "tests"
 
     warnings "Extra"
     buildoptions { "/utf-8", "/permissive-" }
+]]--

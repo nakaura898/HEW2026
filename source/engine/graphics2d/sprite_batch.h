@@ -54,13 +54,6 @@ public:
     void Shutdown();
 
     //------------------------------------------------------------------------
-    //! @brief 正射影行列を設定（2D用、カメラなし）
-    //! @param width 画面幅
-    //! @param height 画面高さ
-    //------------------------------------------------------------------------
-    void SetScreenSize(float width, float height);
-
-    //------------------------------------------------------------------------
     //! @brief カメラを設定
     //! @param camera 2Dカメラ
     //------------------------------------------------------------------------
@@ -83,7 +76,6 @@ public:
     void Draw(
         Texture* texture,
         const Vector2& position,
-        const SpriteRect* sourceRect = nullptr,
         const Color& color = Colors::White,
         float rotation = 0.0f,
         const Vector2& origin = Vector2::Zero,
@@ -151,6 +143,7 @@ private:
 
     // スプライトキュー
     std::vector<SpriteInfo> spriteQueue_;
+    std::vector<uint32_t> sortIndices_;  //!< ソート用インデックス配列
 
     // 定数バッファデータ
     struct alignas(16) CBufferData {

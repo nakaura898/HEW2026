@@ -5,7 +5,7 @@
 #include "shader.h"
 #include "dx11/gpu_common.h"
 #include "dx11/graphics_device.h"
-#include "dx11/logging/logging.h"
+#include "common/logging/logging.h"
 
 //----------------------------------------------------------------------------
 // Shader静的ファクトリメソッド

@@ -4,7 +4,7 @@
 //----------------------------------------------------------------------------
 #include "unordered_access_view.h"
 #include "dx11/graphics_device.h"
-#include "dx11/logging/logging.h"
+#include "common/logging/logging.h"
 
 std::unique_ptr<UnorderedAccessView> UnorderedAccessView::CreateFromBuffer(
     ID3D11Buffer* buffer,

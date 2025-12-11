@@ -24,7 +24,7 @@
 #include "dx11/graphics_device.h"
 #include "dx11/graphics_context.h"
 #include "dx11/gpu/gpu.h"
-#include "dx11/logging/logging.h"
+#include "common/logging/logging.h"
 #include <cassert>
 #include <iostream>
 #include <cstring>

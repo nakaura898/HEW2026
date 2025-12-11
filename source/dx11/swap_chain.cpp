@@ -4,7 +4,7 @@
 //----------------------------------------------------------------------------
 #include "swap_chain.h"
 #include "graphics_device.h"
-#include "logging/logging.h"
+#include "common/logging/logging.h"
 
 namespace
 {

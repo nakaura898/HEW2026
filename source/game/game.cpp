@@ -3,20 +3,26 @@
 //! @brief  ゲームクラス実装
 //----------------------------------------------------------------------------
 #include "game.h"
-#include "dx11/platform/application.h"
-#include "dx11/fs/file_system_manager.h"
-#include "dx11/fs/host_file_system.h"
-#include "dx11/texture/texture_manager.h"
-#include "dx11/graphics/shader_manager.h"
-#include "dx11/graphics/compile/shader_compiler.h"
-#include "dx11/Input/InputManager.h"
-#include "dx11/logging/logging.h"
+#include "engine/platform/application.h"
+#include "engine/fs/file_system_manager.h"
+#include "engine/fs/host_file_system.h"
+#include "engine/texture/texture_manager.h"
+#include "engine/shader/shader_manager.h"
+#include "dx11/compile/shader_compiler.h"
+#include "engine/input/input_manager.h"
+#include "common/logging/logging.h"
 #include "engine/scene/scene_manager.h"
+#include "engine/collision/collision_manager.h"
 
 #include "scenes/test_scene.h"
 
 // シェーダーコンパイラ（グローバルインスタンス）
 static std::unique_ptr<D3DShaderCompiler> g_shaderCompiler;
+
+// コンソールログ出力（デバッグ用）
+#ifdef _DEBUG
+static MultiLogOutput g_consoleLog;
+#endif
 
 //----------------------------------------------------------------------------
 Game::Game()
@@ -27,13 +33,21 @@ Game::Game()
 //----------------------------------------------------------------------------
 bool Game::Initialize()
 {
+#ifdef _DEBUG
+    // コンソールログを有効化
+    LogSystem::setOutput(&g_consoleLog);
+#endif
+
     // 1. InputManager初期化
     if (!InputManager::Initialize()) {
         LOG_ERROR("[Game] InputManagerの初期化に失敗");
         return false;
     }
 
-    // 2. ファイルシステムマウント
+    // 2. CollisionManager初期化
+    CollisionManager::Get().Initialize(256);
+
+    // 3. ファイルシステムマウント
     auto& fsManager = FileSystemManager::Get();
     fsManager.Mount("shaders", std::make_unique<HostFileSystem>(L"assets/shader/"));
     fsManager.Mount("textures", std::make_unique<HostFileSystem>(L"assets/texture/"));
@@ -72,6 +86,7 @@ void Game::Shutdown() noexcept
     ShaderManager::Get().Shutdown();
     TextureManager::Get().Shutdown();
     FileSystemManager::Get().UnmountAll();
+    CollisionManager::Get().Shutdown();
     InputManager::Uninit();
     g_shaderCompiler.reset();
 

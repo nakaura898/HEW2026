@@ -12,20 +12,6 @@
 class Texture;
 
 //============================================================================
-//! @brief スプライトの矩形領域
-//============================================================================
-struct SpriteRect {
-    float x = 0.0f;
-    float y = 0.0f;
-    float width = 0.0f;
-    float height = 0.0f;
-
-    SpriteRect() = default;
-    SpriteRect(float x, float y, float w, float h)
-        : x(x), y(y), width(w), height(h) {}
-};
-
-//============================================================================
 //! @brief スプライトレンダラーコンポーネント
 //!
 //! テクスチャを2Dスプライトとして描画するためのコンポーネント。
@@ -48,21 +34,6 @@ public:
 
     [[nodiscard]] Texture* GetTexture() const noexcept { return texture_; }
     void SetTexture(Texture* texture) noexcept { texture_ = texture; }
-
-    //------------------------------------------------------------------------
-    // ソース矩形（テクスチャ内の描画領域）
-    //------------------------------------------------------------------------
-
-    [[nodiscard]] const SpriteRect& GetSourceRect() const noexcept { return sourceRect_; }
-    void SetSourceRect(const SpriteRect& rect) noexcept { sourceRect_ = rect; }
-    void SetSourceRect(float x, float y, float w, float h) noexcept {
-        sourceRect_ = SpriteRect(x, y, w, h);
-    }
-
-    //! @brief テクスチャ全体を使用
-    void UseFullTexture() noexcept {
-        sourceRect_ = SpriteRect(0.0f, 0.0f, 0.0f, 0.0f);  // 0,0,0,0で全体
-    }
 
     //------------------------------------------------------------------------
     // カラー
@@ -121,7 +92,6 @@ public:
 
 private:
     Texture* texture_ = nullptr;
-    SpriteRect sourceRect_;          //!< テクスチャ内の描画領域（0,0,0,0で全体）
     Color color_ = Colors::White;    //!< 乗算カラー
     Vector2 size_ = Vector2::Zero;   //!< カスタムサイズ（0,0でテクスチャサイズ）
 

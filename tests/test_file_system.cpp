@@ -23,12 +23,12 @@
 //----------------------------------------------------------------------------
 #include "test_file_system.h"
 #include "test_common.h"
-#include "dx11/fs/file_system.h"
-#include "dx11/fs/file_system_types.h"
-#include "dx11/fs/file_system_manager.h"
-#include "dx11/fs/host_file_system.h"
-#include "dx11/fs/memory_file_system.h"
-#include "dx11/logging/logging.h"
+#include "engine/fs/file_system.h"
+#include "engine/fs/file_system_types.h"
+#include "engine/fs/file_system_manager.h"
+#include "engine/fs/host_file_system.h"
+#include "engine/fs/memory_file_system.h"
+#include "common/logging/logging.h"
 #include <algorithm>
 #include <cassert>
 #include <iostream>

@@ -8,7 +8,7 @@
 #include "dx11/state/depth_stencil_state.h"
 #include "dx11/state/rasterizer_state.h"
 #include "dx11/state/sampler_state.h"
-#include "dx11/logging/logging.h"
+#include "common/logging/logging.h"
 #include <cstring>
 
 //===========================================================================
@@ -49,6 +49,10 @@ bool GraphicsContext::Initialize() noexcept
 //===========================================================================
 void GraphicsContext::Shutdown() noexcept
 {
+    if (context_) {
+        context_->ClearState();  // パイプラインから全状態をアンバインド
+        context_->Flush();       // 保留中のコマンドをフラッシュ
+    }
     context_.Reset();
 }
 

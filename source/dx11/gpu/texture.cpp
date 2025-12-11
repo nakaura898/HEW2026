@@ -9,7 +9,7 @@
 #include "dx11/view/render_target_view.h"
 #include "dx11/view/depth_stencil_view.h"
 #include "dx11/view/unordered_access_view.h"
-#include "dx11/logging/logging.h"
+#include "common/logging/logging.h"
 
 //----------------------------------------------------------------------------
 // Texture静的ファクトリメソッド

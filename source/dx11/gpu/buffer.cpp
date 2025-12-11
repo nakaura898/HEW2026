@@ -7,7 +7,7 @@
 #include "dx11/graphics_device.h"
 #include "dx11/view/shader_resource_view.h"
 #include "dx11/view/unordered_access_view.h"
-#include "dx11/logging/logging.h"
+#include "common/logging/logging.h"
 
 //----------------------------------------------------------------------------
 // Bufferライフサイクル

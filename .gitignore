@@ -19,3 +19,6 @@ obj/
 
 # Claude Code設定
 CLAUDE.md
+
+#gemini cli設定
+GEMINI.md

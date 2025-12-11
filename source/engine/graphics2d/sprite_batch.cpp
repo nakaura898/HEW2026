@@ -7,8 +7,8 @@
 #include "engine/component/camera2d.h"
 #include "dx11/graphics_device.h"
 #include "dx11/graphics_context.h"
-#include "dx11/graphics/shader_manager.h"
-#include "dx11/logging/logging.h"
+#include "engine/shader/shader_manager.h"
+#include "common/logging/logging.h"
 #include <algorithm>
 
 //============================================================================
@@ -75,10 +75,8 @@ bool SpriteBatch::Initialize() {
         return false;
     }
 
-    // デフォルトの正射影行列を設定
-    SetScreenSize(1280.0f, 720.0f);
-
     spriteQueue_.reserve(MaxSpritesPerBatch);
+    sortIndices_.reserve(MaxSpritesPerBatch);
     initialized_ = true;
     LOG_INFO("SpriteBatch: 初期化完了");
     return true;
@@ -122,6 +120,27 @@ bool SpriteBatch::CreateShaders() {
 void SpriteBatch::Shutdown() {
     if (!initialized_) return;
 
+    // パイプラインからステートをアンバインドしてから解放
+    // これにより、パイプラインが保持する参照が解放される
+    auto& ctx = GraphicsContext::Get();
+    auto* d3dCtx = ctx.GetContext();
+    if (d3dCtx) {
+        // 使用していたステートをnullでアンバインド
+        d3dCtx->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
+        d3dCtx->OMSetDepthStencilState(nullptr, 0);
+        d3dCtx->RSSetState(nullptr);
+        ID3D11SamplerState* nullSamplers[1] = { nullptr };
+        d3dCtx->PSSetSamplers(0, 1, nullSamplers);
+        d3dCtx->VSSetShader(nullptr, nullptr, 0);
+        d3dCtx->PSSetShader(nullptr, nullptr, 0);
+        d3dCtx->IASetInputLayout(nullptr);
+        ID3D11Buffer* nullBuffers[1] = { nullptr };
+        UINT strides[1] = { 0 };
+        UINT offsets[1] = { 0 };
+        d3dCtx->IASetVertexBuffers(0, 1, nullBuffers, strides, offsets);
+        d3dCtx->IASetIndexBuffer(nullptr, DXGI_FORMAT_R16_UINT, 0);
+    }
+
     vertexBuffer_.reset();
     indexBuffer_.reset();
     constantBuffer_.reset();
@@ -133,15 +152,10 @@ void SpriteBatch::Shutdown() {
     rasterizerState_.reset();
     depthStencilState_.reset();
     spriteQueue_.clear();
+    sortIndices_.clear();
 
     initialized_ = false;
     LOG_INFO("SpriteBatch: シャットダウン完了");
-}
-
-void SpriteBatch::SetScreenSize(float width, float height) {
-    // 左上が(0,0)、右下が(width, height)の2D座標系
-    Matrix ortho = Matrix::CreateOrthographicOffCenter(0.0f, width, height, 0.0f, 0.0f, 1.0f);
-    cbufferData_.viewProjection = ortho.Transpose();
 }
 
 void SpriteBatch::SetCamera(Camera2D& camera) {
@@ -171,7 +185,6 @@ void SpriteBatch::Begin() {
 void SpriteBatch::Draw(
     Texture* texture,
     const Vector2& position,
-    const SpriteRect* sourceRect,
     const Color& color,
     float rotation,
     const Vector2& origin,
@@ -193,29 +206,19 @@ void SpriteBatch::Draw(
     float texWidth = static_cast<float>(texture->Width());
     float texHeight = static_cast<float>(texture->Height());
 
-    // ソース矩形の設定
-    float srcX = 0.0f, srcY = 0.0f;
-    float srcW = texWidth, srcH = texHeight;
-    if (sourceRect && sourceRect->width > 0 && sourceRect->height > 0) {
-        srcX = sourceRect->x;
-        srcY = sourceRect->y;
-        srcW = sourceRect->width;
-        srcH = sourceRect->height;
-    }
-
-    // UV座標
-    float u0 = srcX / texWidth;
-    float v0 = srcY / texHeight;
-    float u1 = (srcX + srcW) / texWidth;
-    float v1 = (srcY + srcH) / texHeight;
+    // UV座標（テクスチャ全体を使用）
+    float u0 = 0.0f;
+    float v0 = 0.0f;
+    float u1 = 1.0f;
+    float v1 = 1.0f;
 
     // 反転
     if (flipX) std::swap(u0, u1);
     if (flipY) std::swap(v0, v1);
 
     // スプライトサイズ
-    float width = srcW * scale.x;
-    float height = srcH * scale.y;
+    float width = texWidth * scale.x;
+    float height = texHeight * scale.y;
 
     // 4頂点の計算（原点を考慮）
     float x0 = -origin.x * scale.x;
@@ -257,21 +260,15 @@ void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform2D& transf
         return;
     }
 
-    auto* texture = renderer.GetTexture();
-    const auto& srcRect = renderer.GetSourceRect();
-    const SpriteRect* srcRectPtr = (srcRect.width > 0 && srcRect.height > 0) ? &srcRect : nullptr;
+    Texture* texture = renderer.GetTexture();
 
-    // サイズ決定
+    // サイズ決定（カスタムサイズまたはテクスチャサイズ）
     Vector2 size = renderer.GetSize();
     if (size.x <= 0 || size.y <= 0) {
-        if (srcRectPtr) {
-            size = Vector2(srcRect.width, srcRect.height);
-        } else {
-            size = Vector2(
-                static_cast<float>(texture->Width()),
-                static_cast<float>(texture->Height())
-            );
-        }
+        size = Vector2(
+            static_cast<float>(texture->Width()),
+            static_cast<float>(texture->Height())
+        );
     }
 
     // Transform2Dからパラメータ取得
@@ -280,7 +277,7 @@ void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform2D& transf
     Vector2 scale = transform.GetScale();
     Vector2 pivot = transform.GetPivot();
 
-    Draw(texture, position, srcRectPtr, renderer.GetColor(),
+    Draw(texture, position, renderer.GetColor(),
          rotation, pivot, scale,
          renderer.IsFlipX(), renderer.IsFlipY(),
          renderer.GetSortingLayer(), renderer.GetOrderInLayer());
@@ -301,12 +298,22 @@ void SpriteBatch::End() {
 }
 
 void SpriteBatch::SortSprites() {
-    std::stable_sort(spriteQueue_.begin(), spriteQueue_.end(),
-        [](const SpriteInfo& a, const SpriteInfo& b) {
-            if (a.sortingLayer != b.sortingLayer) {
-                return a.sortingLayer < b.sortingLayer;
+    // インデックス配列を初期化
+    uint32_t count = static_cast<uint32_t>(spriteQueue_.size());
+    sortIndices_.resize(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        sortIndices_[i] = i;
+    }
+
+    // インデックスをソート（SpriteInfo自体は移動しない）
+    std::stable_sort(sortIndices_.begin(), sortIndices_.end(),
+        [this](uint32_t a, uint32_t b) {
+            const SpriteInfo& sa = spriteQueue_[a];
+            const SpriteInfo& sb = spriteQueue_[b];
+            if (sa.sortingLayer != sb.sortingLayer) {
+                return sa.sortingLayer < sb.sortingLayer;
             }
-            return a.orderInLayer < b.orderInLayer;
+            return sa.orderInLayer < sb.orderInLayer;
         });
 }
 
@@ -347,7 +354,9 @@ void SpriteBatch::FlushBatch() {
         return;
     }
 
-    for (const auto& sprite : spriteQueue_) {
+    for (uint32_t idx : sortIndices_) {
+        const SpriteInfo& sprite = spriteQueue_[idx];
+
         // テクスチャが変わったらフラッシュ
         if (currentTexture && sprite.texture != currentTexture) {
             ctx.UnmapBuffer(vertexBuffer_.get());

@@ -2,7 +2,7 @@
 //! @file   main.cpp
 //! @brief  ゲーム エントリーポイント
 //----------------------------------------------------------------------------
-#include "dx11/platform/application.h"
+#include "engine/platform/application.h"
 #include "game.h"
 
 #include <Windows.h>

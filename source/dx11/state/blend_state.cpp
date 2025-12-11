@@ -4,7 +4,7 @@
 //----------------------------------------------------------------------------
 #include "blend_state.h"
 #include "dx11/graphics_device.h"
-#include "dx11/logging/logging.h"
+#include "common/logging/logging.h"
 
 //----------------------------------------------------------------------------
 std::unique_ptr<BlendState> BlendState::Create(const D3D11_BLEND_DESC& desc)

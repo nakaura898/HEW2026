@@ -6,7 +6,7 @@
 
 #include "dx11/gpu_common.h"
 #include "gpu_resource.h"
-#include "dx11/graphics/shader_type.h"
+#include "dx11/compile/shader_type.h"
 #include <d3dcompiler.h>
 
 //===========================================================================
@@ -73,17 +73,29 @@ public:
     }
 
     //! 頂点シェーダーとして取得
-    [[nodiscard]] ID3D11VertexShader* AsVs() const noexcept { return Query<ID3D11VertexShader>(); }
+    [[nodiscard]] ID3D11VertexShader* AsVs() const noexcept {
+        return static_cast<ID3D11VertexShader*>(shader_.Get());
+    }
     //! ピクセルシェーダーとして取得
-    [[nodiscard]] ID3D11PixelShader* AsPs() const noexcept { return Query<ID3D11PixelShader>(); }
+    [[nodiscard]] ID3D11PixelShader* AsPs() const noexcept {
+        return static_cast<ID3D11PixelShader*>(shader_.Get());
+    }
     //! ジオメトリシェーダーとして取得
-    [[nodiscard]] ID3D11GeometryShader* AsGs() const noexcept { return Query<ID3D11GeometryShader>(); }
+    [[nodiscard]] ID3D11GeometryShader* AsGs() const noexcept {
+        return static_cast<ID3D11GeometryShader*>(shader_.Get());
+    }
     //! コンピュートシェーダーとして取得
-    [[nodiscard]] ID3D11ComputeShader* AsCs() const noexcept { return Query<ID3D11ComputeShader>(); }
+    [[nodiscard]] ID3D11ComputeShader* AsCs() const noexcept {
+        return static_cast<ID3D11ComputeShader*>(shader_.Get());
+    }
     //! ハルシェーダーとして取得
-    [[nodiscard]] ID3D11HullShader* AsHs() const noexcept { return Query<ID3D11HullShader>(); }
+    [[nodiscard]] ID3D11HullShader* AsHs() const noexcept {
+        return static_cast<ID3D11HullShader*>(shader_.Get());
+    }
     //! ドメインシェーダーとして取得
-    [[nodiscard]] ID3D11DomainShader* AsDs() const noexcept { return Query<ID3D11DomainShader>(); }
+    [[nodiscard]] ID3D11DomainShader* AsDs() const noexcept {
+        return static_cast<ID3D11DomainShader*>(shader_.Get());
+    }
 
     //! バイトコードを取得（入力レイアウト作成用）
     [[nodiscard]] const void* Bytecode() const noexcept {
@@ -110,21 +122,13 @@ public:
     [[nodiscard]] bool IsDomain() const noexcept { return Check<ID3D11DomainShader>(); }
 
 private:
-    //! QueryInterfaceでポインタ取得
-    template<typename T>
-    [[nodiscard]] T* Query() const noexcept {
-        T* ptr = nullptr;
-        if (shader_) {
-            shader_->QueryInterface(__uuidof(T), reinterpret_cast<void**>(&ptr));
-        }
-        return ptr;
-    }
-
     //! QueryInterfaceで型チェック
     template<typename T>
     [[nodiscard]] bool Check() const noexcept {
-        T* ptr = Query<T>();
-        if (ptr) {
+        if (!shader_) return false;
+        T* ptr = nullptr;
+        HRESULT hr = shader_->QueryInterface(__uuidof(T), reinterpret_cast<void**>(&ptr));
+        if (SUCCEEDED(hr) && ptr) {
             ptr->Release();
             return true;
         }

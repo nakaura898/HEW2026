@@ -9,7 +9,7 @@
 //----------------------------------------------------------------------------
 #pragma once
 
-#include "dx11/logging/logging.h"
+#include "common/logging/logging.h"
 #include <iostream>
 #include <string>
 
