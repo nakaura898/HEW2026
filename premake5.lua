@@ -96,7 +96,7 @@ project "dx11"
     warnings "Extra"
     flags { "FatalWarnings" }
 
-    buildoptions { "/utf-8", "/permissive-" }
+    buildoptions { "/utf-8", "/permissive-", "/FS" }
 
     -- リンカー警告を無視 (Windows SDK重複定義)
     linkoptions { "/ignore:4006" }
@@ -141,7 +141,7 @@ project "engine"
     warnings "Extra"
     flags { "FatalWarnings" }
 
-    buildoptions { "/utf-8", "/permissive-" }
+    buildoptions { "/utf-8", "/permissive-", "/FS" }
 
 --============================================================================
 -- ゲーム実行ファイル
@@ -189,7 +189,7 @@ project "game"
     debugdir "."
 
     warnings "Extra"
-    buildoptions { "/utf-8", "/permissive-" }
+    buildoptions { "/utf-8", "/permissive-", "/FS" }
 
     -- リンカー警告を無視 (外部ライブラリPDB不足)
     linkoptions { "/ignore:4099" }
@@ -238,5 +238,5 @@ project "tests"
     debugdir "."
 
     warnings "Extra"
-    buildoptions { "/utf-8", "/permissive-" }
+    buildoptions { "/utf-8", "/permissive-", "/FS" }
 ]]--
