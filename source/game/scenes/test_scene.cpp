@@ -321,8 +321,8 @@ void TestScene::Render()
         static_cast<float>(backBuffer->Width()),
         static_cast<float>(backBuffer->Height()));
 
-    // 背景クリア（白）
-    float clearColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    // 背景クリア（暗い青）
+    float clearColor[4] = { 0.1f, 0.1f, 0.2f, 1.0f };
     ctx.ClearRenderTarget(backBuffer, clearColor);
 
     // SpriteBatchで描画
