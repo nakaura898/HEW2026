@@ -90,6 +90,7 @@ Matrix Camera2D::GetViewMatrix() const
 Matrix Camera2D::GetViewProjectionMatrix() const
 {
     Matrix view = BuildViewMatrix();
+    // 座標系: 左上が(0,0)、X+が右、Y+が下（標準スクリーン座標）
     Matrix projection = Matrix::CreateOrthographicOffCenter(
         0.0f, viewportWidth_,
         viewportHeight_, 0.0f,

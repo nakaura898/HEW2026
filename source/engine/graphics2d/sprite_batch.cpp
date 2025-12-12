@@ -5,6 +5,7 @@
 #include "sprite_batch.h"
 #include "engine/component/transform2d.h"
 #include "engine/component/camera2d.h"
+#include "engine/component/animator.h"
 #include "dx11/graphics_device.h"
 #include "dx11/graphics_context.h"
 #include "engine/shader/shader_manager.h"
@@ -275,12 +276,98 @@ void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform2D& transf
     Vector2 position = transform.GetPosition();
     float rotation = transform.GetRotation();
     Vector2 scale = transform.GetScale();
-    Vector2 pivot = transform.GetPivot();
+
+    // SpriteRendererのpivotを使用（なければ左上原点）
+    Vector2 pivot = renderer.GetPivot();
 
     Draw(texture, position, renderer.GetColor(),
          rotation, pivot, scale,
          renderer.IsFlipX(), renderer.IsFlipY(),
          renderer.GetSortingLayer(), renderer.GetOrderInLayer());
+}
+
+void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform2D& transform, const Animator& animator) {
+    if (!isBegun_ || !renderer.GetTexture()) {
+        return;
+    }
+
+    Texture* texture = renderer.GetTexture();
+
+    // AnimatorからUV情報を取得
+    Vector2 uvCoord = animator.GetUVCoord();
+    Vector2 uvSize = animator.GetUVSize();
+
+    // フレームサイズ（テクスチャサイズ * UVサイズ）
+    float frameWidth = static_cast<float>(texture->Width()) * std::abs(uvSize.x);
+    float frameHeight = static_cast<float>(texture->Height()) * std::abs(uvSize.y);
+
+    // Transform2Dからパラメータ取得
+    Vector2 position = transform.GetPosition();
+    float rotation = transform.GetRotation();
+    Vector2 scale = transform.GetScale();
+
+    // SpriteRendererのpivotを使用
+    Vector2 pivot = renderer.GetPivot();
+
+    // 原点：pivotが設定されていればそれを使用、なければフレーム中心
+    Vector2 origin;
+    if (renderer.HasPivot()) {
+        origin = pivot;
+        // ミラー時はX軸のpivotを反転（フレーム幅からの相対位置に）
+        if (animator.GetMirror()) {
+            origin.x = frameWidth - pivot.x;
+        }
+    } else {
+        origin = Vector2(frameWidth * 0.5f, frameHeight * 0.5f);
+    }
+
+    // スプライトサイズ
+    float width = frameWidth * scale.x;
+    float height = frameHeight * scale.y;
+
+    // 4頂点の計算（原点を考慮）
+    float x0 = -origin.x * scale.x;
+    float y0 = -origin.y * scale.y;
+    float x1 = x0 + width;
+    float y1 = y0 + height;
+
+    // 回転行列
+    float cosR = std::cos(rotation);
+    float sinR = std::sin(rotation);
+
+    auto rotatePoint = [&](float x, float y) -> Vector2 {
+        return Vector2(
+            x * cosR - y * sinR + position.x,
+            x * sinR + y * cosR + position.y
+        );
+    };
+
+    // UV座標（反転考慮）
+    float u0 = uvCoord.x;
+    float v0 = uvCoord.y;
+    float u1 = uvCoord.x + uvSize.x;
+    float v1 = uvCoord.y + uvSize.y;
+
+    // SpriteRendererの反転
+    if (renderer.IsFlipX()) std::swap(u0, u1);
+    if (renderer.IsFlipY()) std::swap(v0, v1);
+
+    SpriteInfo info;
+    info.texture = texture;
+    info.sortingLayer = renderer.GetSortingLayer();
+    info.orderInLayer = renderer.GetOrderInLayer();
+
+    Vector2 p0 = rotatePoint(x0, y0);
+    Vector2 p1 = rotatePoint(x1, y0);
+    Vector2 p2 = rotatePoint(x0, y1);
+    Vector2 p3 = rotatePoint(x1, y1);
+
+    info.vertices[0] = { Vector3(p0.x, p0.y, 0.0f), Vector2(u0, v0), renderer.GetColor() };
+    info.vertices[1] = { Vector3(p1.x, p1.y, 0.0f), Vector2(u1, v0), renderer.GetColor() };
+    info.vertices[2] = { Vector3(p2.x, p2.y, 0.0f), Vector2(u0, v1), renderer.GetColor() };
+    info.vertices[3] = { Vector3(p3.x, p3.y, 0.0f), Vector2(u1, v1), renderer.GetColor() };
+
+    spriteQueue_.push_back(info);
 }
 
 void SpriteBatch::End() {

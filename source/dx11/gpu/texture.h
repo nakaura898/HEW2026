@@ -283,6 +283,9 @@ public:
         resource_.Attach(texture.Detach());
     }
 
+    //! デストラクタ
+    ~Texture();
+
     //!@}
 
     //! GPUメモリサイズを取得

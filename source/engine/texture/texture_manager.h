@@ -82,12 +82,14 @@ public:
     //! 2Dテクスチャを読み込み
     //! @param [in] path マウントパス
     //! @param [in] sRGB sRGBフォーマットとして扱う
-    //! @param [in] generateMips mipmap自動生成
+    //! @param [in] generateMips mipmap自動生成（2Dゲームでは通常不要）
     //! @return テクスチャ（失敗時nullptr）
+    //! @note generateMips=trueはD3D11_RESOURCE_MISC_GENERATE_MIPSを使用するため、
+    //!       シャットダウン時にリファレンスカウントが残る既知の問題があります。
     [[nodiscard]] TexturePtr LoadTexture2D(
         const std::string& path,
         bool sRGB = true,
-        bool generateMips = true);
+        bool generateMips = false);
 
     //! キューブマップを読み込み（単一DDSファイル）
     //! @param [in] path マウントパス

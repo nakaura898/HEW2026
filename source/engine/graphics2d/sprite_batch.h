@@ -92,6 +92,14 @@ public:
     void Draw(const SpriteRenderer& renderer, const Transform2D& transform);
 
     //------------------------------------------------------------------------
+    //! @brief SpriteRenderer + Animatorコンポーネントから描画
+    //! @param renderer スプライトレンダラー
+    //! @param transform トランスフォーム
+    //! @param animator アニメーター（UV座標を提供）
+    //------------------------------------------------------------------------
+    void Draw(const SpriteRenderer& renderer, const Transform2D& transform, const class Animator& animator);
+
+    //------------------------------------------------------------------------
     //! @brief バッチ描画終了（実際の描画を実行）
     //------------------------------------------------------------------------
     void End();

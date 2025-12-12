@@ -88,6 +88,22 @@ public:
     //! @brief 特定の行で使用するフレーム数を取得
     [[nodiscard]] uint8_t GetRowFrameCount(uint8_t row) const;
 
+    //! @brief 特定の行のフレーム数とフレーム間隔を同時に設定
+    //! @param row 行番号
+    //! @param frameCount フレーム数（0で全列使用）
+    //! @param frameInterval フレーム間隔（0でデフォルト値使用）
+    void SetRowFrameCount(uint8_t row, uint8_t frameCount, uint8_t frameInterval);
+
+    //! @brief 特定の行のフレーム間隔を設定
+    //! @param row 行番号
+    //! @param frameInterval フレーム間隔（0でデフォルト値使用）
+    void SetRowFrameInterval(uint8_t row, uint8_t frameInterval);
+
+    //! @brief 特定の行のフレーム間隔を取得
+    //! @param row 行番号
+    //! @return フレーム間隔（0の場合はデフォルト値を使用）
+    [[nodiscard]] uint8_t GetRowFrameInterval(uint8_t row) const;
+
     //------------------------------------------------------------------------
     // 列（フレーム）
     //------------------------------------------------------------------------
@@ -148,11 +164,14 @@ private:
     }
 
     //------------------------------------------------------------------------
-    // メンバ変数（32バイト = 16バイトアライン x 2）
+    // メンバ変数
     //------------------------------------------------------------------------
 
     // 16 bytes: 行ごとの有効フレーム数（0で全列使用）
     std::array<uint8_t, kMaxRows> rowFrameCounts_{};
+
+    // 16 bytes: 行ごとのフレーム間隔（0でデフォルト値使用）
+    std::array<uint8_t, kMaxRows> rowFrameIntervals_{};
 
     // 8 bytes: UVキャッシュ
     Vector2 uvSize_;

@@ -69,9 +69,9 @@ void GraphicsDevice::Shutdown() noexcept
         ComPtr<ID3D11Debug> debug;
         if (SUCCEEDED(device_.As(&debug))) {
             LOG_INFO("[GraphicsDevice] ライブオブジェクトレポート:");
-            // RLDO_IGNORE_INTERNAL: デバッグレイヤーの内部オブジェクトを除外
-            debug->ReportLiveDeviceObjects(
-                static_cast<D3D11_RLDO_FLAGS>(D3D11_RLDO_DETAIL | D3D11_RLDO_IGNORE_INTERNAL));
+            // D3D11_RLDO_SUMMARY: サマリーを表示
+            // D3D11_RLDO_DETAIL: 詳細を表示
+            debug->ReportLiveDeviceObjects(D3D11_RLDO_DETAIL);
         }
     }
 #endif

@@ -90,10 +90,42 @@ public:
         size_ = Vector2::Zero;
     }
 
+    //------------------------------------------------------------------------
+    // ピボット（スプライトの原点）
+    //------------------------------------------------------------------------
+
+    //! @brief ピボットを取得（スプライト内のローカル座標）
+    [[nodiscard]] const Vector2& GetPivot() const noexcept { return pivot_; }
+
+    //! @brief ピボットを設定（スプライト内のローカル座標）
+    //! @param pivot スプライト左上からの相対位置（ピクセル単位）
+    void SetPivot(const Vector2& pivot) noexcept { pivot_ = pivot; }
+    void SetPivot(float x, float y) noexcept {
+        pivot_.x = x;
+        pivot_.y = y;
+    }
+
+    //! @brief ピボットを中央に設定（Animatorと一緒に使う場合に便利）
+    //! @param frameWidth フレームの幅
+    //! @param frameHeight フレームの高さ
+    //! @param offsetX 中心からのX方向オフセット（正=右）
+    //! @param offsetY 中心からのY方向オフセット（正=下）
+    void SetPivotFromCenter(float frameWidth, float frameHeight,
+                            float offsetX = 0.0f, float offsetY = 0.0f) noexcept {
+        pivot_.x = frameWidth * 0.5f + offsetX;
+        pivot_.y = frameHeight * 0.5f + offsetY;
+    }
+
+    //! @brief ピボットが設定されているか
+    [[nodiscard]] bool HasPivot() const noexcept {
+        return pivot_.x != 0.0f || pivot_.y != 0.0f;
+    }
+
 private:
     Texture* texture_ = nullptr;
     Color color_ = Colors::White;    //!< 乗算カラー
     Vector2 size_ = Vector2::Zero;   //!< カスタムサイズ（0,0でテクスチャサイズ）
+    Vector2 pivot_ = Vector2::Zero;  //!< スプライトの原点（0,0で左上）
 
     int sortingLayer_ = 0;           //!< 描画レイヤー（大きいほど手前）
     int orderInLayer_ = 0;           //!< レイヤー内の描画順

@@ -37,18 +37,66 @@ void TestScene::OnEnter()
         32 * sizeof(uint32_t)
     );
 
-    // プレイヤー作成（WASDで操作、緑色）
+    // 背景テクスチャをロード
+    backgroundTexture_ = TextureManager::Get().LoadTexture2D("background.png");
+
+    // プレイヤー用スプライトシートをロード
+    playerTexture_ = TextureManager::Get().LoadTexture2D("elf_sprite.png");
+
+    // 背景作成（最背面に描画、画面全体に表示）
+    background_ = std::make_unique<GameObject>("Background");
+    bgTransform_ = background_->AddComponent<Transform2D>();
+    bgTransform_->SetPosition(Vector2(width * 0.5f, height * 0.5f));
+    bgSprite_ = background_->AddComponent<SpriteRenderer>();
+    bgSprite_->SetTexture(backgroundTexture_.get());
+    bgSprite_->SetSortingLayer(-100);  // 最背面
+    // 背景を画面サイズに合わせてスケール
+    if (backgroundTexture_) {
+        float texW = static_cast<float>(backgroundTexture_->Width());
+        float texH = static_cast<float>(backgroundTexture_->Height());
+        // pivotをテクスチャの中心に設定
+        bgTransform_->SetPivot(Vector2(texW * 0.5f, texH * 0.5f));
+        float scaleX = width / texW;
+        float scaleY = height / texH;
+        float scale = (scaleX > scaleY) ? scaleX : scaleY;  // 画面全体を覆うように大きい方に合わせる
+        bgTransform_->SetScale(Vector2(scale, scale));
+    }
+
+    // プレイヤー作成（WASDで操作）
     player_ = std::make_unique<GameObject>("Player");
     playerTransform_ = player_->AddComponent<Transform2D>();
     playerTransform_->SetPosition(Vector2(width * 0.5f, height * 0.5f));
-    playerTransform_->SetScale(2.0f);
+    playerTransform_->SetScale(0.3f);  // 小さく
 
     playerSprite_ = player_->AddComponent<SpriteRenderer>();
-    playerSprite_->SetTexture(testTexture_.get());
-    playerSprite_->SetColor(Color(0.2f, 1.0f, 0.2f, 1.0f));  // 緑
+    playerSprite_->SetTexture(playerTexture_.get());
+    playerSprite_->SetSortingLayer(10);  // 前面に描画
 
-    // プレイヤーにコライダー追加
-    Collider2D* playerCollider = player_->AddComponent<Collider2D>(Vector2(64, 64));
+    // Animatorコンポーネント追加（4行4列、デフォルト6フレーム間隔）
+    constexpr int kAnimRows = 4;
+    constexpr int kAnimCols = 4;
+    playerAnimator_ = player_->AddComponent<Animator>(kAnimRows, kAnimCols, 6);
+
+    // Pivot: スプライトの原点設定（SpriteRendererに設定）
+    // SetPivotFromCenter(frameWidth, frameHeight, offsetX, offsetY)
+    // - offsetX: キャラが中心より右にいる場合は正の値
+    // - offsetY: キャラが中心より下にいる場合は正の値
+    if (playerTexture_) {
+        float frameWidth = static_cast<float>(playerTexture_->Width()) / kAnimCols;
+        float frameHeight = static_cast<float>(playerTexture_->Height()) / kAnimRows;
+        float offsetX = 0.0f;  // 調整が必要な場合はここを変更
+        float offsetY = 0.0f;
+        playerSprite_->SetPivotFromCenter(frameWidth, frameHeight, offsetX, offsetY);
+    }
+    playerAnimator_->SetRowFrameCount(0, 1, 12);  // Idle: 1フレーム、遅め
+    playerAnimator_->SetRowFrameCount(1, 4, 12);   // Walk: 4フレーム、普通
+    playerAnimator_->SetRowFrameCount(2, 3, 20);   // Attack: 3フレーム、速め
+    playerAnimator_->SetRowFrameCount(3, 2, 10);  // Death: 2フレーム、やや遅め
+    playerAnimator_->SetRow(1);  // 初期はWalkアニメーション
+
+    // プレイヤーにコライダー追加（テスト: 中心対称）
+    Collider2D* playerCollider = player_->AddComponent<Collider2D>();
+    playerCollider->SetBounds(Vector2(-30, -40), Vector2(30, 40));  // 60x80、中心がTransform位置
     playerCollider->SetLayer(0x01);  // プレイヤーレイヤー
     playerCollider->SetMask(0x02);   // 障害物と衝突
 
@@ -56,14 +104,10 @@ void TestScene::OnEnter()
     playerCollider->SetOnCollisionEnter([this](Collider2D* /*self*/, Collider2D* /*other*/) {
         ++collisionCount_;
         LOG_INFO("[Collision] Enter!");
-        // 衝突時に白くフラッシュ
-        playerSprite_->SetColor(Color(1.0f, 1.0f, 1.0f, 1.0f));
     });
 
     playerCollider->SetOnCollisionExit([this](Collider2D* /*self*/, Collider2D* /*other*/) {
         LOG_INFO("[Collision] Exit!");
-        // 衝突終了時に緑に戻る
-        playerSprite_->SetColor(Color(0.2f, 1.0f, 0.2f, 1.0f));
     });
 
     // 障害物を複数作成（赤色、静止）
@@ -78,6 +122,7 @@ void TestScene::OnEnter()
         SpriteRenderer* sprite = obj->AddComponent<SpriteRenderer>();
         sprite->SetTexture(testTexture_.get());
         sprite->SetColor(Color(1.0f, 0.3f, 0.3f, 1.0f));  // 赤
+        sprite->SetPivot(16.0f, 16.0f);  // テクスチャ中心を原点に（32x32の半分）
 
         // 障害物にコライダー追加
         Collider2D* collider = obj->AddComponent<Collider2D>(Vector2(64, 64));
@@ -98,6 +143,7 @@ void TestScene::OnEnter()
         SpriteRenderer* sprite = obj->AddComponent<SpriteRenderer>();
         sprite->SetTexture(testTexture_.get());
         sprite->SetColor(Color(0.3f, 0.3f, 1.0f, 1.0f));  // 青
+        sprite->SetPivot(16.0f, 16.0f);  // テクスチャ中心を原点に（32x32の半分）
 
         Collider2D* collider = obj->AddComponent<Collider2D>(Vector2(64, 64));
         collider->SetLayer(0x02);
@@ -105,9 +151,6 @@ void TestScene::OnEnter()
 
         objects_.push_back(std::move(obj));
     }
-
-    // SpriteBatch初期化
-    SpriteBatch::Get().Initialize();
 
     LOG_INFO("[TestScene] 衝突判定テスト開始");
     LOG_INFO("  WASD: プレイヤー移動");
@@ -119,9 +162,11 @@ void TestScene::OnExit()
 {
     objects_.clear();
     player_.reset();
+    background_.reset();
     cameraObj_.reset();
     testTexture_.reset();
-    SpriteBatch::Get().Shutdown();
+    playerTexture_.reset();
+    backgroundTexture_.reset();
 }
 
 //----------------------------------------------------------------------------
@@ -135,16 +180,63 @@ void TestScene::Update()
 
     Keyboard& keyboard = inputMgr->GetKeyboard();
 
-    // プレイヤー操作（WASD）
-    const float speed = 300.0f;
-    Vector2 move = Vector2::Zero;
-    if (keyboard.IsKeyPressed(Key::W)) move.y -= speed * dt;
-    if (keyboard.IsKeyPressed(Key::S)) move.y += speed * dt;
-    if (keyboard.IsKeyPressed(Key::A)) move.x -= speed * dt;
-    if (keyboard.IsKeyPressed(Key::D)) move.x += speed * dt;
+    Mouse& mouse = inputMgr->GetMouse();
 
-    if (move.x != 0.0f || move.y != 0.0f) {
-        playerTransform_->Translate(move);
+    // クリックで攻撃開始
+    if (mouse.IsButtonDown(MouseButton::Left) && !isAttacking_) {
+        isAttacking_ = true;
+        playerAnimator_->SetRow(2);  // Attack
+        playerAnimator_->SetLooping(false);
+        playerAnimator_->Reset();
+
+        // マウス位置からプレイヤーへの方向で左右反転
+        Vector2 mousePos = Vector2(static_cast<float>(mouse.GetX()), static_cast<float>(mouse.GetY()));
+        Vector2 playerScreenPos = camera_->WorldToScreen(playerTransform_->GetPosition());
+        if (mousePos.x < playerScreenPos.x) {
+            playerAnimator_->SetMirror(false);  // 左向き
+        } else {
+            playerAnimator_->SetMirror(true);   // 右向き
+        }
+    }
+
+    // 攻撃アニメーション終了チェック
+    if (isAttacking_) {
+        // 攻撃の最終フレームに達したら攻撃終了
+        if (playerAnimator_->GetColumn() >= 2) {  // Attack: 3フレーム（0,1,2）
+            isAttacking_ = false;
+            playerAnimator_->SetLooping(true);
+            playerAnimator_->SetRow(0);  // Idle
+        }
+    }
+
+    // 攻撃中は移動しない
+    if (!isAttacking_) {
+        // プレイヤー操作（WASD）
+        const float speed = 300.0f;
+        Vector2 move = Vector2::Zero;
+        if (keyboard.IsKeyPressed(Key::W)) move.y -= speed * dt;
+        if (keyboard.IsKeyPressed(Key::S)) move.y += speed * dt;
+        if (keyboard.IsKeyPressed(Key::A)) move.x -= speed * dt;
+        if (keyboard.IsKeyPressed(Key::D)) move.x += speed * dt;
+
+        // 左右移動で反転
+        if (move.x < 0.0f) {
+            playerAnimator_->SetMirror(false);  // 左向き
+        } else if (move.x > 0.0f) {
+            playerAnimator_->SetMirror(true);   // 右向き
+        }
+
+        // 移動中はWalk、静止中はIdle
+        if (move.x != 0.0f || move.y != 0.0f) {
+            playerTransform_->Translate(move);
+            if (playerAnimator_->GetRow() != 1) {
+                playerAnimator_->SetRow(1);  // Walk
+            }
+        } else {
+            if (playerAnimator_->GetRow() != 0) {
+                playerAnimator_->SetRow(0);  // Idle
+            }
+        }
     }
 
     // プレイヤー更新（Collider2D::Updateが呼ばれる）
@@ -185,6 +277,11 @@ void TestScene::Render()
     spriteBatch.SetCamera(*camera_);
     spriteBatch.Begin();
 
+    // 背景描画（最背面）
+    if (bgTransform_ && bgSprite_) {
+        spriteBatch.Draw(*bgSprite_, *bgTransform_);
+    }
+
     // 障害物描画
     for (std::unique_ptr<GameObject>& obj : objects_) {
         Transform2D* transform = obj->GetComponent<Transform2D>();
@@ -194,9 +291,68 @@ void TestScene::Render()
         }
     }
 
-    // プレイヤー描画（最前面）
-    if (playerTransform_ && playerSprite_) {
-        spriteBatch.Draw(*playerSprite_, *playerTransform_);
+    // プレイヤー描画（Animator使用）
+    if (playerTransform_ && playerSprite_ && playerAnimator_) {
+        spriteBatch.Draw(*playerSprite_, *playerTransform_, *playerAnimator_);
+    }
+
+    // デバッグ：コライダー枠描画
+    const float lineWidth = 2.0f;  // 枠線の太さ
+
+    // 枠を描画するラムダ関数
+    auto drawColliderOutline = [&](Vector2 pos, Vector2 size, const Color& color, bool centered) {
+        float left, top;
+        if (centered) {
+            left = pos.x - size.x * 0.5f;
+            top = pos.y - size.y * 0.5f;
+        } else {
+            left = pos.x;
+            top = pos.y;
+        }
+        float right = left + size.x;
+        float bottom = top + size.y;
+
+        // 上辺
+        spriteBatch.Draw(testTexture_.get(), Vector2(left, top), color, 0.0f,
+            Vector2(0, 0), Vector2(size.x / 32.0f, lineWidth / 32.0f), false, false, 100, 0);
+        // 下辺
+        spriteBatch.Draw(testTexture_.get(), Vector2(left, bottom - lineWidth), color, 0.0f,
+            Vector2(0, 0), Vector2(size.x / 32.0f, lineWidth / 32.0f), false, false, 100, 0);
+        // 左辺
+        spriteBatch.Draw(testTexture_.get(), Vector2(left, top), color, 0.0f,
+            Vector2(0, 0), Vector2(lineWidth / 32.0f, size.y / 32.0f), false, false, 100, 0);
+        // 右辺
+        spriteBatch.Draw(testTexture_.get(), Vector2(right - lineWidth, top), color, 0.0f,
+            Vector2(0, 0), Vector2(lineWidth / 32.0f, size.y / 32.0f), false, false, 100, 0);
+    };
+
+    // プレイヤーのコライダー（緑枠）
+    Color playerColliderColor(0.0f, 1.0f, 0.0f, 1.0f);
+    if (player_) {
+        Collider2D* collider = player_->GetComponent<Collider2D>();
+        if (collider && playerTransform_) {
+            Vector2 pos = playerTransform_->GetPosition();
+            Vector2 offset = collider->GetOffset();
+            pos.x += offset.x;
+            pos.y += offset.y;
+            Vector2 size = collider->GetSize();
+            drawColliderOutline(pos, size, playerColliderColor, true);  // 中心基準
+        }
+    }
+
+    // 障害物のコライダー（赤枠）
+    Color obstacleColliderColor(1.0f, 0.0f, 0.0f, 1.0f);
+    for (std::unique_ptr<GameObject>& obj : objects_) {
+        Collider2D* collider = obj->GetComponent<Collider2D>();
+        Transform2D* transform = obj->GetComponent<Transform2D>();
+        if (collider && transform) {
+            Vector2 pos = transform->GetPosition();
+            Vector2 offset = collider->GetOffset();
+            pos.x += offset.x;
+            pos.y += offset.y;
+            Vector2 size = collider->GetSize();
+            drawColliderOutline(pos, size, obstacleColliderColor, true);  // 中心基準
+        }
     }
 
     spriteBatch.End();

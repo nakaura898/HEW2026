@@ -6,6 +6,7 @@
 #include "dx11/graphics_context.h"
 #include "engine/texture/texture_manager.h"
 #include "common/logging/logging.h"
+#include <string>
 
 //----------------------------------------------------------------------------
 // シングルトン
@@ -123,6 +124,10 @@ void Renderer::Shutdown() noexcept
     if (!initialized_) {
         return;
     }
+
+    LOG_INFO("[Renderer] 終了処理開始...");
+    LOG_INFO("[Renderer] depthBuffer use_count: " + std::to_string(depthBuffer_.use_count()));
+    LOG_INFO("[Renderer] colorBuffer use_count: " + std::to_string(colorBuffer_.use_count()));
 
     depthBuffer_.reset();
     colorBuffer_.reset();

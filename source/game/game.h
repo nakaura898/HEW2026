@@ -39,6 +39,9 @@ public:
     //! @brief 終了処理
     void Shutdown() noexcept;
 
+    //! @brief ログファイルを閉じる（Application::Shutdown後に呼ぶ）
+    static void CloseLog() noexcept;
+
     //!@}
 
     //----------------------------------------------------------

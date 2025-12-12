@@ -20,8 +20,12 @@ void Animator::Update([[maybe_unused]] float deltaTime)
 {
     if (!IsPlaying()) return;
 
+    // 現在行のフレーム間隔を取得（0ならデフォルト値を使用）
+    uint8_t interval = GetRowFrameInterval(currentRow_);
+    if (interval == 0) interval = frameInterval_;
+
     ++counter_;
-    if (counter_ >= frameInterval_) {
+    if (counter_ >= interval) {
         counter_ = 0;
 
         uint8_t limit = GetCurrentRowFrameLimit();
@@ -81,6 +85,30 @@ uint8_t Animator::GetRowFrameCount(uint8_t row) const
 
     uint8_t limit = rowFrameCounts_[row];
     return limit > 0 ? limit : colCount_;
+}
+
+void Animator::SetRowFrameCount(uint8_t row, uint8_t frameCount, uint8_t frameInterval)
+{
+    SetRowFrameCount(row, frameCount);
+    SetRowFrameInterval(row, frameInterval);
+}
+
+void Animator::SetRowFrameInterval(uint8_t row, uint8_t frameInterval)
+{
+    assert(row < rowCount_ && "SetRowFrameInterval: row out of range");
+    assert(row < kMaxRows && "SetRowFrameInterval: row exceeds kMaxRows");
+    if (row >= rowCount_ || row >= kMaxRows) return;
+
+    rowFrameIntervals_[row] = frameInterval;
+}
+
+uint8_t Animator::GetRowFrameInterval(uint8_t row) const
+{
+    assert(row < kMaxRows && "GetRowFrameInterval: row exceeds kMaxRows");
+    if (row >= kMaxRows) return frameInterval_;
+
+    uint8_t interval = rowFrameIntervals_[row];
+    return interval > 0 ? interval : frameInterval_;
 }
 
 void Animator::SetColumn(uint8_t col)
