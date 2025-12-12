@@ -109,6 +109,13 @@ void Application::Shutdown() noexcept
         return;
     }
 
+    // パイプラインから全リソースをアンバインドしてから解放
+    auto& ctx = GraphicsContext::Get();
+    if (auto* d3dCtx = ctx.GetContext()) {
+        d3dCtx->ClearState();
+        d3dCtx->Flush();
+    }
+
     // 逆順で終了
     Renderer::Get().Shutdown();
     GraphicsContext::Get().Shutdown();

@@ -73,6 +73,56 @@ public:
 };
 
 //----------------------------------------------------------------------------
+// ファイル出力実装
+//----------------------------------------------------------------------------
+class FileLogOutput : public ILogOutput {
+public:
+    FileLogOutput() = default;
+
+    explicit FileLogOutput(const std::wstring& filePath) {
+        open(filePath);
+    }
+
+    ~FileLogOutput() {
+        close();
+    }
+
+    bool open(const std::wstring& filePath) {
+        close();
+        filePath_ = filePath;
+        errno_t err = _wfopen_s(&file_, filePath.c_str(), L"w");
+        return err == 0 && file_ != nullptr;
+    }
+
+    void close() {
+        if (file_) {
+            fclose(file_);
+            file_ = nullptr;
+        }
+    }
+
+    void write(LogLevel level, const std::string& message) override {
+        if (file_) {
+            // タイムスタンプ付きで出力
+            SYSTEMTIME st;
+            GetLocalTime(&st);
+            fprintf(file_, "[%02d:%02d:%02d.%03d] %s",
+                st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+                message.c_str());
+            fflush(file_);  // 即座に書き込み
+        }
+        (void)level;
+    }
+
+    [[nodiscard]] bool isOpen() const noexcept { return file_ != nullptr; }
+    [[nodiscard]] const std::wstring& filePath() const noexcept { return filePath_; }
+
+private:
+    FILE* file_ = nullptr;
+    std::wstring filePath_;
+};
+
+//----------------------------------------------------------------------------
 // デバッグ + コンソール両方出力
 //----------------------------------------------------------------------------
 class MultiLogOutput : public ILogOutput {
@@ -84,6 +134,41 @@ public:
 private:
     DebugLogOutput debug_;
     ConsoleLogOutput console_;
+};
+
+//----------------------------------------------------------------------------
+// デバッグ + コンソール + ファイル出力
+//----------------------------------------------------------------------------
+class FullLogOutput : public ILogOutput {
+public:
+    FullLogOutput() = default;
+
+    explicit FullLogOutput(const std::wstring& filePath) {
+        file_.open(filePath);
+    }
+
+    bool openFile(const std::wstring& filePath) {
+        return file_.open(filePath);
+    }
+
+    void closeFile() {
+        file_.close();
+    }
+
+    void write(LogLevel level, const std::string& message) override {
+        debug_.write(level, message);
+        console_.write(level, message);
+        if (file_.isOpen()) {
+            file_.write(level, message);
+        }
+    }
+
+    [[nodiscard]] FileLogOutput& fileOutput() noexcept { return file_; }
+
+private:
+    DebugLogOutput debug_;
+    ConsoleLogOutput console_;
+    FileLogOutput file_;
 };
 
 //----------------------------------------------------------------------------

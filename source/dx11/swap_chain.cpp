@@ -105,9 +105,27 @@ SwapChain::SwapChain(
 //===========================================================================
 SwapChain::~SwapChain()
 {
+    LOG_INFO("[SwapChain] 解放開始");
+
+    // 1. バックバッファを解放
+    if (backBuffer_) {
+        LOG_INFO("[SwapChain] backBuffer解放");
+        backBuffer_.reset();
+    }
+
+    // 2. スワップチェーンを解放
+    if (swapChain_) {
+        LOG_INFO("[SwapChain] swapChain解放");
+        swapChain_.Reset();
+    }
+
+    // 3. ウェイトハンドルを閉じる
     if (waitableObject_) {
         CloseHandle(waitableObject_);
+        waitableObject_ = nullptr;
     }
+
+    LOG_INFO("[SwapChain] 解放完了");
 }
 
 //===========================================================================

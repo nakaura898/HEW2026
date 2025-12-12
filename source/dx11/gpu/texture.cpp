@@ -10,6 +10,7 @@
 #include "dx11/view/depth_stencil_view.h"
 #include "dx11/view/unordered_access_view.h"
 #include "common/logging/logging.h"
+#include <string>
 
 //----------------------------------------------------------------------------
 // Texture静的ファクトリメソッド
@@ -260,4 +261,27 @@ std::shared_ptr<Texture> Texture::CreateCube(
 
     return std::make_shared<Texture>(
         std::move(texture), std::move(srv), nullptr, nullptr, nullptr, desc);
+}
+
+//----------------------------------------------------------------------------
+// デストラクタ
+//----------------------------------------------------------------------------
+Texture::~Texture()
+{
+    LOG_INFO("[Texture] 解放開始: " + std::to_string(width_) + "x" + std::to_string(height_));
+
+    // 明示的な解放順序：ビュー → リソース
+    if (uav_) { LOG_INFO("  UAV解放"); uav_.Reset(); }
+    if (dsv_) { LOG_INFO("  DSV解放"); dsv_.Reset(); }
+    if (rtv_) { LOG_INFO("  RTV解放"); rtv_.Reset(); }
+    if (srv_) { LOG_INFO("  SRV解放"); srv_.Reset(); }
+    if (resource_) {
+        // リソースの現在のRefcountを確認（AddRef→Releaseで取得）
+        resource_->AddRef();
+        ULONG refCount = resource_->Release();
+        LOG_INFO("  Resource解放前Refcount: " + std::to_string(refCount));
+        resource_.Reset();
+    }
+
+    LOG_INFO("[Texture] 解放完了");
 }

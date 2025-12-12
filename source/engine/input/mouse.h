@@ -3,6 +3,10 @@
 #include "key.h"
 #include <array>
 
+// 前方宣言
+struct HWND__;
+using HWND = HWND__*;
+
 /// @brief マウス入力管理クラス
 ///
 /// 責務:
@@ -63,7 +67,8 @@ public:
     bool IsButtonUp(MouseButton button) const noexcept;
 
     /// @brief 入力状態を更新（内部用）
-    void Update() noexcept;
+    /// @param hwnd ウィンドウハンドル（nullptrの場合はアクティブウィンドウを使用）
+    void Update(HWND hwnd = nullptr) noexcept;
 
     /// @brief マウス座標を設定（内部用）
     /// @param x X座標

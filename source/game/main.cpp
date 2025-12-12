@@ -32,7 +32,7 @@ int WINAPI WinMain(
         return -1;
     }
 
-    // ゲーム初期化
+    // ゲーム初期化（ログシステムもここで初期化）
     Game game;
     if (!game.Initialize()) {
         Application::Get().Shutdown();
@@ -45,6 +45,9 @@ int WINAPI WinMain(
     // 終了
     game.Shutdown();
     Application::Get().Shutdown();
+
+    // 全リソース解放後にログファイルを閉じる
+    Game::CloseLog();
 
     return 0;
 }

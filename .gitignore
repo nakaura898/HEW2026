@@ -17,6 +17,9 @@ obj/
 *.bak
 *~
 
+# デバッグ出力
+debug/
+
 # Claude Code設定
 CLAUDE.md
 
