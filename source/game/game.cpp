@@ -85,7 +85,7 @@ bool Game::Initialize()
 
     auto& fsManager = FileSystemManager::Get();
     fsManager.Mount("shaders", std::make_unique<HostFileSystem>(assetsRoot + L"shader/"));
-    fsManager.Mount("textures", std::make_unique<HostFileSystem>(assetsRoot + L"textures/"));
+    fsManager.Mount("textures", std::make_unique<HostFileSystem>(assetsRoot + L"texture/"));
 
     // 3. TextureManager初期化
     auto* textureFs = fsManager.GetFileSystem("textures");
