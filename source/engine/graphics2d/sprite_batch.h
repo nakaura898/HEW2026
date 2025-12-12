@@ -15,6 +15,7 @@
 #include "engine/scene/math_types.h"
 #include "engine/color.h"
 #include "engine/component/sprite_renderer.h"
+#include "engine/component/animator.h"
 #include <vector>
 
 // 前方宣言
@@ -90,6 +91,11 @@ public:
     //! @brief SpriteRendererコンポーネントから描画
     //------------------------------------------------------------------------
     void Draw(const SpriteRenderer& renderer, const Transform2D& transform);
+
+    //------------------------------------------------------------------------
+    //! @brief SpriteRenderer + Animator から描画（スプライトシートアニメーション）
+    //------------------------------------------------------------------------
+    void Draw(const SpriteRenderer& renderer, const Transform2D& transform, const Animator& animator);
 
     //------------------------------------------------------------------------
     //! @brief バッチ描画終了（実際の描画を実行）

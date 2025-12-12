@@ -283,6 +283,79 @@ void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform2D& transf
          renderer.GetSortingLayer(), renderer.GetOrderInLayer());
 }
 
+void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform2D& transform, const Animator& animator) {
+    if (!isBegun_ || !renderer.GetTexture()) {
+        return;
+    }
+
+    Texture* texture = renderer.GetTexture();
+
+    // AnimatorからUV座標を取得
+    Vector2 uvCoord = animator.GetUVCoord();
+    Vector2 uvSize = animator.GetUVSize();
+
+    // フレームサイズを計算（テクスチャサイズ * UVサイズ）
+    float texWidth = static_cast<float>(texture->Width());
+    float texHeight = static_cast<float>(texture->Height());
+    float frameWidth = texWidth * std::abs(uvSize.x);
+    float frameHeight = texHeight * std::abs(uvSize.y);
+
+    // Transform2Dからパラメータ取得
+    Vector2 position = transform.GetPosition();
+    float rotation = transform.GetRotation();
+    Vector2 scale = transform.GetScale();
+    Vector2 pivot = transform.GetPivot();
+
+    // UV座標
+    float u0 = uvCoord.x;
+    float v0 = uvCoord.y;
+    float u1 = uvCoord.x + uvSize.x;
+    float v1 = uvCoord.y + uvSize.y;
+
+    // SpriteRendererの反転
+    if (renderer.IsFlipX()) std::swap(u0, u1);
+    if (renderer.IsFlipY()) std::swap(v0, v1);
+
+    // スプライトサイズ（フレームサイズ * スケール）
+    float width = frameWidth * scale.x;
+    float height = frameHeight * scale.y;
+
+    // 4頂点の計算（ピボットを考慮）
+    float x0 = -pivot.x * scale.x;
+    float y0 = -pivot.y * scale.y;
+    float x1 = x0 + width;
+    float y1 = y0 + height;
+
+    // 回転行列
+    float cosR = std::cos(rotation);
+    float sinR = std::sin(rotation);
+
+    auto rotatePoint = [&](float x, float y) -> Vector2 {
+        return Vector2(
+            x * cosR - y * sinR + position.x,
+            x * sinR + y * cosR + position.y
+        );
+    };
+
+    SpriteInfo info;
+    info.texture = texture;
+    info.sortingLayer = renderer.GetSortingLayer();
+    info.orderInLayer = renderer.GetOrderInLayer();
+
+    Vector2 p0 = rotatePoint(x0, y0);
+    Vector2 p1 = rotatePoint(x1, y0);
+    Vector2 p2 = rotatePoint(x0, y1);
+    Vector2 p3 = rotatePoint(x1, y1);
+
+    Color color = renderer.GetColor();
+    info.vertices[0] = { Vector3(p0.x, p0.y, 0.0f), Vector2(u0, v0), color };
+    info.vertices[1] = { Vector3(p1.x, p1.y, 0.0f), Vector2(u1, v0), color };
+    info.vertices[2] = { Vector3(p2.x, p2.y, 0.0f), Vector2(u0, v1), color };
+    info.vertices[3] = { Vector3(p3.x, p3.y, 0.0f), Vector2(u1, v1), color };
+
+    spriteQueue_.push_back(info);
+}
+
 void SpriteBatch::End() {
     if (!isBegun_) {
         LOG_WARN("SpriteBatch: Begin()が呼ばれていません");

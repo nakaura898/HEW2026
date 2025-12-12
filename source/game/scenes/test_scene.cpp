@@ -1,6 +1,6 @@
 //----------------------------------------------------------------------------
 //! @file   test_scene.cpp
-//! @brief  テストシーン実装（衝突判定テスト）
+//! @brief  テストシーン実装（Animatorテスト）
 //----------------------------------------------------------------------------
 #include "test_scene.h"
 #include "dx11/graphics_context.h"
@@ -9,10 +9,8 @@
 #include "engine/texture/texture_manager.h"
 #include "engine/input/input_manager.h"
 #include "engine/graphics2d/sprite_batch.h"
-#include "engine/collision/collision_manager.h"
 #include "engine/color.h"
 #include "common/logging/logging.h"
-#include <cmath>
 
 //----------------------------------------------------------------------------
 void TestScene::OnEnter()
@@ -27,100 +25,59 @@ void TestScene::OnEnter()
     cameraObj_->AddComponent<Transform2D>(Vector2(width * 0.5f, height * 0.5f));
     camera_ = cameraObj_->AddComponent<Camera2D>(width, height);
 
-    // テスト用白テクスチャを作成（32x32）
-    std::vector<uint32_t> whitePixels(32 * 32, 0xFFFFFFFF);
-    testTexture_ = TextureManager::Get().Create2D(
-        32, 32,
-        DXGI_FORMAT_R8G8B8A8_UNORM,
-        D3D11_BIND_SHADER_RESOURCE,
-        whitePixels.data(),
-        32 * sizeof(uint32_t)
-    );
+    // テクスチャ読み込み
+    TextureManager& texMgr = TextureManager::Get();
+    backgroundTexture_ = texMgr.LoadTexture2D("assets:/texture/background.png");
+    spriteTexture_ = texMgr.LoadTexture2D("assets:/texture/elf_sprite.png");
 
-    // プレイヤー作成（WASDで操作、緑色）
-    player_ = std::make_unique<GameObject>("Player");
-    playerTransform_ = player_->AddComponent<Transform2D>();
-    playerTransform_->SetPosition(Vector2(width * 0.5f, height * 0.5f));
-    playerTransform_->SetScale(2.0f);
-
-    playerSprite_ = player_->AddComponent<SpriteRenderer>();
-    playerSprite_->SetTexture(testTexture_.get());
-    playerSprite_->SetColor(Color(0.2f, 1.0f, 0.2f, 1.0f));  // 緑
-
-    // プレイヤーにコライダー追加
-    Collider2D* playerCollider = player_->AddComponent<Collider2D>(Vector2(64, 64));
-    playerCollider->SetLayer(0x01);  // プレイヤーレイヤー
-    playerCollider->SetMask(0x02);   // 障害物と衝突
-
-    // 衝突コールバック設定
-    playerCollider->SetOnCollisionEnter([this](Collider2D* /*self*/, Collider2D* /*other*/) {
-        ++collisionCount_;
-        LOG_INFO("[Collision] Enter!");
-        // 衝突時に白くフラッシュ
-        playerSprite_->SetColor(Color(1.0f, 1.0f, 1.0f, 1.0f));
-    });
-
-    playerCollider->SetOnCollisionExit([this](Collider2D* /*self*/, Collider2D* /*other*/) {
-        LOG_INFO("[Collision] Exit!");
-        // 衝突終了時に緑に戻る
-        playerSprite_->SetColor(Color(0.2f, 1.0f, 0.2f, 1.0f));
-    });
-
-    // 障害物を複数作成（赤色、静止）
-    const float spacing = 150.0f;
-    for (int i = 0; i < 5; ++i) {
-        std::unique_ptr<GameObject> obj = std::make_unique<GameObject>("Obstacle" + std::to_string(i));
-
-        Transform2D* transform = obj->AddComponent<Transform2D>();
-        transform->SetPosition(Vector2(200.0f + i * spacing, 200.0f));
-        transform->SetScale(2.0f);
-
-        SpriteRenderer* sprite = obj->AddComponent<SpriteRenderer>();
-        sprite->SetTexture(testTexture_.get());
-        sprite->SetColor(Color(1.0f, 0.3f, 0.3f, 1.0f));  // 赤
-
-        // 障害物にコライダー追加
-        Collider2D* collider = obj->AddComponent<Collider2D>(Vector2(64, 64));
-        collider->SetLayer(0x02);  // 障害物レイヤー
-        collider->SetMask(0x01);   // プレイヤーと衝突
-
-        objects_.push_back(std::move(obj));
+    if (!backgroundTexture_) {
+        LOG_ERROR("[TestScene] background.png の読み込みに失敗");
+    }
+    if (!spriteTexture_) {
+        LOG_ERROR("[TestScene] elf_sprite.png の読み込みに失敗");
     }
 
-    // 下段にも障害物
-    for (int i = 0; i < 5; ++i) {
-        std::unique_ptr<GameObject> obj = std::make_unique<GameObject>("Obstacle" + std::to_string(i + 5));
+    // 背景作成
+    background_ = std::make_unique<GameObject>("Background");
+    bgTransform_ = background_->AddComponent<Transform2D>();
+    bgTransform_->SetPosition(Vector2(width * 0.5f, height * 0.5f));
 
-        Transform2D* transform = obj->AddComponent<Transform2D>();
-        transform->SetPosition(Vector2(275.0f + i * spacing, 400.0f));
-        transform->SetScale(2.0f);
+    bgSprite_ = background_->AddComponent<SpriteRenderer>();
+    bgSprite_->SetTexture(backgroundTexture_.get());
+    bgSprite_->SetSortingLayer(-1);  // 最背面
 
-        SpriteRenderer* sprite = obj->AddComponent<SpriteRenderer>();
-        sprite->SetTexture(testTexture_.get());
-        sprite->SetColor(Color(0.3f, 0.3f, 1.0f, 1.0f));  // 青
+    // アニメーションスプライト作成
+    sprite_ = std::make_unique<GameObject>("AnimatedSprite");
+    spriteTransform_ = sprite_->AddComponent<Transform2D>();
+    spriteTransform_->SetPosition(Vector2(width * 0.5f, height * 0.5f));
+    spriteTransform_->SetScale(2.0f);
 
-        Collider2D* collider = obj->AddComponent<Collider2D>(Vector2(64, 64));
-        collider->SetLayer(0x02);
-        collider->SetMask(0x01);
+    spriteRenderer_ = sprite_->AddComponent<SpriteRenderer>();
+    spriteRenderer_->SetTexture(spriteTexture_.get());
+    spriteRenderer_->SetSortingLayer(0);  // 背景より手前
 
-        objects_.push_back(std::move(obj));
-    }
+    // Animator追加（4行8列、10フレーム間隔）
+    animator_ = sprite_->AddComponent<Animator>(4, 8, 10);
+    animator_->SetRow(0);  // 最初のアニメーション行
+    animator_->SetRowFrameCount(0, 8);  // 行0は8フレーム
 
     // SpriteBatch初期化
     SpriteBatch::Get().Initialize();
 
-    LOG_INFO("[TestScene] 衝突判定テスト開始");
-    LOG_INFO("  WASD: プレイヤー移動");
-    LOG_INFO("  緑の四角を動かして赤/青の四角に当ててください");
+    LOG_INFO("[TestScene] Animatorテスト開始");
+    LOG_INFO("  WASD: スプライト移動");
+    LOG_INFO("  1-4: アニメーション行切り替え");
+    LOG_INFO("  Space: 左右反転切り替え");
 }
 
 //----------------------------------------------------------------------------
 void TestScene::OnExit()
 {
-    objects_.clear();
-    player_.reset();
+    background_.reset();
+    sprite_.reset();
     cameraObj_.reset();
-    testTexture_.reset();
+    backgroundTexture_.reset();
+    spriteTexture_.reset();
     SpriteBatch::Get().Shutdown();
 }
 
@@ -135,8 +92,8 @@ void TestScene::Update()
 
     Keyboard& keyboard = inputMgr->GetKeyboard();
 
-    // プレイヤー操作（WASD）
-    const float speed = 300.0f;
+    // スプライト操作（WASD）
+    const float speed = 200.0f;
     Vector2 move = Vector2::Zero;
     if (keyboard.IsKeyPressed(Key::W)) move.y -= speed * dt;
     if (keyboard.IsKeyPressed(Key::S)) move.y += speed * dt;
@@ -144,22 +101,25 @@ void TestScene::Update()
     if (keyboard.IsKeyPressed(Key::D)) move.x += speed * dt;
 
     if (move.x != 0.0f || move.y != 0.0f) {
-        playerTransform_->Translate(move);
+        spriteTransform_->Translate(move);
+        // 移動方向で反転
+        if (move.x < 0.0f) animator_->SetMirror(true);
+        if (move.x > 0.0f) animator_->SetMirror(false);
     }
 
-    // プレイヤー更新（Collider2D::Updateが呼ばれる）
-    player_->Update(dt);
+    // アニメーション行切り替え（1-4キー）
+    if (keyboard.IsKeyTriggered(Key::D1)) animator_->SetRow(0);
+    if (keyboard.IsKeyTriggered(Key::D2)) animator_->SetRow(1);
+    if (keyboard.IsKeyTriggered(Key::D3)) animator_->SetRow(2);
+    if (keyboard.IsKeyTriggered(Key::D4)) animator_->SetRow(3);
 
-    // カメラがプレイヤーを追従
-    camera_->Follow(playerTransform_->GetPosition(), 0.1f);
-
-    // 障害物更新
-    for (std::unique_ptr<GameObject>& obj : objects_) {
-        obj->Update(dt);
+    // スペースで反転トグル
+    if (keyboard.IsKeyTriggered(Key::Space)) {
+        animator_->SetMirror(!animator_->GetMirror());
     }
 
-    // 衝突判定実行（固定タイムステップ）
-    CollisionManager::Get().Update(dt);
+    // スプライト更新（Animatorが更新される）
+    sprite_->Update(dt);
 }
 
 //----------------------------------------------------------------------------
@@ -176,8 +136,8 @@ void TestScene::Render()
         static_cast<float>(backBuffer->Width()),
         static_cast<float>(backBuffer->Height()));
 
-    // 背景クリア（暗い青）
-    float clearColor[4] = { 0.1f, 0.1f, 0.2f, 1.0f };
+    // 背景クリア
+    float clearColor[4] = { 0.2f, 0.2f, 0.3f, 1.0f };
     ctx.ClearRenderTarget(backBuffer, clearColor);
 
     // SpriteBatchで描画
@@ -185,18 +145,14 @@ void TestScene::Render()
     spriteBatch.SetCamera(*camera_);
     spriteBatch.Begin();
 
-    // 障害物描画
-    for (std::unique_ptr<GameObject>& obj : objects_) {
-        Transform2D* transform = obj->GetComponent<Transform2D>();
-        SpriteRenderer* sprite = obj->GetComponent<SpriteRenderer>();
-        if (transform && sprite) {
-            spriteBatch.Draw(*sprite, *transform);
-        }
+    // 背景描画
+    if (bgTransform_ && bgSprite_ && backgroundTexture_) {
+        spriteBatch.Draw(*bgSprite_, *bgTransform_);
     }
 
-    // プレイヤー描画（最前面）
-    if (playerTransform_ && playerSprite_) {
-        spriteBatch.Draw(*playerSprite_, *playerTransform_);
+    // アニメーションスプライト描画
+    if (spriteTransform_ && spriteRenderer_ && animator_ && spriteTexture_) {
+        spriteBatch.Draw(*spriteRenderer_, *spriteTransform_, *animator_);
     }
 
     spriteBatch.End();
