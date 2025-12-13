@@ -5,7 +5,7 @@
 #pragma once
 
 #include "component.h"
-#include "engine/color.h"
+#include "engine/math/color.h"
 #include "engine/math/math_types.h"
 
 // 前方宣言

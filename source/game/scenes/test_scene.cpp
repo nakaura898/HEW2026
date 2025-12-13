@@ -10,7 +10,7 @@
 #include "engine/input/input_manager.h"
 #include "engine/graphics2d/sprite_batch.h"
 #include "engine/collision/collision_manager.h"
-#include "engine/color.h"
+#include "engine/math/color.h"
 #include "common/logging/logging.h"
 #include <cmath>
 #include <algorithm>
