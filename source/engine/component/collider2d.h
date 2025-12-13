@@ -6,7 +6,7 @@
 
 #include "component.h"
 #include "engine/math/math_types.h"
-#include "engine/collision/collision_manager.h"
+#include "engine/c_systems/collision_manager.h"
 #include <cstdint>
 
 //============================================================================

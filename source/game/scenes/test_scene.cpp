@@ -8,8 +8,8 @@
 #include "engine/platform/application.h"
 #include "engine/texture/texture_manager.h"
 #include "engine/input/input_manager.h"
-#include "engine/graphics2d/sprite_batch.h"
-#include "engine/collision/collision_manager.h"
+#include "engine/c_systems/sprite_batch.h"
+#include "engine/c_systems/collision_manager.h"
 #include "engine/math/color.h"
 #include "common/logging/logging.h"
 #include <cmath>

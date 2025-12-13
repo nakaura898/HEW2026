@@ -13,11 +13,11 @@
 #include "engine/input/input_manager.h"
 #include "common/logging/logging.h"
 #include "engine/scene/scene_manager.h"
-#include "engine/collision/collision_manager.h"
+#include "engine/c_systems/collision_manager.h"
 
 #include "scenes/test_scene.h"
 #include "dx11/graphics_context.h"
-#include "engine/graphics2d/sprite_batch.h"
+#include "engine/c_systems/sprite_batch.h"
 
 // シェーダーコンパイラ（グローバルインスタンス）
 static std::unique_ptr<D3DShaderCompiler> g_shaderCompiler;
