@@ -25,6 +25,13 @@ docs/
 
 # Claude Code設定
 CLAUDE.md
+.claudeignore
 
 #gemini cli設定
 GEMINI.md
+
+# Serena MCP (ローカル環境)
+.serena/
+
+# Windows残骸
+nul
