@@ -4,7 +4,7 @@
 //----------------------------------------------------------------------------
 #include "swap_chain.h"
 #include "graphics_device.h"
-#include "format/format.h"
+#include "gpu/format.h"
 #include "common/logging/logging.h"
 
 namespace

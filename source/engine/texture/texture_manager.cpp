@@ -9,7 +9,7 @@
 #include "dx11/graphics_device.h"
 #include "common/logging/logging.h"
 #include "dx11/graphics_context.h"
-#include "dx11/format/format.h"
+#include "dx11/gpu/format.h"
 #include "common/utility/hash.h"
 #include "dx11/view/shader_resource_view.h"
 #include "dx11/view/render_target_view.h"

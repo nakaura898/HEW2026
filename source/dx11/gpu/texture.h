@@ -6,7 +6,7 @@
 
 #include "dx11/gpu_common.h"
 #include "gpu_resource.h"
-#include "dx11/format/format.h"
+#include "dx11/gpu/format.h"
 
 //! テクスチャ次元
 enum class TextureDimension : uint32_t {
