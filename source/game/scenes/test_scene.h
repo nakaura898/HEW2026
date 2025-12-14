@@ -10,21 +10,10 @@
 #include "engine/component/sprite_renderer.h"
 #include "engine/component/camera2d.h"
 #include "engine/component/collider2d.h"
-#include "engine/component/animator.h"
 #include "dx11/gpu/texture.h"
+#include "game/player.h"
 #include <memory>
 #include <vector>
-
-//----------------------------------------------------------------------------
-//! @brief 矢の構造体
-//----------------------------------------------------------------------------
-struct Arrow
-{
-    Vector2 position;   //!< 位置
-    Vector2 velocity;   //!< 速度ベクトル
-    float rotation;     //!< 回転角度（ラジアン）
-    float lifetime;     //!< 残り生存時間
-};
 
 //----------------------------------------------------------------------------
 //! @brief テストシーン
@@ -45,11 +34,8 @@ private:
     std::unique_ptr<GameObject> cameraObj_;
     Camera2D* camera_ = nullptr;
 
-    // プレイヤー（衝突テスト用）
-    std::unique_ptr<GameObject> player_;
-    Transform2D* playerTransform_ = nullptr;
-    SpriteRenderer* playerSprite_ = nullptr;
-    Animator* playerAnimator_ = nullptr;
+    // プレイヤー
+    std::unique_ptr<Player> player_;
 
     // 背景
     std::unique_ptr<GameObject> background_;
@@ -61,16 +47,5 @@ private:
 
     // テスト用テクスチャ
     TexturePtr testTexture_;
-    TexturePtr playerTexture_;
     TexturePtr backgroundTexture_;
-
-    // 衝突カウント（デバッグ用）
-    int collisionCount_ = 0;
-
-    // 攻撃中フラグ
-    bool isAttacking_ = false;
-
-    // 矢
-    std::vector<Arrow> arrows_;
-    TexturePtr arrowTexture_;
 };
