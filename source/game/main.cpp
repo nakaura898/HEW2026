@@ -3,9 +3,6 @@
 //! @brief  ゲーム エントリーポイント
 //----------------------------------------------------------------------------
 #include "engine/platform/application.h"
-#include "engine/fs/file_system_manager.h"
-#include "engine/fs/path_utility.h"
-#include "common/logging/logging.h"
 #include "game.h"
 
 #include <Windows.h>
@@ -35,15 +32,6 @@ int WINAPI WinMain(
         return -1;
     }
 
-    // ログシステム初期化
-#ifdef _DEBUG
-    std::wstring projectRoot = FileSystemManager::GetProjectRoot();
-    std::wstring debugDir = PathUtility::normalizeW(projectRoot + L"debug");
-    FileSystemManager::CreateDirectories(debugDir);
-    std::wstring logPath = debugDir + L"/debug_log.txt";
-    LogSystem::Initialize(logPath);
-#endif
-
     // ゲーム初期化
     Game game;
     if (!game.Initialize()) {
@@ -57,9 +45,6 @@ int WINAPI WinMain(
     // 終了
     game.Shutdown();
     Application::Get().Shutdown();
-
-    // ログシステム終了
-    LogSystem::Shutdown();
 
     return 0;
 }

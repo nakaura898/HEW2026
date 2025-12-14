@@ -176,45 +176,32 @@ private:
 //----------------------------------------------------------------------------
 class LogSystem {
 private:
-    static inline ILogOutput* output_ = nullptr;
     static inline LogLevel minLevel_ = LogLevel::Debug;
+
 #ifdef _DEBUG
-    static inline std::unique_ptr<FullLogOutput> ownedOutput_;
+    //! @brief ログ出力インスタンス取得（遅延初期化）
+    static FullLogOutput& GetOutput() {
+        static FullLogOutput instance = []() {
+            FullLogOutput out;
+            // カレントディレクトリにdebugフォルダを作成
+            wchar_t cwd[MAX_PATH];
+            GetCurrentDirectoryW(MAX_PATH, cwd);
+            std::wstring debugDir = std::wstring(cwd) + L"\\debug";
+            CreateDirectoryW(debugDir.c_str(), nullptr);
+            std::wstring logPath = debugDir + L"\\debug_log.txt";
+            out.openFile(logPath);
+            return out;
+        }();
+        return instance;
+    }
+#else
+    static DebugLogOutput& GetOutput() {
+        static DebugLogOutput instance;
+        return instance;
+    }
 #endif
 
 public:
-    //! @brief ログシステム初期化（Debugビルドのみファイル出力有効）
-    //! @param logFilePath ログファイルパス（空の場合はファイル出力なし）
-    static void Initialize(const std::wstring& logFilePath = L"") {
-#ifdef _DEBUG
-        ownedOutput_ = std::make_unique<FullLogOutput>();
-        if (!logFilePath.empty()) {
-            ownedOutput_->openFile(logFilePath);
-        }
-        output_ = ownedOutput_.get();
-        LOG_INFO("=== ログ出力開始 ===");
-#else
-        (void)logFilePath;
-#endif
-    }
-
-    //! @brief ログシステム終了
-    static void Shutdown() {
-#ifdef _DEBUG
-        if (ownedOutput_) {
-            LOG_INFO("=== ログ出力終了 ===");
-            ownedOutput_->closeFile();
-            ownedOutput_.reset();
-        }
-        output_ = nullptr;
-#endif
-    }
-
-    // ログ出力先を設定（nullptr可）
-    static void setOutput(ILogOutput* output) {
-        output_ = output;
-    }
-
     // 最小ログレベルを設定
     static void setMinLevel(LogLevel level) {
         minLevel_ = level;
@@ -223,12 +210,6 @@ public:
     // ログ出力
     static void log(LogLevel level, const std::string& message, const std::source_location& loc = std::source_location::current()) {
         if (level < minLevel_) return;
-
-        // デフォルト出力先
-        if (!output_) {
-            static DebugLogOutput defaultOutput;
-            output_ = &defaultOutput;
-        }
 
         // フォーマット: [LEVEL] filename(line): message
         std::string levelStr;
@@ -250,7 +231,7 @@ public:
         snprintf(buffer, sizeof(buffer), "[%s] %s(%d): %s\n",
             levelStr.c_str(), filename.c_str(), loc.line(), message.c_str());
 
-        output_->write(level, std::string(buffer));
+        GetOutput().write(level, std::string(buffer));
     }
 };
 
