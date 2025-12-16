@@ -1,0 +1,37 @@
+# ビルド成果物
+build/
+bin/
+obj/
+
+# Visual Studio
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+.vs/
+
+# その他
+*.log
+*.bak
+*~
+
+# デバッグ出力（ルートのみ）
+/debug/
+
+# ドキュメント（ローカルのみ）
+docs/
+
+# Claude Code設定
+CLAUDE.md
+.claudeignore
+
+#gemini cli設定
+GEMINI.md
+
+# Serena MCP (ローカル環境)
+.serena/
+
+# Windows残骸
+nul
