@@ -1,0 +1,124 @@
+[16:57:07.949] [INFO] game.cpp(49): === ログ出力開始 ===
+[16:57:07.949] [INFO] game.cpp(62): [Game] Project root: C:\Users\toneh\OneDrive\デスクトップ\school\second\second semester\AT21\HEW2026/
+[16:57:07.949] [INFO] game.cpp(63): [Game] Assets root: C:\Users\toneh\OneDrive\デスクトップ\school\second\second semester\AT21\HEW2026/assets/
+[16:57:08.027] [INFO] sprite_batch.cpp(82): SpriteBatch: 初期化完了
+[16:57:08.027] [INFO] game.cpp(88): [Game] サブシステム初期化完了
+[16:57:08.110] [INFO] test_scene.cpp(166): [TestScene] 衝突判定テスト開始
+[16:57:08.113] [INFO] test_scene.cpp(167):   WASD: プレイヤー移動
+[16:57:08.113] [INFO] test_scene.cpp(168):   緑の四角を動かして赤/青の四角に当ててください
+[16:57:08.937] [INFO] test_scene.cpp(195): FPS: 163.262634
+[16:57:09.204] [INFO] test_scene.cpp(117): [Collision] Enter!
+[16:57:09.299] [INFO] test_scene.cpp(121): [Collision] Exit!
+[16:57:09.485] [INFO] test_scene.cpp(117): [Collision] Enter!
+[16:57:09.947] [INFO] test_scene.cpp(195): FPS: 93.744438
+[16:57:10.269] [INFO] test_scene.cpp(121): [Collision] Exit!
+[16:57:10.447] [INFO] test_scene.cpp(117): [Collision] Enter!
+[16:57:10.667] [INFO] test_scene.cpp(121): [Collision] Exit!
+[16:57:10.747] [INFO] test_scene.cpp(117): [Collision] Enter!
+[16:57:10.930] [INFO] test_scene.cpp(121): [Collision] Exit!
+[16:57:10.940] [INFO] test_scene.cpp(195): FPS: 493.145264
+[16:57:11.941] [INFO] test_scene.cpp(195): FPS: 320.297241
+[16:57:12.937] [INFO] test_scene.cpp(195): FPS: 719.476196
+[16:57:13.942] [INFO] test_scene.cpp(195): FPS: 886.996643
+[16:57:14.937] [INFO] test_scene.cpp(195): FPS: 875.043762
+[16:57:15.941] [INFO] test_scene.cpp(195): FPS: 1124.100708
+[16:57:16.940] [INFO] test_scene.cpp(195): FPS: 925.840210
+[16:57:17.947] [INFO] test_scene.cpp(195): FPS: 384.733765
+[16:57:18.942] [INFO] test_scene.cpp(195): FPS: 1003.915222
+[16:57:19.947] [INFO] test_scene.cpp(195): FPS: 3247.807861
+[16:57:20.947] [INFO] test_scene.cpp(195): FPS: 3187.759033
+[16:57:21.947] [INFO] test_scene.cpp(195): FPS: 723.379578
+[16:57:22.667] [INFO] test_scene.cpp(117): [Collision] Enter!
+[16:57:22.947] [INFO] test_scene.cpp(195): FPS: 1189.767944
+[16:57:22.967] [INFO] test_scene.cpp(121): [Collision] Exit!
+[16:57:23.949] [INFO] test_scene.cpp(195): FPS: 1788.908691
+[16:57:24.947] [INFO] test_scene.cpp(195): FPS: 3912.363037
+[16:57:25.947] [INFO] test_scene.cpp(195): FPS: 588.442993
+[16:57:26.937] [INFO] test_scene.cpp(195): FPS: 432.040100
+[16:57:27.947] [INFO] test_scene.cpp(195): FPS: 2177.226074
+[16:57:28.947] [INFO] test_scene.cpp(195): FPS: 3343.363281
+[16:57:29.947] [INFO] test_scene.cpp(195): FPS: 1213.886841
+[16:57:30.947] [INFO] test_scene.cpp(195): FPS: 860.289062
+[16:57:31.951] [INFO] test_scene.cpp(195): FPS: 1544.401611
+[16:57:32.177] [INFO] test_scene.cpp(117): [Collision] Enter!
+[16:57:32.467] [INFO] test_scene.cpp(121): [Collision] Exit!
+[16:57:32.750] [INFO] test_scene.cpp(117): [Collision] Enter!
+[16:57:32.948] [INFO] test_scene.cpp(195): FPS: 3190.810547
+[16:57:33.700] [INFO] test_scene.cpp(121): [Collision] Exit!
+[16:57:33.951] [INFO] test_scene.cpp(195): FPS: 2464.875488
+[16:57:34.947] [INFO] test_scene.cpp(195): FPS: 1553.036133
+[16:57:35.955] [INFO] test_scene.cpp(195): FPS: 2368.545654
+[16:57:36.959] [INFO] test_scene.cpp(195): FPS: 959.600769
+[16:57:37.957] [INFO] test_scene.cpp(195): FPS: 602.119446
+[16:57:38.957] [INFO] test_scene.cpp(195): FPS: 2252.759521
+[16:57:39.958] [INFO] test_scene.cpp(195): FPS: 301.268341
+[16:57:40.957] [INFO] test_scene.cpp(195): FPS: 652.613708
+[16:57:41.957] [INFO] test_scene.cpp(195): FPS: 1412.030518
+[16:57:42.960] [INFO] test_scene.cpp(195): FPS: 1138.174316
+[16:57:43.961] [INFO] test_scene.cpp(195): FPS: 1864.627930
+[16:57:44.617] [INFO] test_scene.cpp(117): [Collision] Enter!
+[16:57:44.958] [INFO] test_scene.cpp(195): FPS: 2866.972412
+[16:57:45.030] [INFO] test_scene.cpp(121): [Collision] Exit!
+[16:57:45.107] [INFO] test_scene.cpp(117): [Collision] Enter!
+[16:57:45.961] [INFO] test_scene.cpp(195): FPS: 2153.316162
+[16:57:46.051] [INFO] test_scene.cpp(121): [Collision] Exit!
+[16:57:46.957] [INFO] test_scene.cpp(195): FPS: 1526.950684
+[16:57:47.957] [INFO] test_scene.cpp(195): FPS: 1302.931519
+[16:57:48.957] [INFO] test_scene.cpp(195): FPS: 587.061157
+[16:57:49.957] [INFO] test_scene.cpp(195): FPS: 598.086121
+[16:57:50.959] [INFO] test_scene.cpp(195): FPS: 734.807861
+[16:57:51.957] [INFO] test_scene.cpp(195): FPS: 3282.994141
+[16:57:52.959] [INFO] test_scene.cpp(195): FPS: 398.295319
+[16:57:53.957] [INFO] test_scene.cpp(195): FPS: 918.779846
+[16:57:54.957] [INFO] test_scene.cpp(195): FPS: 1641.227661
+[16:57:55.517] [INFO] test_scene.cpp(117): [Collision] Enter!
+[16:57:55.934] [INFO] test_scene.cpp(121): [Collision] Exit!
+[16:57:55.959] [INFO] test_scene.cpp(195): FPS: 1539.882935
+[16:57:56.017] [INFO] test_scene.cpp(117): [Collision] Enter!
+[16:57:56.948] [INFO] test_scene.cpp(121): [Collision] Exit!
+[16:57:56.962] [INFO] test_scene.cpp(195): FPS: 4508.566406
+[16:57:57.957] [INFO] test_scene.cpp(195): FPS: 4464.285645
+[16:57:58.957] [INFO] test_scene.cpp(195): FPS: 3766.478271
+[16:57:59.714] [INFO] texture.cpp(271): [Texture] 解放開始: 32x32
+[16:57:59.714] [INFO] texture.cpp(277):   SRV解放
+[16:57:59.714] [INFO] texture.cpp(282):   Resource解放前Refcount: 1
+[16:57:59.714] [INFO] texture.cpp(286): [Texture] 解放完了
+[16:57:59.714] [INFO] texture.cpp(271): [Texture] 解放開始: 2000x2000
+[16:57:59.714] [INFO] texture.cpp(277):   SRV解放
+[16:57:59.714] [INFO] texture.cpp(282):   Resource解放前Refcount: 1
+[16:57:59.714] [INFO] texture.cpp(286): [Texture] 解放完了
+[16:57:59.714] [INFO] texture.cpp(271): [Texture] 解放開始: 1920x1080
+[16:57:59.714] [INFO] texture.cpp(277):   SRV解放
+[16:57:59.717] [INFO] texture.cpp(282):   Resource解放前Refcount: 1
+[16:57:59.717] [INFO] texture.cpp(286): [Texture] 解放完了
+[16:57:59.717] [INFO] texture.cpp(271): [Texture] 解放開始: 32x8
+[16:57:59.717] [INFO] texture.cpp(277):   SRV解放
+[16:57:59.717] [INFO] texture.cpp(282):   Resource解放前Refcount: 1
+[16:57:59.717] [INFO] texture.cpp(286): [Texture] 解放完了
+[16:57:59.717] [INFO] sprite_batch.cpp(159): SpriteBatch: シャットダウン完了
+[16:57:59.717] [INFO] game.cpp(120): [Game] シャットダウン完了
+[16:57:59.717] [INFO] renderer.cpp(128): [Renderer] 終了処理開始...
+[16:57:59.717] [INFO] renderer.cpp(129): [Renderer] depthBuffer use_count: 1
+[16:57:59.717] [INFO] renderer.cpp(130): [Renderer] colorBuffer use_count: 1
+[16:57:59.717] [INFO] texture.cpp(271): [Texture] 解放開始: 1280x720
+[16:57:59.717] [INFO] texture.cpp(275):   DSV解放
+[16:57:59.717] [INFO] texture.cpp(277):   SRV解放
+[16:57:59.717] [INFO] texture.cpp(282):   Resource解放前Refcount: 1
+[16:57:59.717] [INFO] texture.cpp(286): [Texture] 解放完了
+[16:57:59.717] [INFO] texture.cpp(271): [Texture] 解放開始: 1280x720
+[16:57:59.717] [INFO] texture.cpp(276):   RTV解放
+[16:57:59.717] [INFO] texture.cpp(277):   SRV解放
+[16:57:59.717] [INFO] texture.cpp(282):   Resource解放前Refcount: 1
+[16:57:59.717] [INFO] texture.cpp(286): [Texture] 解放完了
+[16:57:59.717] [INFO] swap_chain.cpp(115): [SwapChain] 解放開始
+[16:57:59.722] [INFO] swap_chain.cpp(119): [SwapChain] backBuffer解放
+[16:57:59.722] [INFO] texture.cpp(271): [Texture] 解放開始: 1280x720
+[16:57:59.722] [INFO] texture.cpp(276):   RTV解放
+[16:57:59.722] [INFO] texture.cpp(282):   Resource解放前Refcount: 1
+[16:57:59.722] [INFO] texture.cpp(286): [Texture] 解放完了
+[16:57:59.722] [INFO] swap_chain.cpp(125): [SwapChain] swapChain解放
+[16:57:59.722] [INFO] swap_chain.cpp(135): [SwapChain] 解放完了
+[16:57:59.722] [INFO] renderer.cpp(141): [Renderer] 終了処理完了
+[16:57:59.727] [INFO] graphics_device.cpp(71): [GraphicsDevice] ライブオブジェクトレポート:
+[16:57:59.785] [INFO] application.cpp(128): [Application] 終了処理完了
+[16:57:59.786] [INFO] game.cpp(127): === ログ出力終了 ===
