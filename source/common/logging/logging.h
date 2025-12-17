@@ -5,6 +5,7 @@
 #pragma once
 
 #include <Windows.h>
+#include <iostream>
 #include <string>
 #include <format>
 #include <source_location>
@@ -53,6 +54,45 @@ public:
             freopen_s(&fp, "CONOUT$", "w", stdout);
             freopen_s(&fp, "CONOUT$", "w", stderr);
             SetConsoleOutputCP(CP_UTF8);
+
+
+            //コンソール画面でのクイック編集モードの無効化
+            //ハンドル取得
+            HANDLE ConsoleHandle = GetStdHandle(STD_INPUT_HANDLE);
+            
+            //エラー処理　コンソールがない場合
+            if(ConsoleHandle == INVALID_HANDLE_VALUE)
+            {
+                LOG_INFO("コンソールハンドルが無効です");
+
+
+                return;
+            }
+            
+            DWORD ConsoleMode;
+            //コンソールモードの取得
+            if(!GetConsoleMode(ConsoleHandle,&ConsoleMode))
+            {
+                LOG_INFO("コンソールモードを取得できませんでした");
+                return;
+            }
+            
+            //ENABLE_QUICK_EDIT_MODEを取り除く
+            ConsoleMode &= ~ENABLE_QUICK_EDIT_MODE;
+
+            //ENABLE_EXTENDED_FLAGSを設定
+            ConsoleMode |= ENABLE_EXTENDED_FLAGS;
+
+            //コンソールモードの設定確認
+            if (!SetConsoleMode(ConsoleHandle, ConsoleMode))
+            {
+                // エラー処理
+                 LOG_INFO("コンソールモードを取得できませんでした");
+            }
+            else{
+                //コンソールモードの確認
+               LOG_INFO("現在のコンソールモードは : ConsoleMode");
+            }
         }
     }
 
