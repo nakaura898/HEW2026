@@ -209,19 +209,10 @@ void TestScene::OnEnter()
         FactionManager::Get().RegisterEntity(group.get());
     }
 
-    // 初期縁を作成（同種族同士を接続）
-    // ElfGroup1(0) <-> ElfGroup2(2)
+    // 初期縁を作成（騎士同士のみ接続、エルフは未接続）
     // KnightGroup1(1) <-> KnightGroup2(3)
-    LOG_INFO("[TestScene] Creating initial bonds (same species)...");
+    LOG_INFO("[TestScene] Creating initial bonds...");
     {
-        // エルフ同士
-        BondableEntity elf1 = enemyGroups_[0].get();  // ElfGroup1
-        BondableEntity elf2 = enemyGroups_[2].get();  // ElfGroup2
-        Bond* elfBond = BondManager::Get().CreateBond(elf1, elf2, BondType::Basic);
-        if (elfBond) {
-            LOG_INFO("  Bond: ElfGroup1 <-> ElfGroup2 (Elves)");
-        }
-
         // 騎士同士
         BondableEntity knight1 = enemyGroups_[1].get();  // KnightGroup1
         BondableEntity knight2 = enemyGroups_[3].get();  // KnightGroup2
@@ -451,7 +442,9 @@ void TestScene::HandleInput(float /*dt*/)
                 if (!collider) continue;
 
                 // コライダーAABBの交差判定
-                if (playerAABB.Intersects(collider->GetAABB())) {
+                AABB individualAABB = collider->GetAABB();
+                if (playerAABB.Intersects(individualAABB)) {
+                    LOG_INFO("[TestScene] Touch detected: " + individual->GetId());
                     BondableEntity entity = group.get();
                     // MarkEntityがFE消費、縁作成、モード終了を自動処理
                     bool created = BindSystem::Get().MarkEntity(entity);
