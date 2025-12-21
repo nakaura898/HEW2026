@@ -11,7 +11,6 @@ using DirectX::SimpleMath::Vector2;
 
 // 前方宣言
 class Individual;
-class Group;
 
 //----------------------------------------------------------------------------
 //! @brief 陣形スロット - 各個体の配置情報

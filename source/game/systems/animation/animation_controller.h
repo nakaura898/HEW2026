@@ -18,7 +18,9 @@ enum class AnimationState : uint8_t
     Idle,       //!< 待機（ループ、ロックなし）
     Walk,       //!< 移動（ループ、ロックなし）
     Attack,     //!< 攻撃（非ループ、ロックする）
-    Death       //!< 死亡（非ループ、ロックする）
+    Death,      //!< 死亡（非ループ、ロックする）
+
+    Count       //!< 状態の総数（配列サイズ用）
 };
 
 //----------------------------------------------------------------------------
@@ -104,7 +106,7 @@ private:
     bool wasPlaying_ = true;
 
     // 行番号マッピング（AnimationState -> Animator Row）
-    uint8_t rowMapping_[4] = { 0, 1, 2, 3 };  // デフォルト: Idle=0, Walk=1, Attack=2, Death=3
+    uint8_t rowMapping_[static_cast<size_t>(AnimationState::Count)] = { 0, 1, 2, 3 };  // デフォルト: Idle=0, Walk=1, Attack=2, Death=3
 
     // コールバック
     std::function<void()> onAnimationFinished_;

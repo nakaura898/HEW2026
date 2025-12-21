@@ -12,7 +12,7 @@ AnimationController::AnimationController() = default;
 void AnimationController::SetRowMapping(AnimationState state, uint8_t row)
 {
     uint8_t index = static_cast<uint8_t>(state);
-    if (index < 4) {
+    if (index < static_cast<uint8_t>(AnimationState::Count)) {
         rowMapping_[index] = row;
     }
 }

@@ -5,22 +5,18 @@
 #include "formation.h"
 #include "game/entities/individual.h"
 #include <cmath>
+#include <numbers>
 
 // 円周率
 namespace {
-    constexpr float kPi = 3.14159265358979323846f;
-    constexpr float kTwoPi = kPi * 2.0f;
+    constexpr float kTwoPi = std::numbers::pi_v<float> * 2.0f;
 }
 
 //----------------------------------------------------------------------------
-Formation::Formation()
-{
-}
+Formation::Formation() = default;
 
 //----------------------------------------------------------------------------
-Formation::~Formation()
-{
-}
+Formation::~Formation() = default;
 
 //----------------------------------------------------------------------------
 void Formation::Initialize(const std::vector<Individual*>& individuals, const Vector2& center)
