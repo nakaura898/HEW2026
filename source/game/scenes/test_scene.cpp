@@ -425,9 +425,11 @@ void TestScene::HandleInput(float /*dt*/)
 
     // 切モード中: プレイヤーが縁を通過したら切断
     // ※縁はコライダーを持たないためQueryLineSegmentを使用
-    if (CutSystem::Get().IsEnabled() && player_ && player_->GetCollider()) {
+    if (CutSystem::Get().IsEnabled() && player_ != nullptr && player_->GetCollider() != nullptr) {
         Collider2D* playerCollider = player_->GetCollider();
+        Bond* bondToCut = nullptr;
 
+        // 切断対象の縁を探す（反復中に削除しない）
         const std::vector<std::unique_ptr<Bond>>& bonds = BondManager::Get().GetAllBonds();
         for (const std::unique_ptr<Bond>& bond : bonds) {
             Vector2 posA = BondableHelper::GetPosition(bond->GetEntityA());
@@ -440,12 +442,17 @@ void TestScene::HandleInput(float /*dt*/)
             // プレイヤーのコライダーが含まれているか確認
             for (Collider2D* hitCollider : hits) {
                 if (hitCollider == playerCollider) {
-                    // CutSystemを通じて縁を切断（FE消費、硬直、絶縁、モード終了を自動処理）
-                    if (CutSystem::Get().CutBond(bond.get())) {
-                        LOG_INFO("[TestScene] Bond cut!");
-                        break;
-                    }
+                    bondToCut = bond.get();
+                    break;
                 }
+            }
+            if (bondToCut != nullptr) break;
+        }
+
+        // 反復完了後に切断（1フレームに1つまで）
+        if (bondToCut != nullptr) {
+            if (CutSystem::Get().CutBond(bondToCut)) {
+                LOG_INFO("[TestScene] Bond cut!");
             }
         }
     }
