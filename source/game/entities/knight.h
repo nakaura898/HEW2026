@@ -55,6 +55,10 @@ protected:
     void SetupCollider() override;
 
 private:
+    //! @brief 剣振りを開始（共通処理）
+    //! @param targetPos ターゲットの位置
+    void StartSwordSwing(const Vector2& targetPos);
+
     //! @brief 剣振りの当たり判定をチェック
     void CheckSwordHit();
 

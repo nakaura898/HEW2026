@@ -143,29 +143,12 @@ void Knight::Attack(Individual* target)
 {
     if (target == nullptr || !target->IsAlive()) return;
     if (!IsAlive()) return;
-    if (isSwinging_) return;  // 既に振っている場合は無視
 
     // ターゲットを保存（CheckSwordHitで使用）
     attackTarget_ = target;
-    playerTarget_ = nullptr;  // Individual攻撃時はPlayer無し
+    playerTarget_ = nullptr;
 
-    // 剣振り開始
-    isSwinging_ = true;
-    swingTimer_ = 0.0f;
-    swingAngle_ = kSwingStartAngle;
-    hasHitTarget_ = false;
-
-    // ターゲット方向を記録
-    Vector2 myPos = GetPosition();
-    Vector2 targetPos = target->GetPosition();
-    Vector2 diff = targetPos - myPos;
-    float length = diff.Length();
-    if (length > 0.001f) {
-        swingDirection_ = diff / length;
-    } else {
-        swingDirection_ = Vector2(1.0f, 0.0f);
-    }
-
+    StartSwordSwing(target->GetPosition());
     LOG_INFO("[Knight] " + id_ + " starts sword swing at " + target->GetId());
 }
 
@@ -174,30 +157,36 @@ void Knight::AttackPlayer(Player* target)
 {
     if (target == nullptr || !target->IsAlive()) return;
     if (!IsAlive()) return;
-    if (isSwinging_) return;  // 既に振っている場合は無視
 
     // ターゲットを保存（CheckSwordHitで使用）
-    attackTarget_ = nullptr;  // Player攻撃時はIndividual無し
+    attackTarget_ = nullptr;
     playerTarget_ = target;
 
-    // 剣振り開始
+    StartSwordSwing(target->GetPosition());
+    LOG_INFO("[Knight] " + id_ + " starts sword swing at Player");
+}
+
+//----------------------------------------------------------------------------
+void Knight::StartSwordSwing(const Vector2& targetPos)
+{
+    if (isSwinging_) return;
+
     isSwinging_ = true;
     swingTimer_ = 0.0f;
     swingAngle_ = kSwingStartAngle;
     hasHitTarget_ = false;
 
-    // ターゲット方向を記録
+    // ターゲット方向を計算
     Vector2 myPos = GetPosition();
-    Vector2 targetPos = target->GetPosition();
     Vector2 diff = targetPos - myPos;
     float length = diff.Length();
-    if (length > 0.001f) {
+
+    constexpr float kMinLength = 0.001f;
+    if (length > kMinLength) {
         swingDirection_ = diff / length;
     } else {
         swingDirection_ = Vector2(1.0f, 0.0f);
     }
-
-    LOG_INFO("[Knight] " + id_ + " starts sword swing at Player");
 }
 
 //----------------------------------------------------------------------------
