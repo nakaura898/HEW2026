@@ -9,6 +9,8 @@
 #include "game/entities/individual.h"
 #include "game/entities/player.h"
 #include "game/bond/bond_manager.h"
+#include "game/systems/event/event_bus.h"
+#include "game/systems/event/game_events.h"
 #include "common/logging/logging.h"
 #include <algorithm>
 
@@ -62,9 +64,21 @@ void CombatSystem::Update(float dt)
         }
     }
 
-    // 全滅チェック
+    // 全滅チェック（各グループにつき一度だけ処理）
     for (Group* group : groups_) {
         if (group && group->IsDefeated()) {
+            // 既に処理済みならスキップ
+            if (defeatedGroups_.count(group) > 0) continue;
+
+            // 処理済みとしてマーク
+            defeatedGroups_.insert(group);
+
+            LOG_INFO("[CombatSystem] Group defeated: " + group->GetId());
+
+            // EventBus通知
+            EventBus::Get().Publish(GroupDefeatedEvent{ group });
+
+            // コールバック
             if (onGroupDefeated_) {
                 onGroupDefeated_(group);
             }
@@ -98,6 +112,7 @@ void CombatSystem::UnregisterGroup(Group* group)
 void CombatSystem::ClearGroups()
 {
     groups_.clear();
+    defeatedGroups_.clear();
     LOG_INFO("[CombatSystem] All groups cleared");
 }
 

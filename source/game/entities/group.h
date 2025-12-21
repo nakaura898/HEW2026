@@ -5,6 +5,7 @@
 #pragma once
 
 #include "individual.h"
+#include "game/systems/movement/formation.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -12,6 +13,7 @@
 
 // 前方宣言
 class SpriteBatch;
+class GroupAI;
 
 //----------------------------------------------------------------------------
 //! @brief Groupクラス
@@ -128,6 +130,27 @@ public:
     [[nodiscard]] float GetMaxAttackRange() const;
 
     //------------------------------------------------------------------------
+    // Formation
+    //------------------------------------------------------------------------
+
+    //! @brief Formationを取得
+    [[nodiscard]] Formation& GetFormation() { return formation_; }
+    [[nodiscard]] const Formation& GetFormation() const { return formation_; }
+
+    //! @brief Formationを再構築（個体死亡時に呼び出す）
+    void RebuildFormation();
+
+    //------------------------------------------------------------------------
+    // AI参照
+    //------------------------------------------------------------------------
+
+    //! @brief GroupAI参照を取得
+    [[nodiscard]] GroupAI* GetAI() const { return ai_; }
+
+    //! @brief GroupAI参照を設定
+    void SetAI(GroupAI* ai) { ai_ = ai; }
+
+    //------------------------------------------------------------------------
     // コールバック
     //------------------------------------------------------------------------
 
@@ -156,6 +179,12 @@ private:
 
     // 状態
     bool isDefeated_ = false;
+
+    // 陣形
+    Formation formation_;
+
+    // AI参照（外部で管理）
+    GroupAI* ai_ = nullptr;
 
     // コールバック
     std::function<void(Group*)> onDefeated_;
