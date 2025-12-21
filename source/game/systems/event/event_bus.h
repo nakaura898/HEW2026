@@ -38,7 +38,9 @@ public:
     }
 
     void Invoke(const TEvent& event) {
-        for (auto& [id, callback] : callbacks_) {
+        // コールバック中の変更に備えてコピー
+        auto callbacksCopy = callbacks_;
+        for (auto& [id, callback] : callbacksCopy) {
             callback(event);
         }
     }
