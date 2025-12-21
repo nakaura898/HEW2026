@@ -10,6 +10,7 @@
 #include "engine/component/animator.h"
 #include "engine/component/collider2d.h"
 #include "dx11/gpu/texture.h"
+#include "game/systems/animation/animation_controller.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -122,6 +123,34 @@ public:
     //! @brief 行動状態設定
     void SetAction(IndividualAction action) { action_ = action; }
 
+    //------------------------------------------------------------------------
+    // 状態管理（IndividualAction）
+    //------------------------------------------------------------------------
+
+    //! @brief 行動状態を更新（グループ状態・射程から決定）
+    void UpdateAction();
+
+    //! @brief 目標速度を計算（行動状態に基づく）
+    void UpdateDesiredVelocity();
+
+    //! @brief 攻撃ターゲットを取得
+    [[nodiscard]] Individual* GetAttackTarget() const { return attackTarget_; }
+
+    //! @brief 攻撃ターゲットを設定
+    void SetAttackTarget(Individual* target) { attackTarget_ = target; }
+
+    //! @brief 攻撃ターゲットを選択（ターゲットGroupからランダム）
+    void SelectAttackTarget();
+
+    //! @brief 攻撃中か判定
+    [[nodiscard]] bool IsAttacking() const { return isAttacking_; }
+
+    //! @brief 攻撃開始
+    void StartAttack();
+
+    //! @brief 攻撃終了
+    void EndAttack();
+
     //! @brief Transform2D取得
     [[nodiscard]] Transform2D* GetTransform() const { return transform_; }
 
@@ -168,12 +197,19 @@ public:
     //! @brief 分離力を設定
     void SetSeparationForce(float force) { separationForce_ = force; }
 
+    //! @brief AnimationController取得
+    [[nodiscard]] AnimationController& GetAnimationController() { return animationController_; }
+    [[nodiscard]] const AnimationController& GetAnimationController() const { return animationController_; }
+
 protected:
     //! @brief テクスチャをセットアップ（派生クラスで実装）
     virtual void SetupTexture() = 0;
 
     //! @brief アニメーションをセットアップ（派生クラスで実装）
     virtual void SetupAnimator();
+
+    //! @brief AnimationControllerをセットアップ（派生クラスでオーバーライド可）
+    virtual void SetupAnimationController();
 
     //! @brief コライダーをセットアップ
     virtual void SetupCollider();
@@ -202,6 +238,10 @@ protected:
 
     // 状態
     IndividualAction action_ = IndividualAction::Idle;
+    bool isAttacking_ = false;          //!< 攻撃モーション中
+
+    // 攻撃ターゲット
+    Individual* attackTarget_ = nullptr; //!< 攻撃対象の個体
 
     // 移動
     Vector2 desiredVelocity_ = Vector2::Zero;
@@ -215,4 +255,7 @@ protected:
     int animRows_ = 1;
     int animCols_ = 1;
     int animFrameInterval_ = 6;
+
+    // AnimationController
+    AnimationController animationController_;
 };

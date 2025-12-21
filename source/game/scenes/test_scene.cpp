@@ -28,6 +28,8 @@
 #include "game/systems/stagger_system.h"
 #include "game/systems/insulation_system.h"
 #include "game/systems/faction_manager.h"
+#include "game/systems/event/event_bus.h"
+#include "game/systems/event/game_events.h"
 
 //----------------------------------------------------------------------------
 void TestScene::OnEnter()
@@ -79,7 +81,6 @@ void TestScene::OnEnter()
     // 敵グループ1: Elfグループ（左上）
     {
         std::unique_ptr<Group> group = std::make_unique<Group>("ElfGroup1");
-        group->Initialize(Vector2(200.0f, 150.0f));
         group->SetBaseThreat(80.0f);
         group->SetDetectionRange(1500.0f);  // 画面全体をカバー
 
@@ -90,11 +91,15 @@ void TestScene::OnEnter()
             group->AddIndividual(std::move(elf));
         }
 
+        // 個体追加後にFormation初期化
+        group->Initialize(Vector2(200.0f, 150.0f));
+
         // AI作成
         std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
         ai->SetPlayer(player_.get());
         ai->SetCamera(camera_);
         ai->SetDetectionRange(1500.0f);  // 画面全体をカバー
+        group->SetAI(ai.get());  // GroupにAI参照をセット
         groupAIs_.push_back(std::move(ai));
 
         // システムに登録
@@ -107,7 +112,6 @@ void TestScene::OnEnter()
     // 敵グループ2: Knightグループ（右上）
     {
         std::unique_ptr<Group> group = std::make_unique<Group>("KnightGroup1");
-        group->Initialize(Vector2(screenWidth_ - 200.0f, 150.0f));
         group->SetBaseThreat(120.0f);
         group->SetDetectionRange(1500.0f);  // 画面全体をカバー
 
@@ -119,10 +123,14 @@ void TestScene::OnEnter()
             group->AddIndividual(std::move(knight));
         }
 
+        // 個体追加後にFormation初期化
+        group->Initialize(Vector2(screenWidth_ - 200.0f, 150.0f));
+
         std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
         ai->SetPlayer(player_.get());
         ai->SetCamera(camera_);
         ai->SetDetectionRange(1500.0f);  // 画面全体をカバー
+        group->SetAI(ai.get());  // GroupにAI参照をセット
         groupAIs_.push_back(std::move(ai));
 
         CombatSystem::Get().RegisterGroup(group.get());
@@ -134,7 +142,6 @@ void TestScene::OnEnter()
     // 敵グループ3: Elfグループ（左下）
     {
         std::unique_ptr<Group> group = std::make_unique<Group>("ElfGroup2");
-        group->Initialize(Vector2(200.0f, screenHeight_ - 150.0f));
         group->SetBaseThreat(60.0f);
         group->SetDetectionRange(1500.0f);  // 画面全体をカバー
 
@@ -144,10 +151,14 @@ void TestScene::OnEnter()
             group->AddIndividual(std::move(elf));
         }
 
+        // 個体追加後にFormation初期化
+        group->Initialize(Vector2(200.0f, screenHeight_ - 150.0f));
+
         std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
         ai->SetPlayer(player_.get());
         ai->SetCamera(camera_);
         ai->SetDetectionRange(1500.0f);  // 画面全体をカバー
+        group->SetAI(ai.get());  // GroupにAI参照をセット
         groupAIs_.push_back(std::move(ai));
 
         CombatSystem::Get().RegisterGroup(group.get());
@@ -159,7 +170,6 @@ void TestScene::OnEnter()
     // 敵グループ4: Knightグループ（右下）
     {
         std::unique_ptr<Group> group = std::make_unique<Group>("KnightGroup2");
-        group->Initialize(Vector2(screenWidth_ - 200.0f, screenHeight_ - 150.0f));
         group->SetBaseThreat(100.0f);
         group->SetDetectionRange(1500.0f);  // 画面全体をカバー
 
@@ -170,10 +180,14 @@ void TestScene::OnEnter()
             group->AddIndividual(std::move(knight));
         }
 
+        // 個体追加後にFormation初期化
+        group->Initialize(Vector2(screenWidth_ - 200.0f, screenHeight_ - 150.0f));
+
         std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
         ai->SetPlayer(player_.get());
         ai->SetCamera(camera_);
         ai->SetDetectionRange(1500.0f);  // 画面全体をカバー
+        group->SetAI(ai.get());  // GroupにAI参照をセット
         groupAIs_.push_back(std::move(ai));
 
         CombatSystem::Get().RegisterGroup(group.get());
@@ -263,11 +277,18 @@ void TestScene::OnEnter()
             LOG_INFO("[TestScene] TEST: Shot arrow at player!");
         }
     }
+
+    // EventBus購読を設定
+    SetupEventSubscriptions();
 }
 
 //----------------------------------------------------------------------------
 void TestScene::OnExit()
 {
+    // EventBus購読解除
+    EventBus::Get().Clear();
+    eventSubscriptions_.clear();
+
     // システムクリア
     ArrowManager::Get().Clear();
     CombatSystem::Get().ClearGroups();
@@ -583,6 +604,14 @@ void TestScene::DrawBonds()
     const std::vector<std::unique_ptr<Bond>>& bonds = BondManager::Get().GetAllBonds();
 
     for (const std::unique_ptr<Bond>& bond : bonds) {
+        // 全滅したグループの縁は描画しない
+        if (Group* groupA = BondableHelper::AsGroup(bond->GetEntityA())) {
+            if (groupA->IsDefeated()) continue;
+        }
+        if (Group* groupB = BondableHelper::AsGroup(bond->GetEntityB())) {
+            if (groupB->IsDefeated()) continue;
+        }
+
         Vector2 posA = BondableHelper::GetPosition(bond->GetEntityA());
         Vector2 posB = BondableHelper::GetPosition(bond->GetEntityB());
 
@@ -681,4 +710,65 @@ void TestScene::LogAIStatus()
 
     // 縁の数
     LOG_INFO("  Bonds: " + std::to_string(BondManager::Get().GetAllBonds().size()));
+}
+
+//----------------------------------------------------------------------------
+void TestScene::SetupEventSubscriptions()
+{
+    // 結モード変更
+    eventSubscriptions_.push_back(
+        EventBus::Get().Subscribe<BindModeChangedEvent>([](const BindModeChangedEvent& e) {
+            LOG_INFO("[EventBus] BindMode: " + std::string(e.enabled ? "ON" : "OFF"));
+        })
+    );
+
+    // 切モード変更
+    eventSubscriptions_.push_back(
+        EventBus::Get().Subscribe<CutModeChangedEvent>([](const CutModeChangedEvent& e) {
+            LOG_INFO("[EventBus] CutMode: " + std::string(e.enabled ? "ON" : "OFF"));
+        })
+    );
+
+    // エンティティマーク
+    eventSubscriptions_.push_back(
+        EventBus::Get().Subscribe<EntityMarkedEvent>([](const EntityMarkedEvent& e) {
+            LOG_INFO("[EventBus] Entity marked: " + BondableHelper::GetId(e.entity));
+        })
+    );
+
+    // 縁作成
+    eventSubscriptions_.push_back(
+        EventBus::Get().Subscribe<BondCreatedEvent>([](const BondCreatedEvent& e) {
+            LOG_INFO("[EventBus] Bond created: " +
+                     BondableHelper::GetId(e.entityA) + " <-> " +
+                     BondableHelper::GetId(e.entityB));
+            FactionManager::Get().RebuildFactions();
+        })
+    );
+
+    // 縁削除
+    eventSubscriptions_.push_back(
+        EventBus::Get().Subscribe<BondRemovedEvent>([](const BondRemovedEvent& e) {
+            LOG_INFO("[EventBus] Bond removed: " +
+                     BondableHelper::GetId(e.entityA) + " <-> " +
+                     BondableHelper::GetId(e.entityB));
+            FactionManager::Get().RebuildFactions();
+        })
+    );
+
+    // グループ全滅
+    eventSubscriptions_.push_back(
+        EventBus::Get().Subscribe<GroupDefeatedEvent>([](const GroupDefeatedEvent& e) {
+            LOG_INFO("[EventBus] Group defeated: " + e.group->GetId());
+
+            // 全滅したグループの縁を全て削除
+            BondableEntity entity = e.group;
+            BondManager::Get().RemoveAllBondsFor(entity);
+
+            // 陣営再構築
+            FactionManager::Get().RebuildFactions();
+        })
+    );
+
+    LOG_INFO("[TestScene] EventBus subscriptions registered");
 }

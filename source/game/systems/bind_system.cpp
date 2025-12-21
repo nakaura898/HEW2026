@@ -8,6 +8,8 @@
 #include "fe_system.h"
 #include "insulation_system.h"
 #include "game/bond/bond_manager.h"
+#include "game/systems/event/event_bus.h"
+#include "game/systems/event/game_events.h"
 #include "common/logging/logging.h"
 
 //----------------------------------------------------------------------------
@@ -35,6 +37,9 @@ void BindSystem::Enable()
 
     LOG_INFO("[BindSystem] Bind mode enabled");
 
+    // EventBus通知
+    EventBus::Get().Publish(BindModeChangedEvent{ true });
+
     if (onModeChanged_) {
         onModeChanged_(true);
     }
@@ -52,6 +57,9 @@ void BindSystem::Disable()
     TimeManager::Get().Resume();
 
     LOG_INFO("[BindSystem] Bind mode disabled");
+
+    // EventBus通知
+    EventBus::Get().Publish(BindModeChangedEvent{ false });
 
     if (onModeChanged_) {
         onModeChanged_(false);
@@ -78,6 +86,9 @@ bool BindSystem::MarkEntity(BondableEntity entity)
         markedEntity_ = entity;
 
         LOG_INFO("[BindSystem] Entity marked: " + BondableHelper::GetId(entity));
+
+        // EventBus通知
+        EventBus::Get().Publish(EntityMarkedEvent{ entity });
 
         if (onEntityMarked_) {
             onEntityMarked_(entity);
@@ -114,6 +125,9 @@ bool BindSystem::MarkEntity(BondableEntity entity)
     if (bond) {
         LOG_INFO("[BindSystem] Bond created between " +
                  BondableHelper::GetId(first) + " and " + BondableHelper::GetId(entity));
+
+        // EventBus通知
+        EventBus::Get().Publish(BondCreatedEvent{ first, entity, bond });
 
         if (onBondCreated_) {
             onBondCreated_(first, entity);

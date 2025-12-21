@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <functional>
+#include <set>
 
 // 前方宣言
 class Group;
@@ -101,6 +102,7 @@ private:
     void ProcessCombatAgainstPlayer(Group* attacker, float dt);
 
     std::vector<Group*> groups_;    //!< 登録されたグループ
+    std::set<Group*> defeatedGroups_;  //!< 既に全滅処理済みのグループ
     Player* player_ = nullptr;      //!< プレイヤー参照
 
     float attackInterval_ = 0.3f;   //!< 攻撃間隔（0.3秒）

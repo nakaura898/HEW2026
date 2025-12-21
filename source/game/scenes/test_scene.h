@@ -17,6 +17,7 @@
 #include "game/bond/bondable_entity.h"
 #include <memory>
 #include <vector>
+#include <cstdint>
 
 //----------------------------------------------------------------------------
 //! @brief テストシーン - A-RAS!ゲームプロトタイプ
@@ -83,4 +84,10 @@ private:
     // 画面サイズ
     float screenWidth_ = 0.0f;
     float screenHeight_ = 0.0f;
+
+    // EventBus購読ID
+    std::vector<uint32_t> eventSubscriptions_;
+
+    // EventBus購読を設定
+    void SetupEventSubscriptions();
 };

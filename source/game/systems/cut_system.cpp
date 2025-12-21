@@ -10,6 +10,8 @@
 #include "insulation_system.h"
 #include "game/bond/bond_manager.h"
 #include "game/entities/group.h"
+#include "game/systems/event/event_bus.h"
+#include "game/systems/event/game_events.h"
 #include "common/logging/logging.h"
 
 //----------------------------------------------------------------------------
@@ -37,6 +39,9 @@ void CutSystem::Enable()
 
     LOG_INFO("[CutSystem] Cut mode enabled");
 
+    // EventBus通知
+    EventBus::Get().Publish(CutModeChangedEvent{ true });
+
     if (onModeChanged_) {
         onModeChanged_(true);
     }
@@ -54,6 +59,9 @@ void CutSystem::Disable()
     TimeManager::Get().Resume();
 
     LOG_INFO("[CutSystem] Cut mode disabled");
+
+    // EventBus通知
+    EventBus::Get().Publish(CutModeChangedEvent{ false });
 
     if (onModeChanged_) {
         onModeChanged_(false);
@@ -130,6 +138,9 @@ bool CutSystem::CutBond(Bond* bond)
 
         // 絶縁を追加
         InsulationSystem::Get().AddInsulation(a, b);
+
+        // EventBus通知
+        EventBus::Get().Publish(BondRemovedEvent{ a, b });
 
         if (onBondCut_) {
             onBondCut_(a, b);

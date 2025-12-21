@@ -24,11 +24,17 @@ Group::~Group()
 //----------------------------------------------------------------------------
 void Group::Initialize(const Vector2& centerPosition)
 {
-    // 初期位置を設定（個体がいれば相対配置）
-    // 個体の配置は後でFormationシステムが担当
-    (void)centerPosition;  // TODO: Formation実装後に使用
+    // Formationを初期化
+    std::vector<Individual*> individuals = GetAliveIndividuals();
+    formation_.Initialize(individuals, centerPosition);
 
-    LOG_INFO("[Group] " + id_ + " initialized");
+    // 個体を初期位置に配置
+    for (Individual* individual : individuals) {
+        Vector2 slotPos = formation_.GetSlotPosition(individual);
+        individual->SetPosition(slotPos);
+    }
+
+    LOG_INFO("[Group] " + id_ + " initialized with " + std::to_string(individuals.size()) + " individuals");
 }
 
 //----------------------------------------------------------------------------
@@ -214,6 +220,13 @@ float Group::GetMaxAttackRange() const
         }
     }
     return maxRange;
+}
+
+//----------------------------------------------------------------------------
+void Group::RebuildFormation()
+{
+    std::vector<Individual*> alive = GetAliveIndividuals();
+    formation_.Rebuild(alive);
 }
 
 //----------------------------------------------------------------------------

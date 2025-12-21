@@ -22,8 +22,8 @@ Player::~Player()
 //----------------------------------------------------------------------------
 void Player::Initialize(const Vector2& position)
 {
-    // テクスチャロード（エルフスプライトを使用）
-    texture_ = TextureManager::Get().LoadTexture2D("elf_sprite.png");
+    // テクスチャロード
+    texture_ = TextureManager::Get().LoadTexture2D("player.png");
 
     // GameObject作成
     gameObject_ = std::make_unique<GameObject>("Player");
@@ -38,22 +38,15 @@ void Player::Initialize(const Vector2& position)
     sprite_->SetTexture(texture_.get());
     sprite_->SetSortingLayer(20);  // 他より手前
 
-    // Animator
-    animator_ = gameObject_->AddComponent<Animator>(kAnimRows, kAnimCols, 6);
-
-    // Pivot設定
+    // Pivot設定（テクスチャ全体を使用、中心基点）
     if (texture_) {
-        float frameWidth = static_cast<float>(texture_->Width()) / kAnimCols;
-        float frameHeight = static_cast<float>(texture_->Height()) / kAnimRows;
-        sprite_->SetPivotFromCenter(frameWidth, frameHeight, 0.0f, 0.0f);
+        float texWidth = static_cast<float>(texture_->Width());
+        float texHeight = static_cast<float>(texture_->Height());
+        sprite_->SetPivotFromCenter(texWidth, texHeight, 0.0f, 0.0f);
     }
 
-    // アニメーション設定
-    animator_->SetRowFrameCount(0, 1, 12);   // Idle: 1フレーム
-    animator_->SetRowFrameCount(1, 4, 6);    // Walk: 4フレーム
-    animator_->SetRowFrameCount(2, 3, 8);    // Attack: 3フレーム（未使用）
-    animator_->SetRowFrameCount(3, 2, 10);   // Death: 2フレーム
-    animator_->SetRow(0);  // 初期はIdle
+    // Animatorなし（静止画1枚のみ）
+    animator_ = nullptr;
 
     // Collider
     collider_ = gameObject_->AddComponent<Collider2D>();
