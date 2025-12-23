@@ -38,3 +38,16 @@ bool Bond::Connects(const BondableEntity& a, const BondableEntity& b) const
     return (BondableHelper::IsSame(entityA_, a) && BondableHelper::IsSame(entityB_, b)) ||
            (BondableHelper::IsSame(entityA_, b) && BondableHelper::IsSame(entityB_, a));
 }
+
+//----------------------------------------------------------------------------
+float Bond::GetMaxDistance(BondType type)
+{
+    switch (type) {
+        case BondType::Love:
+            return 300.0f;  // ラブ縁は300まで
+        case BondType::Basic:
+        case BondType::Friends:
+        default:
+            return 0.0f;    // 無制限
+    }
+}

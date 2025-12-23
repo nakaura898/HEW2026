@@ -4,6 +4,7 @@
 //----------------------------------------------------------------------------
 #pragma once
 
+#include "game/bond/bond.h"
 #include "game/bond/bondable_entity.h"
 #include <functional>
 #include <optional>
@@ -73,6 +74,16 @@ public:
     void SetBindCost(float cost) { bindCost_ = cost; }
 
     //------------------------------------------------------------------------
+    // 縁タイプ選択
+    //------------------------------------------------------------------------
+
+    //! @brief 次に作成する縁のタイプを取得
+    [[nodiscard]] BondType GetPendingBondType() const { return pendingBondType_; }
+
+    //! @brief 次に作成する縁のタイプを設定
+    void SetPendingBondType(BondType type) { pendingBondType_ = type; }
+
+    //------------------------------------------------------------------------
     // コールバック
     //------------------------------------------------------------------------
 
@@ -97,6 +108,7 @@ private:
     bool isEnabled_ = false;                            //!< モード有効フラグ
     std::optional<BondableEntity> markedEntity_;        //!< マーク済みエンティティ
     float bindCost_ = 20.0f;                            //!< 縁を結ぶFEコスト
+    BondType pendingBondType_ = BondType::Basic;        //!< 次に作成する縁のタイプ
 
     // コールバック
     std::function<void(bool)> onModeChanged_;

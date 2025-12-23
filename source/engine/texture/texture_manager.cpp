@@ -743,16 +743,6 @@ TexturePtr TextureManager::CompressToBC3(Texture* source)
     const uint8_t* srcPtr = static_cast<const uint8_t*>(mapped.pData);
     uint8_t* dstPtr = img->pixels;
 
-    // デバッグ: 中央付近のピクセル値を出力
-    uint32_t midY = height / 2;
-    uint32_t midX = width / 2;
-    const uint8_t* debugPixel = srcPtr + midY * mapped.RowPitch + midX * 4;
-    LOG_INFO("[BC3 Debug] Center pixel RGBA: " +
-        std::to_string(debugPixel[0]) + ", " +
-        std::to_string(debugPixel[1]) + ", " +
-        std::to_string(debugPixel[2]) + ", " +
-        std::to_string(debugPixel[3]));
-
     for (uint32_t y = 0; y < height; ++y) {
         const uint8_t* srcRow = srcPtr + y * mapped.RowPitch;
         uint8_t* dstRow = dstPtr + y * img->rowPitch;

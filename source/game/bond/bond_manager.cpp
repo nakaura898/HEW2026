@@ -36,6 +36,9 @@ Bond* BondManager::CreateBond(BondableEntity a, BondableEntity b, BondType type)
     Bond* bondPtr = bond.get();
     bonds_.push_back(std::move(bond));
 
+    // キャッシュを再構築
+    RebuildCache();
+
     LOG_INFO("[BondManager] Bond created: " +
              BondableHelper::GetId(a) + " <-> " + BondableHelper::GetId(b));
 
@@ -63,6 +66,9 @@ bool BondManager::RemoveBond(Bond* bond)
                  BondableHelper::GetId(a) + " <-> " + BondableHelper::GetId(b));
 
         bonds_.erase(it);
+
+        // キャッシュを再構築
+        RebuildCache();
 
         // コールバック呼び出し
         if (onBondRemoved_) {
@@ -95,7 +101,30 @@ void BondManager::RemoveAllBondsFor(const BondableEntity& entity)
 void BondManager::Clear()
 {
     bonds_.clear();
+    entityBondsCache_.clear();
+    typeBondsCache_.clear();
     LOG_INFO("[BondManager] All bonds cleared");
+}
+
+//----------------------------------------------------------------------------
+void BondManager::RebuildCache()
+{
+    entityBondsCache_.clear();
+    typeBondsCache_.clear();
+
+    for (const std::unique_ptr<Bond>& bond : bonds_) {
+        Bond* bondPtr = bond.get();
+
+        // エンティティ別キャッシュ
+        std::string idA = BondableHelper::GetId(bond->GetEntityA());
+        std::string idB = BondableHelper::GetId(bond->GetEntityB());
+        entityBondsCache_[idA].push_back(bondPtr);
+        entityBondsCache_[idB].push_back(bondPtr);
+
+        // タイプ別キャッシュ
+        int typeInt = static_cast<int>(bond->GetType());
+        typeBondsCache_[typeInt].push_back(bondPtr);
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -118,13 +147,25 @@ Bond* BondManager::GetBond(const BondableEntity& a, const BondableEntity& b) con
 //----------------------------------------------------------------------------
 std::vector<Bond*> BondManager::GetBondsFor(const BondableEntity& entity) const
 {
-    std::vector<Bond*> result;
-    for (const std::unique_ptr<Bond>& bond : bonds_) {
-        if (bond->Involves(entity)) {
-            result.push_back(bond.get());
-        }
+    // キャッシュからO(1)で取得
+    std::string id = BondableHelper::GetId(entity);
+    auto it = entityBondsCache_.find(id);
+    if (it != entityBondsCache_.end()) {
+        return it->second;
     }
-    return result;
+    return {};
+}
+
+//----------------------------------------------------------------------------
+std::vector<Bond*> BondManager::GetBondsByType(BondType type) const
+{
+    // キャッシュからO(1)で取得
+    int typeInt = static_cast<int>(type);
+    auto it = typeBondsCache_.find(typeInt);
+    if (it != typeBondsCache_.end()) {
+        return it->second;
+    }
+    return {};
 }
 
 //----------------------------------------------------------------------------

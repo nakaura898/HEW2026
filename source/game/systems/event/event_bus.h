@@ -11,7 +11,6 @@
 #include <memory>
 #include <cstdint>
 #include <mutex>
-#include <shared_mutex>
 
 //----------------------------------------------------------------------------
 //! @brief イベントハンドラの基底クラス

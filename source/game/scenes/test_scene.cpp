@@ -3,7 +3,9 @@
 //! @brief  テストシーン実装 - A-RAS!ゲームプロトタイプ
 //----------------------------------------------------------------------------
 #include "test_scene.h"
+#include "result_scene.h"
 #include "dx11/graphics_context.h"
+#include "engine/scene/scene_manager.h"
 #include "engine/platform/renderer.h"
 #include "engine/platform/application.h"
 #include "engine/texture/texture_manager.h"
@@ -32,6 +34,9 @@
 #include "game/systems/faction_manager.h"
 #include "game/systems/event/event_bus.h"
 #include "game/systems/event/game_events.h"
+#include "game/ui/radial_menu.h"
+#include "game/systems/love_bond_system.h"
+#include <set>
 
 //----------------------------------------------------------------------------
 void TestScene::OnEnter()
@@ -43,7 +48,7 @@ void TestScene::OnEnter()
 
     // カメラ作成
     cameraObj_ = std::make_unique<GameObject>("MainCamera");
-    cameraObj_->AddComponent<Transform2D>(Vector2(screenWidth_ * 0.5f, screenHeight_ * 0.5f));
+    cameraObj_->AddComponent<Transform2D>(Vector2(2000.0f, 2000.0f));  // マップ中央
     camera_ = cameraObj_->AddComponent<Camera2D>(screenWidth_, screenHeight_);
 
     // UI用白テクスチャ作成
@@ -56,131 +61,93 @@ void TestScene::OnEnter()
         32 * sizeof(uint32_t)
     );
 
-    // ステージ背景初期化（画面の4倍サイズ）
-    float stageWidth = screenWidth_ * 4.0f;   // 5120
-    float stageHeight = screenHeight_ * 4.0f; // 2880
+    // ステージ背景初期化
+    float stageWidth = 4000.0f;
+    float stageHeight = 4000.0f;
     stageBackground_.Initialize("stage1", stageWidth, stageHeight);
 
-    // プレイヤー作成（画面中央）
+    // プレイヤー作成（マップ中央）
     player_ = std::make_unique<Player>();
-    player_->Initialize(Vector2(screenWidth_ * 0.5f, screenHeight_ * 0.5f));
+    player_->Initialize(Vector2(2000.0f, 2000.0f));
 
-    // 敵グループ1: Elfグループ（左上）
-    {
-        std::unique_ptr<Group> group = std::make_unique<Group>("ElfGroup1");
-        group->SetBaseThreat(80.0f);
-        group->SetDetectionRange(300.0f);  // デバッグ用に小さめ
+    // 6陣営を配置（各陣営: 3グループ×4個体、縁で接続）
+    // 陣営の中心位置（マップ周辺に配置、中央はプレイヤー）
+    // type: 0=エルフのみ, 1=騎士のみ, 2=混合
+    struct FactionPos { float x; float y; Color color; int type; };
+    // グループオフセット(±250,±220)を考慮
+    // 4000x4000マップ、中央(2000,2000)にプレイヤー
+    // 6陣営を六角形状に配置
+    FactionPos factionPositions[6] = {
+        { 2000.0f, 800.0f,  Color(1.0f, 0.3f, 0.3f, 1.0f), 1 },  // 上（赤）騎士
+        { 3000.0f, 1400.0f, Color(1.0f, 0.6f, 0.2f, 1.0f), 0 },  // 右上（オレンジ）エルフ
+        { 3000.0f, 2600.0f, Color(1.0f, 1.0f, 0.3f, 1.0f), 2 },  // 右下（黄）混合
+        { 2000.0f, 3200.0f, Color(0.3f, 1.0f, 0.3f, 1.0f), 1 },  // 下（緑）騎士
+        { 1000.0f, 2600.0f, Color(0.3f, 0.5f, 1.0f, 1.0f), 0 },  // 左下（青）エルフ
+        { 1000.0f, 1400.0f, Color(0.7f, 0.3f, 1.0f, 1.0f), 2 },  // 左上（紫）混合
+    };
 
-        // Elf個体を3体追加
-        for (int i = 0; i < 3; ++i) {
-            std::unique_ptr<Elf> elf = std::make_unique<Elf>("Elf1_" + std::to_string(i));
-            elf->Initialize(Vector2(180.0f + i * 40.0f, 130.0f + i * 20.0f));
-            group->AddIndividual(std::move(elf));
+    // グループ内オフセット（三角形配置・広め）
+    Vector2 groupOffsets[3] = {
+        Vector2(0.0f, -250.0f),    // 上
+        Vector2(-220.0f, 150.0f),  // 左下
+        Vector2(220.0f, 150.0f),   // 右下
+    };
+
+    for (int f = 0; f < 6; ++f) {
+        FactionPos& fpos = factionPositions[f];
+        std::string factionName = "Faction" + std::to_string(f + 1);
+
+        // 3グループ作成
+        for (int g = 0; g < 3; ++g) {
+            std::string groupId = factionName + "_G" + std::to_string(g + 1);
+            std::unique_ptr<Group> group = std::make_unique<Group>(groupId);
+            group->SetBaseThreat(80.0f + static_cast<float>(f * 5));
+            group->SetDetectionRange(500.0f);
+
+            Vector2 groupCenter(fpos.x + groupOffsets[g].x, fpos.y + groupOffsets[g].y);
+
+            // 4個体追加
+            for (int i = 0; i < 4; ++i) {
+                if (fpos.type == 0) {
+                    // エルフのみ
+                    std::unique_ptr<Elf> elf = std::make_unique<Elf>(groupId + "_E" + std::to_string(i));
+                    elf->Initialize(groupCenter);
+                    group->AddIndividual(std::move(elf));
+                } else if (fpos.type == 1) {
+                    // 騎士のみ
+                    std::unique_ptr<Knight> knight = std::make_unique<Knight>(groupId + "_K" + std::to_string(i));
+                    knight->Initialize(groupCenter);
+                    knight->SetColor(fpos.color);
+                    group->AddIndividual(std::move(knight));
+                } else {
+                    // 混合（交互）
+                    if (i % 2 == 0) {
+                        std::unique_ptr<Elf> elf = std::make_unique<Elf>(groupId + "_E" + std::to_string(i));
+                        elf->Initialize(groupCenter);
+                        group->AddIndividual(std::move(elf));
+                    } else {
+                        std::unique_ptr<Knight> knight = std::make_unique<Knight>(groupId + "_K" + std::to_string(i));
+                        knight->Initialize(groupCenter);
+                        knight->SetColor(fpos.color);
+                        group->AddIndividual(std::move(knight));
+                    }
+                }
+            }
+
+            group->Initialize(groupCenter);
+
+            std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
+            ai->SetPlayer(player_.get());
+            ai->SetCamera(camera_);
+            ai->SetDetectionRange(500.0f);
+            group->SetAI(ai.get());
+            groupAIs_.push_back(std::move(ai));
+
+            CombatSystem::Get().RegisterGroup(group.get());
+            GameStateManager::Get().RegisterEnemyGroup(group.get());
+
+            enemyGroups_.push_back(std::move(group));
         }
-
-        // 個体追加後にFormation初期化
-        group->Initialize(Vector2(200.0f, 150.0f));
-
-        // AI作成
-        std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
-        ai->SetPlayer(player_.get());
-        ai->SetCamera(camera_);
-        ai->SetDetectionRange(300.0f);  // デバッグ用に小さめ
-        group->SetAI(ai.get());  // GroupにAI参照をセット
-        groupAIs_.push_back(std::move(ai));
-
-        // システムに登録
-        CombatSystem::Get().RegisterGroup(group.get());
-        GameStateManager::Get().RegisterEnemyGroup(group.get());
-
-        enemyGroups_.push_back(std::move(group));
-    }
-
-    // 敵グループ2: Knightグループ（右上）
-    {
-        std::unique_ptr<Group> group = std::make_unique<Group>("KnightGroup1");
-        group->SetBaseThreat(120.0f);
-        group->SetDetectionRange(300.0f);  // デバッグ用に小さめ
-
-        // Knight個体を2体追加
-        for (int i = 0; i < 2; ++i) {
-            std::unique_ptr<Knight> knight = std::make_unique<Knight>("Knight1_" + std::to_string(i));
-            knight->Initialize(Vector2(screenWidth_ - 220.0f + i * 40.0f, 130.0f + i * 30.0f));
-            knight->SetColor(Color(1.0f, 0.3f, 0.3f, 1.0f)); // 赤
-            group->AddIndividual(std::move(knight));
-        }
-
-        // 個体追加後にFormation初期化
-        group->Initialize(Vector2(screenWidth_ - 200.0f, 150.0f));
-
-        std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
-        ai->SetPlayer(player_.get());
-        ai->SetCamera(camera_);
-        ai->SetDetectionRange(300.0f);  // デバッグ用に小さめ
-        group->SetAI(ai.get());  // GroupにAI参照をセット
-        groupAIs_.push_back(std::move(ai));
-
-        CombatSystem::Get().RegisterGroup(group.get());
-        GameStateManager::Get().RegisterEnemyGroup(group.get());
-
-        enemyGroups_.push_back(std::move(group));
-    }
-
-    // 敵グループ3: Elfグループ（左下）
-    {
-        std::unique_ptr<Group> group = std::make_unique<Group>("ElfGroup2");
-        group->SetBaseThreat(60.0f);
-        group->SetDetectionRange(300.0f);  // デバッグ用に小さめ
-
-        for (int i = 0; i < 4; ++i) {
-            std::unique_ptr<Elf> elf = std::make_unique<Elf>("Elf2_" + std::to_string(i));
-            elf->Initialize(Vector2(160.0f + i * 30.0f, screenHeight_ - 170.0f + (i % 2) * 40.0f));
-            group->AddIndividual(std::move(elf));
-        }
-
-        // 個体追加後にFormation初期化
-        group->Initialize(Vector2(200.0f, screenHeight_ - 150.0f));
-
-        std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
-        ai->SetPlayer(player_.get());
-        ai->SetCamera(camera_);
-        ai->SetDetectionRange(300.0f);  // デバッグ用に小さめ
-        group->SetAI(ai.get());  // GroupにAI参照をセット
-        groupAIs_.push_back(std::move(ai));
-
-        CombatSystem::Get().RegisterGroup(group.get());
-        GameStateManager::Get().RegisterEnemyGroup(group.get());
-
-        enemyGroups_.push_back(std::move(group));
-    }
-
-    // 敵グループ4: Knightグループ（右下）
-    {
-        std::unique_ptr<Group> group = std::make_unique<Group>("KnightGroup2");
-        group->SetBaseThreat(100.0f);
-        group->SetDetectionRange(300.0f);  // デバッグ用に小さめ
-
-        for (int i = 0; i < 3; ++i) {
-            std::unique_ptr<Knight> knight = std::make_unique<Knight>("Knight2_" + std::to_string(i));
-            knight->Initialize(Vector2(screenWidth_ - 240.0f + i * 40.0f, screenHeight_ - 160.0f + i * 20.0f));
-            knight->SetColor(Color(0.3f, 0.5f, 1.0f, 1.0f)); // 青
-            group->AddIndividual(std::move(knight));
-        }
-
-        // 個体追加後にFormation初期化
-        group->Initialize(Vector2(screenWidth_ - 200.0f, screenHeight_ - 150.0f));
-
-        std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
-        ai->SetPlayer(player_.get());
-        ai->SetCamera(camera_);
-        ai->SetDetectionRange(300.0f);  // デバッグ用に小さめ
-        group->SetAI(ai.get());  // GroupにAI参照をセット
-        groupAIs_.push_back(std::move(ai));
-
-        CombatSystem::Get().RegisterGroup(group.get());
-        GameStateManager::Get().RegisterEnemyGroup(group.get());
-
-        enemyGroups_.push_back(std::move(group));
     }
 
     // システム初期化
@@ -196,19 +163,19 @@ void TestScene::OnEnter()
         FactionManager::Get().RegisterEntity(group.get());
     }
 
-    // 初期縁を作成（騎士同士のみ接続、エルフは未接続）
-    // KnightGroup1(1) <-> KnightGroup2(3)
-    LOG_INFO("[TestScene] Creating initial bonds...");
-    {
-        // 騎士同士
-        BondableEntity knight1 = enemyGroups_[1].get();  // KnightGroup1
-        BondableEntity knight2 = enemyGroups_[3].get();  // KnightGroup2
-        Bond* knightBond = BondManager::Get().CreateBond(knight1, knight2, BondType::Basic);
-        if (knightBond) {
-            LOG_INFO("  Bond: KnightGroup1 <-> KnightGroup2 (Knights)");
-        }
+    // 各陣営内のグループを縁で接続（三角形に結ぶ）
+    LOG_INFO("[TestScene] Creating faction bonds...");
+    for (int f = 0; f < 6; ++f) {
+        int baseIdx = f * 3;  // 各陣営の最初のグループインデックス
+        Group* g0 = enemyGroups_[baseIdx].get();
+        Group* g1 = enemyGroups_[baseIdx + 1].get();
+        Group* g2 = enemyGroups_[baseIdx + 2].get();
+
+        // A-B-C の直線接続
+        BondManager::Get().CreateBond(g0, g1, BondType::Basic);
+        BondManager::Get().CreateBond(g1, g2, BondType::Basic);
     }
-    LOG_INFO("[TestScene] Initial bonds created: " + std::to_string(BondManager::Get().GetAllBonds().size()));
+    LOG_INFO("[TestScene] Faction bonds created: " + std::to_string(BondManager::Get().GetAllBonds().size()));
 
     // Factionを再構築
     FactionManager::Get().RebuildFactions();
@@ -233,18 +200,22 @@ void TestScene::OnEnter()
     BindSystem::Get().SetOnBondCreated([](const BondableEntity& a, const BondableEntity& b) {
         LOG_INFO("[TestScene] Bond created: " + BondableHelper::GetId(a) + " <-> " + BondableHelper::GetId(b));
         FactionManager::Get().RebuildFactions();
+        LoveBondSystem::Get().RebuildLoveGroups();
     });
 
     CutSystem::Get().SetOnBondCut([](const BondableEntity& a, const BondableEntity& b) {
         LOG_INFO("[TestScene] Bond cut: " + BondableHelper::GetId(a) + " <-> " + BondableHelper::GetId(b));
         FactionManager::Get().RebuildFactions();
+        LoveBondSystem::Get().RebuildLoveGroups();
     });
+
+    // ラジアルメニュー初期化
+    RadialMenu::Get().Initialize();
 
     LOG_INFO("[TestScene] A-RAS! Prototype started");
     LOG_INFO("  WASD: Move player");
-    LOG_INFO("  B: Toggle Bind mode (create bonds)");
-    LOG_INFO("  C: Toggle Cut mode (cut bonds)");
-    LOG_INFO("  Left Click: Select entity / Confirm");
+    LOG_INFO("  Right Click: Bind mode (create bonds)");
+    LOG_INFO("  Left Click: Cut mode (cut bonds)");
     LOG_INFO("  ESC: Cancel mode");
 
     // テスト: 起動時に矢を1本発射
@@ -299,21 +270,56 @@ void TestScene::Update()
     float dt = TimeManager::Get().GetScaledDeltaTime(rawDt);
     time_ += dt;
 
+    // FPS計測
+    frameCount_++;
+    fpsTimer_ += rawDt;
+    if (fpsTimer_ >= 1.0f) {
+        currentFps_ = static_cast<float>(frameCount_) / fpsTimer_;
+        frameCount_ = 0;
+        fpsTimer_ = 0.0f;
+    }
+
     // 入力処理（時間停止中も受け付ける）
     HandleInput(rawDt);
 
     // ゲーム状態チェック
     GameStateManager::Get().Update();
 
-    // ゲーム終了時は更新停止
+    // ゲーム終了時はリザルトシーンへ遷移
     if (!GameStateManager::Get().IsPlaying()) {
+        resultTransitionTimer_ += rawDt;
+        if (resultTransitionTimer_ >= kResultTransitionDelay) {
+            SceneManager::Get().Load<Result_Scene>();
+        }
         return;
     }
 
     // プレイヤー更新（時間停止中も動ける）
     if (player_ && camera_) {
         player_->Update(rawDt, *camera_);
+
+        // マップサイズ定数
+        constexpr float kMapWidth = 4000.0f;
+        constexpr float kMapHeight = 4000.0f;
+
+        // プレイヤーをマップ範囲内にクランプ
+        if (Transform2D* playerTr = player_->GetTransform()) {
+            Vector2 playerPos = playerTr->GetPosition();
+            float clampedPX = (std::max)(0.0f, (std::min)(playerPos.x, kMapWidth));
+            float clampedPY = (std::max)(0.0f, (std::min)(playerPos.y, kMapHeight));
+            playerTr->SetPosition(clampedPX, clampedPY);
+        }
+
         camera_->Follow(player_->GetTransform()->GetPosition(), 0.1f);
+
+        // カメラをマップ範囲内にクランプ
+        float halfViewW = camera_->GetViewportWidth() * 0.5f;
+        float halfViewH = camera_->GetViewportHeight() * 0.5f;
+
+        Vector2 camPos = camera_->GetPosition();
+        float clampedX = (std::max)(halfViewW, (std::min)(camPos.x, kMapWidth - halfViewW));
+        float clampedY = (std::max)(halfViewH, (std::min)(camPos.y, kMapHeight - halfViewH));
+        camera_->SetPosition(clampedX, clampedY);
     }
 
     // AI更新（時間停止中は動かない）
@@ -357,41 +363,105 @@ void TestScene::HandleInput(float /*dt*/)
     if (!input) return;
 
     Keyboard& kb = input->GetKeyboard();
+    Mouse& mouse = input->GetMouse();
+    Vector2 mouseScreenPos(static_cast<float>(mouse.GetX()), static_cast<float>(mouse.GetY()));
 
-    // Bキー: 結モード切り替え
-    if (kb.IsKeyDown(Key::B)) {
+    RadialMenu& radialMenu = RadialMenu::Get();
+
+    //------------------------------------------------------------------------
+    // 右クリック: 結モード
+    //------------------------------------------------------------------------
+    if (mouse.IsButtonDown(MouseButton::Right)) {
+        // 切モード中なら無効化
         if (CutSystem::Get().IsEnabled()) {
             CutSystem::Get().Disable();
         }
-        BindSystem::Get().Toggle();
 
-        if (BindSystem::Get().IsEnabled()) {
-            TimeManager::Get().Freeze();
-            LOG_INFO("[TestScene] Bind mode ON");
-        } else {
-            TimeManager::Get().Resume();
-            LOG_INFO("[TestScene] Bind mode OFF");
-        }
-    }
-
-    // Cキー: 切モード切り替え
-    if (kb.IsKeyDown(Key::C)) {
-        if (BindSystem::Get().IsEnabled()) {
+        // ラジアルメニューが開いていて何も選択していない場合はキャンセル
+        if (radialMenu.IsOpen() && radialMenu.GetHoveredIndex() < 0) {
+            radialMenu.Close();
             BindSystem::Get().Disable();
-        }
-        CutSystem::Get().Toggle();
-
-        if (CutSystem::Get().IsEnabled()) {
-            TimeManager::Get().Freeze();
-            LOG_INFO("[TestScene] Cut mode ON - Time frozen");
-        } else {
             TimeManager::Get().Resume();
-            LOG_INFO("[TestScene] Cut mode OFF - Time resumed");
+            LOG_INFO("[TestScene] Radial menu cancelled (Right Click)");
+        }
+        else if (!radialMenu.IsOpen()) {
+            // 結モードを有効化
+            if (!BindSystem::Get().IsEnabled()) {
+                BindSystem::Get().Enable();
+                TimeManager::Get().Freeze();
+                LOG_INFO("[TestScene] Bind mode ON (Right Click)");
+            }
+
+            // ラジアルメニューをカメラ中央に開く（ワールド座標で）
+            if (camera_) {
+                radialMenuCenter_ = camera_->GetPosition();
+                radialMenu.Open(radialMenuCenter_);
+            }
         }
     }
 
+    //------------------------------------------------------------------------
+    // 左クリック: 縁タイプ確定 or グループ選択 or 切モード
+    //------------------------------------------------------------------------
+    if (mouse.IsButtonDown(MouseButton::Left)) {
+        // ラジアルメニューが開いていて何か選択している場合は縁タイプ確定
+        if (radialMenu.IsOpen() && radialMenu.GetHoveredIndex() >= 0) {
+            selectedBondType_ = radialMenu.Confirm();
+            BindSystem::Get().SetPendingBondType(selectedBondType_);
+            LOG_INFO("[TestScene] Bond type selected: " +
+                     std::string(selectedBondType_ == BondType::Basic ? "Basic" :
+                                 selectedBondType_ == BondType::Friends ? "Friends" : "Love"));
+            // ラジアルメニューは閉じるが、結モードは継続（グループ選択待ち）
+        }
+        // 結モードでラジアルメニューが閉じている場合（グループ選択）
+        else if (BindSystem::Get().IsEnabled() && !radialMenu.IsOpen()) {
+            Group* touchingGroup = GetGroupTouchingPlayer();
+            if (touchingGroup && player_) {
+                // プレイヤーとグループを結ぶ
+                BindPlayerToGroup(touchingGroup);
+                LOG_INFO("[TestScene] Bound player to " + touchingGroup->GetId());
+                // モード終了
+                BindSystem::Get().Disable();
+                TimeManager::Get().Resume();
+            }
+        }
+        // 切モード中に何もない場所をクリックしたらキャンセル
+        else if (CutSystem::Get().IsEnabled()) {
+            Group* groupUnderCursor = GetGroupUnderCursor();
+            if (!groupUnderCursor) {
+                CutSystem::Get().Disable();
+                TimeManager::Get().Resume();
+                LOG_INFO("[TestScene] Cut mode cancelled (Left Click)");
+            }
+        }
+        // 通常時は切モード
+        else if (!BindSystem::Get().IsEnabled()) {
+            CutSystem::Get().Enable();
+            TimeManager::Get().Freeze();
+            LOG_INFO("[TestScene] Cut mode ON (Left Click)");
+        }
+    }
+
+    //------------------------------------------------------------------------
+    // ラジアルメニュー更新（カメラ中央に追従）
+    //------------------------------------------------------------------------
+    if (radialMenu.IsOpen() && camera_) {
+        // 毎フレームカメラ中央を再計算（ワールド座標）
+        radialMenuCenter_ = camera_->GetPosition();
+        radialMenu.SetCenter(radialMenuCenter_);
+
+        // マウス位置もワールド座標に変換
+        Vector2 mouseWorldPos = camera_->ScreenToWorld(mouseScreenPos);
+        radialMenu.Update(mouseWorldPos);
+    }
+
+    //------------------------------------------------------------------------
     // ESCキー: モードキャンセル
+    //------------------------------------------------------------------------
     if (kb.IsKeyDown(Key::Escape)) {
+        if (radialMenu.IsOpen()) {
+            radialMenu.Close();
+        }
         if (BindSystem::Get().IsEnabled()) {
             BindSystem::Get().Disable();
             TimeManager::Get().Resume();
@@ -404,26 +474,29 @@ void TestScene::HandleInput(float /*dt*/)
         }
     }
 
-    // 結モード中: CollisionManagerのコールバックで自動処理
-    // （Individual::SetupCollider()で設定済み）
+    //------------------------------------------------------------------------
+    // F1キー: デバッグ描画ON/OFF
+    //------------------------------------------------------------------------
+    if (kb.IsKeyDown(Key::F1)) {
+        showDebugDraw_ = !showDebugDraw_;
+        LOG_INFO("[TestScene] Debug draw: " + std::string(showDebugDraw_ ? "ON" : "OFF"));
+    }
 
+    //------------------------------------------------------------------------
     // 切モード中: プレイヤーが縁を通過したら切断
-    // ※縁はコライダーを持たないためQueryLineSegmentを使用
+    //------------------------------------------------------------------------
     if (CutSystem::Get().IsEnabled() && player_ != nullptr && player_->GetCollider() != nullptr) {
         Collider2D* playerCollider = player_->GetCollider();
         Bond* bondToCut = nullptr;
 
-        // 切断対象の縁を探す（反復中に削除しない）
         const std::vector<std::unique_ptr<Bond>>& bonds = BondManager::Get().GetAllBonds();
         for (const std::unique_ptr<Bond>& bond : bonds) {
             Vector2 posA = BondableHelper::GetPosition(bond->GetEntityA());
             Vector2 posB = BondableHelper::GetPosition(bond->GetEntityB());
 
-            // CollisionManagerで線分と交差するコライダーを検索
             std::vector<Collider2D*> hits;
             CollisionManager::Get().QueryLineSegment(posA, posB, hits, CollisionLayer::Player);
 
-            // プレイヤーのコライダーが含まれているか確認
             for (Collider2D* hitCollider : hits) {
                 if (hitCollider == playerCollider) {
                     bondToCut = bond.get();
@@ -433,12 +506,45 @@ void TestScene::HandleInput(float /*dt*/)
             if (bondToCut != nullptr) break;
         }
 
-        // 反復完了後に切断（1フレームに1つまで）
         if (bondToCut != nullptr) {
             if (CutSystem::Get().CutBond(bondToCut)) {
                 LOG_INFO("[TestScene] Bond cut!");
             }
         }
+    }
+}
+
+//----------------------------------------------------------------------------
+void TestScene::BindPlayerToGroup(Group* group)
+{
+    if (!player_ || !group) return;
+
+    // プレイヤーとグループの間に縁を作成
+    BondableEntity playerEntity = player_.get();
+    BondableEntity groupEntity = group;
+
+    // FEコスト確認
+    FESystem& fe = FESystem::Get();
+    if (!fe.CanConsume(BindSystem::Get().GetBindCost())) {
+        LOG_INFO("[TestScene] Not enough FE to create bond!");
+        return;
+    }
+
+    // 既に縁があるか確認
+    if (BondManager::Get().GetBond(playerEntity, groupEntity) != nullptr) {
+        LOG_INFO("[TestScene] Bond already exists between Player and " + group->GetId());
+        return;
+    }
+
+    // FE消費して縁作成
+    fe.Consume(BindSystem::Get().GetBindCost());
+    Bond* bond = BondManager::Get().CreateBond(playerEntity, groupEntity, selectedBondType_);
+
+    if (bond) {
+        LOG_INFO("[TestScene] Player-Group bond created: " + group->GetId() +
+                 " (Type: " + std::to_string(static_cast<int>(selectedBondType_)) + ")");
+        FactionManager::Get().RebuildFactions();
+        LoveBondSystem::Get().RebuildLoveGroups();
     }
 }
 
@@ -467,6 +573,42 @@ Group* TestScene::GetGroupUnderCursor() const
                 }
             }
         }
+    }
+
+    return nullptr;
+}
+
+//----------------------------------------------------------------------------
+Group* TestScene::GetGroupTouchingPlayer() const
+{
+    if (!player_ || !player_->GetCollider()) return nullptr;
+
+    Collider2D* playerCollider = player_->GetCollider();
+    AABB playerAABB = playerCollider->GetAABB();
+
+    // プレイヤーと接触しているグループを探す
+    std::set<Group*> touchingGroups;
+
+    for (const std::unique_ptr<Group>& group : enemyGroups_) {
+        if (group->IsDefeated()) continue;
+
+        for (Individual* individual : group->GetAliveIndividuals()) {
+            Collider2D* indivCollider = individual->GetCollider();
+            if (!indivCollider) continue;
+
+            AABB indivAABB = indivCollider->GetAABB();
+
+            // AABB同士の衝突判定
+            if (playerAABB.Intersects(indivAABB)) {
+                touchingGroups.insert(group.get());
+                break;  // このグループは触れている、次のグループへ
+            }
+        }
+    }
+
+    // 1つのグループだけに触れている場合のみ返す
+    if (touchingGroups.size() == 1) {
+        return *touchingGroups.begin();
     }
 
     return nullptr;
@@ -516,11 +658,6 @@ void TestScene::Render()
 
     // 背景色（#4C8447 = ground simpleに合わせた緑）
     float clearColor[4] = { 0.30f, 0.52f, 0.28f, 1.0f };
-    if (BindSystem::Get().IsEnabled()) {
-        clearColor[0] = 0.27f; clearColor[1] = 0.48f; clearColor[2] = 0.25f;
-    } else if (CutSystem::Get().IsEnabled()) {
-        clearColor[0] = 0.33f; clearColor[1] = 0.48f; clearColor[2] = 0.27f;
-    }
     ctx.ClearRenderTarget(backBuffer, clearColor);
     ctx.ClearDepthStencil(depthBuffer, 1.0f, 0);
 
@@ -540,14 +677,13 @@ void TestScene::Render()
     }
 
 #ifdef _DEBUG
-    // 個体コライダー描画
-    DrawIndividualColliders();
-
-    // プレイヤーコライダー描画
-    if (player_ && player_->GetCollider()) {
-        AABB playerAABB = player_->GetCollider()->GetAABB();
-        Color playerColliderColor(0.0f, 1.0f, 0.0f, 0.8f);  // 緑
-        DEBUG_RECT(playerAABB.GetCenter(), playerAABB.GetSize(), playerColliderColor, 2.0f);
+    if (showDebugDraw_) {
+        DrawIndividualColliders();
+        if (player_ && player_->GetCollider()) {
+            AABB playerAABB = player_->GetCollider()->GetAABB();
+            Color playerColliderColor(0.0f, 1.0f, 0.0f, 0.8f);
+            DEBUG_RECT(playerAABB.GetCenter(), playerAABB.GetSize(), playerColliderColor, 2.0f);
+        }
     }
 #endif
 
@@ -562,13 +698,34 @@ void TestScene::Render()
     // UI描画
     DrawUI();
 
+    // モード別オーバーレイ描画（画面全体に半透明）
+    if (BindSystem::Get().IsEnabled() || CutSystem::Get().IsEnabled()) {
+        DebugDraw& debug = DebugDraw::Get();
+        Vector2 cameraPos = camera_->GetPosition();
+        float viewWidth = camera_->GetViewportWidth();
+        float viewHeight = camera_->GetViewportHeight();
+        Vector2 overlaySize(viewWidth, viewHeight);
+
+        if (BindSystem::Get().IsEnabled()) {
+            // 結モード: 黄の半透明
+            debug.DrawRectFilled(cameraPos, overlaySize, Color(1.0f, 1.0f, 0.0f, 0.2f));
+        } else if (CutSystem::Get().IsEnabled()) {
+            // 切モード: 赤の半透明
+            debug.DrawRectFilled(cameraPos, overlaySize, Color(1.0f, 0.0f, 0.0f, 0.15f));
+        }
+    }
+
+    // ラジアルメニュー描画
+    RadialMenu::Get().Render(spriteBatch);
+
     spriteBatch.End();
 
 #ifdef _DEBUG
-    // 円描画（別シェーダー）
-    CircleRenderer::Get().Begin(*camera_);
-    DrawDetectionRanges();
-    CircleRenderer::Get().End();
+    if (showDebugDraw_) {
+        CircleRenderer::Get().Begin(*camera_);
+        DrawDetectionRanges();
+        CircleRenderer::Get().End();
+    }
 #endif
 }
 
@@ -589,8 +746,22 @@ void TestScene::DrawBonds()
         Vector2 posA = BondableHelper::GetPosition(bond->GetEntityA());
         Vector2 posB = BondableHelper::GetPosition(bond->GetEntityB());
 
-        // 縁の色（黄色）
-        Color bondColor(0.8f, 0.8f, 0.2f, 0.8f);
+        // 縁タイプ別の色
+        Color bondColor;
+        switch (bond->GetType()) {
+        case BondType::Basic:
+            bondColor = Color(0.9f, 0.9f, 0.9f, 0.8f);  // 白
+            break;
+        case BondType::Friends:
+            bondColor = Color(0.3f, 1.0f, 0.3f, 0.8f);  // 緑
+            break;
+        case BondType::Love:
+            bondColor = Color(1.0f, 0.5f, 0.7f, 0.8f);  // ピンク
+            break;
+        default:
+            bondColor = Color(0.8f, 0.8f, 0.2f, 0.8f);  // デフォルト（黄色）
+            break;
+        }
         DEBUG_LINE(posA, posB, bondColor, 3.0f);
     }
 
@@ -657,7 +828,23 @@ void TestScene::DrawIndividualColliders()
 //----------------------------------------------------------------------------
 void TestScene::DrawUI()
 {
-    // HP/FEバー表示（画面左上）
+    // FPS表示（左上）- 色でFPSを表示（緑=60+, 黄=30+, 赤=30未満）
+    {
+        Vector2 fpsPos = camera_->ScreenToWorld(Vector2(30.0f, 20.0f));
+        Color fpsColor;
+        if (currentFps_ >= 55.0f) {
+            fpsColor = Color(0.0f, 1.0f, 0.0f, 0.9f);  // 緑
+        } else if (currentFps_ >= 30.0f) {
+            fpsColor = Color(1.0f, 1.0f, 0.0f, 0.9f);  // 黄
+        } else {
+            fpsColor = Color(1.0f, 0.0f, 0.0f, 0.9f);  // 赤
+        }
+        // FPSに応じたバー幅（最大60FPSで100px）
+        float barWidth = (std::min)(currentFps_ / 60.0f, 1.0f) * 100.0f;
+        DEBUG_RECT_FILL(fpsPos + Vector2(barWidth * 0.5f, 0.0f), Vector2(barWidth, 15.0f), fpsColor);
+    }
+
+    // HP/FEバー表示（画面右上）
     if (player_) {
         float hpRatio = player_->GetHpRatio();
         float feRatio = player_->GetFeRatio();

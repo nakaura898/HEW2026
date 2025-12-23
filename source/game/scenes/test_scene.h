@@ -16,6 +16,7 @@
 #include "game/entities/group.h"
 #include "game/ai/group_ai.h"
 #include "game/bond/bondable_entity.h"
+#include "game/bond/bond.h"
 #include <memory>
 #include <vector>
 #include <cstdint>
@@ -40,6 +41,10 @@ private:
     //! @brief マウスカーソル下のグループを取得
     //! @return カーソル下のGroup、なければnullptr
     [[nodiscard]] Group* GetGroupUnderCursor() const;
+
+    //! @brief プレイヤーが触れているグループを取得（1つだけの場合）
+    //! @return 触れているGroup（1つだけ）、複数or0ならnullptr
+    [[nodiscard]] Group* GetGroupTouchingPlayer() const;
 
     //! @brief モード表示テキストを取得
     [[nodiscard]] const char* GetModeText() const;
@@ -67,6 +72,15 @@ private:
     float time_ = 0.0f;
     float statusLogTimer_ = 0.0f;       //!< ステータスログ用タイマー
     float statusLogInterval_ = 3.0f;    //!< ステータスログ間隔（秒）
+
+    // FPS計測
+    float fpsTimer_ = 0.0f;
+    int frameCount_ = 0;
+    float currentFps_ = 0.0f;
+
+    // リザルト遷移タイマー
+    float resultTransitionTimer_ = 0.0f;
+    static constexpr float kResultTransitionDelay = 2.0f;  //!< 遷移までの遅延（秒）
 
     // カメラ
     std::unique_ptr<GameObject> cameraObj_;
@@ -96,4 +110,23 @@ private:
 
     // EventBus購読を設定
     void SetupEventSubscriptions();
+
+    //------------------------------------------------------------------------
+    // 縁タイプ選択UI
+    //------------------------------------------------------------------------
+
+    //! @brief ラジアルメニューを表示するか
+    bool showRadialMenu_ = false;
+
+    //! @brief ラジアルメニュー表示中心位置（スクリーン座標）
+    Vector2 radialMenuCenter_ = Vector2::Zero;
+
+    //! @brief 選択中の縁タイプ
+    BondType selectedBondType_ = BondType::Basic;
+
+    //! @brief プレイヤーとグループを結ぶ（簡易操作）
+    void BindPlayerToGroup(Group* group);
+
+    //! @brief デバッグ描画表示フラグ（F1で切替）
+    bool showDebugDraw_ = true;
 };

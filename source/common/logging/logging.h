@@ -50,8 +50,12 @@ public:
         // コンソールウィンドウを割り当て
         if (AllocConsole()) {
             FILE* fp = nullptr;
-            freopen_s(&fp, "CONOUT$", "w", stdout);
-            freopen_s(&fp, "CONOUT$", "w", stderr);
+            if (freopen_s(&fp, "CONOUT$", "w", stdout) != 0) {
+                return;
+            }
+            if (freopen_s(&fp, "CONOUT$", "w", stderr) != 0) {
+                return;
+            }
             SetConsoleOutputCP(CP_UTF8);
 
 
@@ -358,11 +362,35 @@ private:
         } \
     } while(0)
 #else
-// リリース: スルー（何もしない）
-#define THROW_IF_FAILED(hr, msg)        ((void)(hr))
-#define RETURN_FALSE_IF_FAILED(hr, msg) ((void)(hr))
-#define RETURN_NULL_IF_FAILED(hr, msg)  ((void)(hr))
-#define RETURN_IF_FAILED(hr, msg)       ((void)(hr))
+// リリース: エラーチェックは維持、ログのみ無効化
+#define THROW_IF_FAILED(hr, msg) \
+    do { \
+        HRESULT _hr = (hr); \
+        if (FAILED(_hr)) { \
+            throw HResultException(_hr, msg, __FILE__, __LINE__); \
+        } \
+    } while(0)
+
+#define RETURN_FALSE_IF_FAILED(hr, msg) \
+    do { \
+        if (FAILED(hr)) { \
+            return false; \
+        } \
+    } while(0)
+
+#define RETURN_NULL_IF_FAILED(hr, msg) \
+    do { \
+        if (FAILED(hr)) { \
+            return nullptr; \
+        } \
+    } while(0)
+
+#define RETURN_IF_FAILED(hr, msg) \
+    do { \
+        if (FAILED(hr)) { \
+            return; \
+        } \
+    } while(0)
 #endif
 
 //----------------------------------------------------------------------------
@@ -449,14 +477,55 @@ private:
         } \
     } while(0)
 #else
-// リリース: スルー（何もしない）
-#define THROW_IF_NULL(ptr, msg)       ((void)(ptr))
-#define THROW_IF_FALSE(cond, msg)     ((void)(cond))
-#define RETURN_NULL_IF_NULL(ptr, msg) ((void)(ptr))
-#define RETURN_FALSE_IF_NULL(ptr, msg) ((void)(ptr))
-#define RETURN_IF_NULL(ptr, msg)      ((void)(ptr))
-#define RETURN_FALSE_IF_FALSE(cond, msg) ((void)(cond))
-#define RETURN_IF_FALSE(cond, msg)    ((void)(cond))
+// リリース: エラーチェックは維持、ログのみ無効化
+#define THROW_IF_NULL(ptr, msg) \
+    do { \
+        if ((ptr) == nullptr) { \
+            throw LogException(msg, __FILE__, __LINE__); \
+        } \
+    } while(0)
+
+#define THROW_IF_FALSE(cond, msg) \
+    do { \
+        if (!(cond)) { \
+            throw LogException(msg, __FILE__, __LINE__); \
+        } \
+    } while(0)
+
+#define RETURN_NULL_IF_NULL(ptr, msg) \
+    do { \
+        if ((ptr) == nullptr) { \
+            return nullptr; \
+        } \
+    } while(0)
+
+#define RETURN_FALSE_IF_NULL(ptr, msg) \
+    do { \
+        if ((ptr) == nullptr) { \
+            return false; \
+        } \
+    } while(0)
+
+#define RETURN_IF_NULL(ptr, msg) \
+    do { \
+        if ((ptr) == nullptr) { \
+            return; \
+        } \
+    } while(0)
+
+#define RETURN_FALSE_IF_FALSE(cond, msg) \
+    do { \
+        if (!(cond)) { \
+            return false; \
+        } \
+    } while(0)
+
+#define RETURN_IF_FALSE(cond, msg) \
+    do { \
+        if (!(cond)) { \
+            return; \
+        } \
+    } while(0)
 #endif
 
 // Wide文字列変換ヘルパー

@@ -40,7 +40,7 @@ public:
         ID3D11Resource* resource,
         const D3D11_DEPTH_STENCIL_VIEW_DESC& desc);
 
-    //! 既存のDSVからラッパーを作成for
+    //! 既存のDSVからラッパーを作成
     [[nodiscard]] static std::unique_ptr<DepthStencilView> FromD3DView(
         ComPtr<ID3D11DepthStencilView> dsv);
 

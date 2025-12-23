@@ -120,8 +120,8 @@ bool BindSystem::MarkEntity(BondableEntity entity)
     }
     FESystem::Get().Consume(bindCost_);
 
-    // 縁を作成
-    Bond* bond = BondManager::Get().CreateBond(first, entity, BondType::Basic);
+    // 縁を作成（選択中のタイプで）
+    Bond* bond = BondManager::Get().CreateBond(first, entity, pendingBondType_);
     if (bond) {
         LOG_INFO("[BindSystem] Bond created between " +
                  BondableHelper::GetId(first) + " and " + BondableHelper::GetId(entity));

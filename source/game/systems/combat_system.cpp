@@ -118,10 +118,6 @@ Group* CombatSystem::SelectTarget(Group* attacker) const
     Vector2 attackerPos = attacker->GetPosition();
     float detectionRange = attacker->GetDetectionRange();
 
-    LOG_DEBUG("[SelectTarget] " + attacker->GetId() + " pos=(" +
-              std::to_string(attackerPos.x) + "," + std::to_string(attackerPos.y) +
-              ") range=" + std::to_string(detectionRange));
-
     for (Group* candidate : groups_) {
         if (!candidate || candidate == attacker) continue;
         if (candidate->IsDefeated()) continue;
@@ -129,9 +125,6 @@ Group* CombatSystem::SelectTarget(Group* attacker) const
         // 索敵範囲チェック
         Vector2 candidatePos = candidate->GetPosition();
         float distance = (candidatePos - attackerPos).Length();
-
-        LOG_DEBUG("  -> " + candidate->GetId() + " dist=" + std::to_string(distance) +
-                  " hostile=" + std::to_string(AreHostile(attacker, candidate)));
 
         if (distance > detectionRange) continue;
 

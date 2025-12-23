@@ -60,6 +60,20 @@ public:
     //! @brief 2つのエンティティがこの縁で繋がっているか判定
     [[nodiscard]] bool Connects(const BondableEntity& a, const BondableEntity& b) const;
 
+    //------------------------------------------------------------------------
+    // 距離制約
+    //------------------------------------------------------------------------
+
+    //! @brief 縁タイプ別の最大距離を取得
+    //! @return 最大距離（0以下は無制限）
+    [[nodiscard]] static float GetMaxDistance(BondType type);
+
+    //! @brief この縁の最大距離を取得
+    [[nodiscard]] float GetMaxDistance() const { return GetMaxDistance(type_); }
+
+    //! @brief 距離制約があるか判定
+    [[nodiscard]] bool HasDistanceLimit() const { return GetMaxDistance() > 0.0f; }
+
 private:
     BondableEntity entityA_;    //!< 参加者A
     BondableEntity entityB_;    //!< 参加者B

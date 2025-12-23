@@ -76,6 +76,9 @@ public:
     //! @brief 敗北したか判定
     [[nodiscard]] bool IsDefeat() const { return state_ == GameState::Defeat; }
 
+    //! @brief 最後の結果を取得（Result_Scene用）
+    [[nodiscard]] static GameState GetLastResult() { return lastResult_; }
+
     //------------------------------------------------------------------------
     // 勝敗条件
     //------------------------------------------------------------------------
@@ -119,6 +122,8 @@ private:
     GameState state_ = GameState::Playing;  //!< 現在の状態
     Player* player_ = nullptr;              //!< プレイヤー参照
     std::vector<Group*> enemyGroups_;       //!< 敵グループリスト
+
+    static inline GameState lastResult_ = GameState::Playing;  //!< 最後の結果（シーン間で共有）
 
     // コールバック
     std::function<void()> onVictory_;

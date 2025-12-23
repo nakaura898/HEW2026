@@ -56,6 +56,7 @@ void FactionManager::ClearEntities()
 {
     entities_.clear();
     factions_.clear();
+    factionCache_.clear();
     LOG_INFO("[FactionManager] All entities cleared");
 }
 
@@ -63,6 +64,7 @@ void FactionManager::ClearEntities()
 void FactionManager::RebuildFactions()
 {
     factions_.clear();
+    factionCache_.clear();
 
     if (entities_.empty()) {
         return;
@@ -80,6 +82,13 @@ void FactionManager::RebuildFactions()
 
         if (faction->GetMemberCount() > 0) {
             factions_.push_back(std::move(faction));
+        }
+    }
+
+    // キャッシュを構築（O(1)ルックアップ用）
+    for (const auto& faction : factions_) {
+        for (const BondableEntity& member : faction->GetMembers()) {
+            factionCache_[BondableHelper::GetId(member)] = faction.get();
         }
     }
 
@@ -164,10 +173,10 @@ bool FactionManager::AreSameFaction(BondableEntity a, BondableEntity b) const
 //----------------------------------------------------------------------------
 Faction* FactionManager::GetFaction(BondableEntity entity) const
 {
-    for (const auto& faction : factions_) {
-        if (faction->Contains(entity)) {
-            return faction.get();
-        }
+    // キャッシュを使用してO(1)でルックアップ
+    auto it = factionCache_.find(BondableHelper::GetId(entity));
+    if (it != factionCache_.end()) {
+        return it->second;
     }
     return nullptr;
 }

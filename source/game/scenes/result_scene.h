@@ -1,18 +1,13 @@
 ﻿#pragma once
 #include "engine/scene/scene.h"
-#include "engine/component/game_object.h"
-#include "engine/component/camera2d.h"
-#include <memory>
 
 
 class Result_Scene : public Scene
 {
 //プライベート
 private:
-	//コンポーネント呼び出し
-	//カメラ
-	std::unique_ptr<Camera2D> camera_;
-
+	//! 勝敗結果（true=勝利、false=敗北）
+	bool isVictory_ = false;
 
 //パブリック
 public:

@@ -7,6 +7,7 @@
 #include "player.h"
 #include "game/ai/group_ai.h"
 #include "game/systems/bind_system.h"
+#include "game/systems/friends_damage_sharing.h"
 #include "game/bond/bondable_entity.h"
 #include "engine/c_systems/sprite_batch.h"
 #include "engine/c_systems/collision_manager.h"
@@ -147,6 +148,17 @@ void Individual::TakeDamage(float damage)
 {
     if (!IsAlive()) return;
 
+    // フレンズ縁による分配ダメージを受信中でなければ、分配処理を試みる
+    if (!isReceivingSharedDamage_) {
+        FriendsDamageSharing& friendsSystem = FriendsDamageSharing::Get();
+        if (friendsSystem.HasFriendsPartners(ownerGroup_)) {
+            // フレンズ縁で繋がっているのでダメージを分配
+            friendsSystem.ApplyDamageWithSharing(this, damage);
+            return;
+        }
+    }
+
+    // 直接ダメージ適用（分配済み or フレンズ縁なし）
     hp_ -= damage;
     if (hp_ < 0.0f) {
         hp_ = 0.0f;

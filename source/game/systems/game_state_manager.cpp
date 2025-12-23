@@ -107,6 +107,11 @@ void GameStateManager::SetState(GameState state)
 
     state_ = state;
 
+    // 結果を保存（Result_Scene用）
+    if (state == GameState::Victory || state == GameState::Defeat) {
+        lastResult_ = state;
+    }
+
     switch (state) {
     case GameState::Victory:
         LOG_INFO("[GameStateManager] VICTORY!");

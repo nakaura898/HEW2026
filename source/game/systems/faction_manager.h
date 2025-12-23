@@ -7,6 +7,8 @@
 #include "faction.h"
 #include <vector>
 #include <memory>
+#include <unordered_map>
+#include <string>
 
 //----------------------------------------------------------------------------
 //! @brief FactionManager（シングルトン）
@@ -72,4 +74,5 @@ private:
 
     std::vector<BondableEntity> entities_;              //!< 全エンティティ
     std::vector<std::unique_ptr<Faction>> factions_;    //!< 構築されたFaction群
+    std::unordered_map<std::string, Faction*> factionCache_;  //!< エンティティID→Factionのキャッシュ
 };

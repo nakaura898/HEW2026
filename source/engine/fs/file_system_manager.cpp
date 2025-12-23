@@ -44,7 +44,10 @@ FileSystemManager& FileSystemManager::Get() noexcept
 std::wstring FileSystemManager::GetExecutableDirectory()
 {
     wchar_t path[MAX_PATH];
-    GetModuleFileNameW(nullptr, path, MAX_PATH);
+    DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) {
+        return L"";
+    }
     std::filesystem::path exePath(path);
     return exePath.parent_path().wstring() + L"/";
 }

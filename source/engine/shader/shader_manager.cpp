@@ -412,7 +412,9 @@ void ShaderManager::ClearBytecodeCache()
 
 void ShaderManager::ClearResourceCache()
 {
-    resourceCache_->Clear();
+    if (resourceCache_) {
+        resourceCache_->Clear();
+    }
 }
 
 void ShaderManager::ClearGlobalShaderCache()
@@ -422,6 +424,9 @@ void ShaderManager::ClearGlobalShaderCache()
 
 ShaderCacheStats ShaderManager::GetCacheStats() const
 {
+    if (!resourceCache_) {
+        return {};
+    }
     return resourceCache_->GetStats();
 }
 

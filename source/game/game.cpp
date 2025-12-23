@@ -47,8 +47,8 @@ bool Game::Initialize()
         return false;
     }
 
-    // 2. CollisionManager初期化
-    CollisionManager::Get().Initialize(256);
+    // 2. CollisionManager初期化（セルサイズはコライダーサイズの2倍が適切）
+    CollisionManager::Get().Initialize(64);
 
     // 3. ファイルシステムマウント
     LOG_INFO("[Game] Project root: " + PathUtility::toNarrowString(projectRoot));
@@ -58,26 +58,26 @@ bool Game::Initialize()
     fsManager.Mount("shaders", std::make_unique<HostFileSystem>(assetsRoot + L"shader/"));
     fsManager.Mount("textures", std::make_unique<HostFileSystem>(assetsRoot + L"texture/"));
 
-    // 3. TextureManager初期化
+    // 4. TextureManager初期化
     auto* textureFs = fsManager.GetFileSystem("textures");
     if (textureFs) {
         TextureManager::Get().Initialize(textureFs);
     }
 
-    // 4. ShaderManager初期化
+    // 5. ShaderManager初期化
     auto* shaderFs = fsManager.GetFileSystem("shaders");
     if (shaderFs) {
         g_shaderCompiler = std::make_unique<D3DShaderCompiler>();
         ShaderManager::Get().Initialize(shaderFs, g_shaderCompiler.get());
     }
 
-    // 5. RenderStateManager初期化
+    // 6. RenderStateManager初期化
     if (!RenderStateManager::Get().Initialize()) {
         LOG_ERROR("[Game] RenderStateManagerの初期化に失敗");
         return false;
     }
 
-    // 6. SpriteBatch初期化
+    // 7. SpriteBatch初期化
     if (!SpriteBatch::Get().Initialize()) {
         LOG_ERROR("[Game] SpriteBatchの初期化に失敗");
         return false;
@@ -85,7 +85,7 @@ bool Game::Initialize()
 
     LOG_INFO("[Game] サブシステム初期化完了");
 
-    // 6. 初期シーンを設定
+    // 8. 初期シーンを設定
     sceneManager_.Load<Title_Scene>();
     sceneManager_.ApplyPendingChange(currentScene_);
 

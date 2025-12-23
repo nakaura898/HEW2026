@@ -4,6 +4,7 @@
 //----------------------------------------------------------------------------
 #pragma once
 
+#include "game/bond/bond.h"
 #include "game/bond/bondable_entity.h"
 
 // 前方宣言
@@ -37,6 +38,12 @@ struct EntityMarkedEvent
 //! @brief マークキャンセルイベント
 struct MarkCancelledEvent
 {
+};
+
+//! @brief 縁タイプ選択イベント
+struct BondTypeSelectedEvent
+{
+    BondType newType;  //!< 選択されたタイプ
 };
 
 //============================================================================
