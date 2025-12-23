@@ -6,8 +6,6 @@
 
 #include "dx11/gpu/texture.h"
 #include "dx11/gpu/shader.h"
-#include "dx11/state/blend_state.h"
-#include "dx11/state/sampler_state.h"
 #include "engine/math/math_types.h"
 #include "engine/math/color.h"
 #include <vector>
@@ -123,12 +121,6 @@ private:
 
     // 蓄積用レンダーターゲット（RGBA16F、ベイク時のみ使用）
     TexturePtr accumulationRT_;
-
-    // 加算ブレンドステート（蓄積用）
-    std::unique_ptr<BlendState> additiveBlendState_;
-
-    // クランプサンプラー（チャンク描画用、テクスチャ端のラップを防止）
-    std::unique_ptr<SamplerState> clampSamplerState_;
 
     // 地面タイル（回転/反転付き）
     std::vector<GroundTile> groundTiles_;

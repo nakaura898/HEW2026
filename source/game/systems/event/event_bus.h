@@ -10,6 +10,8 @@
 #include <typeindex>
 #include <memory>
 #include <cstdint>
+#include <mutex>
+#include <shared_mutex>
 
 //----------------------------------------------------------------------------
 //! @brief イベントハンドラの基底クラス
@@ -30,25 +32,35 @@ public:
     using CallbackType = std::function<void(const TEvent&)>;
 
     void Add(uint32_t id, CallbackType callback) {
+        std::lock_guard<std::mutex> lock(mutex_);
         callbacks_[id] = std::move(callback);
     }
 
     void Remove(uint32_t id) {
+        std::lock_guard<std::mutex> lock(mutex_);
         callbacks_.erase(id);
     }
 
     void Invoke(const TEvent& event) {
-        // コールバック中の変更に備えてコピー
-        auto callbacksCopy = callbacks_;
+        // コールバック中の変更に備えてコピー（mutex保護下）
+        std::unordered_map<uint32_t, CallbackType> callbacksCopy;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            callbacksCopy = callbacks_;
+        }
         for (auto& [id, callback] : callbacksCopy) {
             callback(event);
         }
     }
 
-    [[nodiscard]] bool IsEmpty() const { return callbacks_.empty(); }
+    [[nodiscard]] bool IsEmpty() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return callbacks_.empty();
+    }
 
 private:
     std::unordered_map<uint32_t, CallbackType> callbacks_;
+    mutable std::mutex mutex_;
 };
 
 //----------------------------------------------------------------------------
@@ -74,8 +86,9 @@ public:
     //! @return 購読ID（解除時に使用）
     template<typename TEvent>
     uint32_t Subscribe(std::function<void(const TEvent&)> callback) {
+        std::lock_guard<std::mutex> lock(mutex_);
         uint32_t id = nextSubscriptionId_++;
-        GetOrCreateHandler<TEvent>()->Add(id, std::move(callback));
+        GetOrCreateHandlerLocked<TEvent>()->Add(id, std::move(callback));
         return id;
     }
 
@@ -84,7 +97,8 @@ public:
     //! @param subscriptionId 購読ID
     template<typename TEvent>
     void Unsubscribe(uint32_t subscriptionId) {
-        auto* handler = GetHandler<TEvent>();
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto* handler = GetHandlerLocked<TEvent>();
         if (handler) {
             handler->Remove(subscriptionId);
         }
@@ -99,7 +113,11 @@ public:
     //! @param event イベントデータ
     template<typename TEvent>
     void Publish(const TEvent& event) {
-        auto* handler = GetHandler<TEvent>();
+        EventHandler<TEvent>* handler = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            handler = GetHandlerLocked<TEvent>();
+        }
         if (handler) {
             handler->Invoke(event);
         }
@@ -120,6 +138,7 @@ public:
 
     //! @brief 全購読をクリア
     void Clear() {
+        std::lock_guard<std::mutex> lock(mutex_);
         handlers_.clear();
     }
 
@@ -129,8 +148,9 @@ private:
     EventBus(const EventBus&) = delete;
     EventBus& operator=(const EventBus&) = delete;
 
+    //! @note mutex_を保持した状態で呼び出すこと
     template<typename TEvent>
-    EventHandler<TEvent>* GetHandler() {
+    EventHandler<TEvent>* GetHandlerLocked() {
         std::type_index typeIndex(typeid(TEvent));
         auto it = handlers_.find(typeIndex);
         if (it == handlers_.end()) {
@@ -139,8 +159,9 @@ private:
         return static_cast<EventHandler<TEvent>*>(it->second.get());
     }
 
+    //! @note mutex_を保持した状態で呼び出すこと
     template<typename TEvent>
-    EventHandler<TEvent>* GetOrCreateHandler() {
+    EventHandler<TEvent>* GetOrCreateHandlerLocked() {
         std::type_index typeIndex(typeid(TEvent));
         auto it = handlers_.find(typeIndex);
         if (it == handlers_.end()) {
@@ -153,5 +174,6 @@ private:
     }
 
     std::unordered_map<std::type_index, std::unique_ptr<IEventHandler>> handlers_;
+    mutable std::mutex mutex_;
     uint32_t nextSubscriptionId_ = 1;
 };

@@ -53,6 +53,7 @@ std::shared_ptr<Texture> Texture::Create2D(
 
     // SRV作成
     auto srvWrapper = ShaderResourceView::CreateFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] SRV作成失敗");
     ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
 
     return std::make_shared<Texture>(
@@ -87,10 +88,12 @@ std::shared_ptr<Texture> Texture::CreateRenderTarget(
 
     // SRV作成
     auto srvWrapper = ShaderResourceView::CreateFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] SRV作成失敗");
     ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
 
     // RTV作成
     auto rtvWrapper = RenderTargetView::CreateFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(rtvWrapper, "[Texture] RTV作成失敗");
     ComPtr<ID3D11RenderTargetView> rtv = rtvWrapper->Detach();
 
     return std::make_shared<Texture>(
@@ -166,6 +169,7 @@ std::shared_ptr<Texture> Texture::CreateDepthStencil(
     dsvDesc.Texture2D.MipSlice = 0;
 
     auto dsvWrapper = DepthStencilView::Create(texture.Get(), dsvDesc);
+    RETURN_NULL_IF_NULL(dsvWrapper, "[Texture] DSV作成失敗");
     ComPtr<ID3D11DepthStencilView> dsv = dsvWrapper->Detach();
 
     // SRV作成（オプション）
@@ -178,6 +182,7 @@ std::shared_ptr<Texture> Texture::CreateDepthStencil(
         srvDesc.Texture2D.MostDetailedMip = 0;
 
         auto srvWrapper = ShaderResourceView::Create(texture.Get(), srvDesc);
+        RETURN_NULL_IF_NULL(srvWrapper, "[Texture] 深度SRV作成失敗");
         srv = srvWrapper->Detach();
     }
 
@@ -213,10 +218,12 @@ std::shared_ptr<Texture> Texture::CreateUav(
 
     // SRV作成
     auto srvWrapper = ShaderResourceView::CreateFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] SRV作成失敗");
     ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
 
     // UAV作成
     auto uavWrapper = UnorderedAccessView::CreateFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(uavWrapper, "[Texture] UAV作成失敗");
     ComPtr<ID3D11UnorderedAccessView> uav = uavWrapper->Detach();
 
     return std::make_shared<Texture>(
@@ -257,6 +264,7 @@ std::shared_ptr<Texture> Texture::CreateCube(
     srvDesc.TextureCube.MostDetailedMip = 0;
 
     auto srvWrapper = ShaderResourceView::Create(texture.Get(), srvDesc);
+    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] キューブマップSRV作成失敗");
     ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
 
     return std::make_shared<Texture>(

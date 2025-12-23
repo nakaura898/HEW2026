@@ -96,6 +96,11 @@ bool Gamepad::IsButtonUp(GamepadButton button) const noexcept
 
 float Gamepad::ApplyDeadZone(float value, float deadZone) noexcept
 {
+    // デッドゾーンが1.0以上の場合は常に0を返す（ゼロ除算防止）
+    if (deadZone >= 1.0f) {
+        return 0.0f;
+    }
+
     // 絶対値がデッドゾーン以下なら0
     if (std::abs(value) < deadZone) {
         return 0.0f;

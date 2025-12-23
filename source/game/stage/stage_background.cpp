@@ -5,6 +5,7 @@
 #include "stage_background.h"
 #include "engine/texture/texture_manager.h"
 #include "engine/shader/shader_manager.h"
+#include "engine/graphics2d/render_state_manager.h"
 #include "engine/c_systems/sprite_batch.h"
 #include "engine/component/camera2d.h"
 #include "dx11/gpu/texture.h"
@@ -131,31 +132,6 @@ void StageBackground::Initialize(const std::string& stageId, float screenWidth, 
                  std::to_string(static_cast<int>(stageHeight_)));
     } else {
         LOG_ERROR("[StageBackground] Failed to create accumulation RT");
-    }
-
-    // 純粋加算ブレンドステート作成（ONE + ONE）
-    {
-        D3D11_BLEND_DESC desc{};
-        desc.AlphaToCoverageEnable = FALSE;
-        desc.IndependentBlendEnable = FALSE;
-        desc.RenderTarget[0].BlendEnable = TRUE;
-        desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;        // Src * 1
-        desc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;       // + Dest * 1
-        desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-        desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;   // SrcA * 1
-        desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;  // + DestA * 1
-        desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-        desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-        additiveBlendState_ = BlendState::Create(desc);
-    }
-    if (additiveBlendState_) {
-        LOG_INFO("[StageBackground] Additive blend state created");
-    }
-
-    // クランプサンプラー作成（チャンク描画用）
-    clampSamplerState_ = SamplerState::CreateClamp();
-    if (clampSamplerState_) {
-        LOG_INFO("[StageBackground] Clamp sampler state created");
     }
 
     // 地面テクスチャをプリベイク（2パス正規化）
@@ -293,8 +269,14 @@ void StageBackground::BakeGroundTexture()
 {
     // 必要なリソースが揃っているか確認
     if (!groundTexture_ || !groundVertexShader_ || !groundPixelShader_ ||
-        !accumulationRT_ || !additiveBlendState_ || !normalizePixelShader_) {
+        !accumulationRT_ || !normalizePixelShader_) {
         LOG_WARN("[StageBackground] Cannot bake ground texture - missing resources");
+        return;
+    }
+
+    // RenderStateManagerの確認
+    if (!RenderStateManager::Get().IsInitialized()) {
+        LOG_WARN("[StageBackground] RenderStateManager not initialized");
         return;
     }
 
@@ -333,7 +315,7 @@ void StageBackground::BakeGroundTexture()
     // 固定投影行列を設定
     spriteBatch.SetViewProjection(viewProj);
     spriteBatch.SetCustomShaders(groundVertexShader_.get(), groundPixelShader_.get());
-    spriteBatch.SetCustomBlendState(additiveBlendState_.get());
+    spriteBatch.SetCustomBlendState(RenderStateManager::Get().GetPureAdditive());
     spriteBatch.Begin();
 
     Vector2 origin(tileWidth_ * 0.5f, tileHeight_ * 0.5f);
@@ -545,8 +527,6 @@ void StageBackground::Shutdown()
     groundPixelShader_.reset();
     normalizePixelShader_.reset();
     accumulationRT_.reset();
-    additiveBlendState_.reset();
-    clampSamplerState_.reset();
 
     LOG_INFO("[StageBackground] Shutdown");
 }

@@ -19,6 +19,13 @@ DebugDraw& DebugDraw::Get()
 }
 
 //----------------------------------------------------------------------------
+void DebugDraw::Shutdown()
+{
+    whiteTexture_.reset();
+    initialized_ = false;
+}
+
+//----------------------------------------------------------------------------
 void DebugDraw::EnsureInitialized()
 {
     if (initialized_) return;

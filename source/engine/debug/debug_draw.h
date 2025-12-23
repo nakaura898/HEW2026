@@ -20,6 +20,9 @@ public:
     //! @brief シングルトン取得
     static DebugDraw& Get();
 
+    //! @brief リソース解放
+    void Shutdown();
+
     //! @brief 矩形の枠線を描画（中心基準）
     void DrawRectOutline(
         const Vector2& center,

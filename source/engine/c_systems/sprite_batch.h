@@ -8,10 +8,6 @@
 #include "dx11/gpu/buffer.h"
 #include "dx11/gpu/shader.h"
 #include "dx11/gpu/texture.h"
-#include "dx11/state/blend_state.h"
-#include "dx11/state/sampler_state.h"
-#include "dx11/state/rasterizer_state.h"
-#include "dx11/state/depth_stencil_state.h"
 #include "engine/math/math_types.h"
 #include "engine/math/color.h"
 #include "engine/component/sprite_renderer.h"
@@ -20,6 +16,8 @@
 // 前方宣言
 class Transform2D;
 class Camera2D;
+class BlendState;
+class SamplerState;
 
 //============================================================================
 //! @brief スプライトバッチ描画システム
@@ -210,12 +208,6 @@ private:
     ShaderPtr vertexShader_;
     ShaderPtr pixelShader_;
     ComPtr<ID3D11InputLayout> inputLayout_;
-
-    // パイプラインステート（dx11/state/）
-    std::unique_ptr<BlendState> blendState_;
-    std::unique_ptr<SamplerState> samplerState_;
-    std::unique_ptr<RasterizerState> rasterizerState_;
-    std::unique_ptr<DepthStencilState> depthStencilState_;
 
     // スプライトキュー
     std::vector<SpriteInfo> spriteQueue_;

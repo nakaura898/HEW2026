@@ -18,7 +18,13 @@
 #include "scenes/title_scene.h"
 #include "scenes/test_scene.h"
 #include "dx11/graphics_context.h"
+#include "engine/platform/renderer.h"
+#include "engine/graphics2d/render_state_manager.h"
 #include "engine/c_systems/sprite_batch.h"
+#ifdef _DEBUG
+#include "engine/debug/debug_draw.h"
+#include "engine/debug/circle_renderer.h"
+#endif
 
 // シェーダーコンパイラ（グローバルインスタンス）
 static std::unique_ptr<D3DShaderCompiler> g_shaderCompiler;
@@ -65,7 +71,13 @@ bool Game::Initialize()
         ShaderManager::Get().Initialize(shaderFs, g_shaderCompiler.get());
     }
 
-    // 5. SpriteBatch初期化
+    // 5. RenderStateManager初期化
+    if (!RenderStateManager::Get().Initialize()) {
+        LOG_ERROR("[Game] RenderStateManagerの初期化に失敗");
+        return false;
+    }
+
+    // 6. SpriteBatch初期化
     if (!SpriteBatch::Get().Initialize()) {
         LOG_ERROR("[Game] SpriteBatchの初期化に失敗");
         return false;
@@ -95,8 +107,14 @@ void Game::Shutdown() noexcept
     }
 
     // 逆順でシャットダウン
+#ifdef _DEBUG
+    CircleRenderer::Get().Shutdown();
+    DebugDraw::Get().Shutdown();
+#endif
     SpriteBatch::Get().Shutdown();
+    RenderStateManager::Get().Shutdown();
     ShaderManager::Get().Shutdown();
+    Renderer::Get().Shutdown();  // TextureManagerより先に解放（colorBuffer_/depthBuffer_がTexturePtr）
     TextureManager::Get().Shutdown();
     FileSystemManager::Get().UnmountAll();
     CollisionManager::Get().Shutdown();

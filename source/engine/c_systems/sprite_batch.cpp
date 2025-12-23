@@ -6,6 +6,7 @@
 #include "engine/component/transform2d.h"
 #include "engine/component/camera2d.h"
 #include "engine/component/animator.h"
+#include "engine/graphics2d/render_state_manager.h"
 #include "dx11/graphics_device.h"
 #include "dx11/graphics_context.h"
 #include "engine/shader/shader_manager.h"
@@ -65,14 +66,9 @@ bool SpriteBatch::Initialize() {
         return false;
     }
 
-    // パイプラインステート
-    blendState_ = BlendState::CreateAlphaBlend();
-    samplerState_ = SamplerState::CreateDefault();
-    rasterizerState_ = RasterizerState::CreateNoCull();
-    depthStencilState_ = DepthStencilState::CreateLessEqual();
-
-    if (!blendState_ || !samplerState_ || !rasterizerState_ || !depthStencilState_) {
-        LOG_ERROR("SpriteBatch: パイプラインステート作成失敗");
+    // RenderStateManagerの初期化確認
+    if (!RenderStateManager::Get().IsInitialized()) {
+        LOG_ERROR("SpriteBatch: RenderStateManagerが初期化されていません");
         return false;
     }
 
@@ -140,6 +136,11 @@ void SpriteBatch::Shutdown() {
         UINT offsets[1] = { 0 };
         d3dCtx->IASetVertexBuffers(0, 1, nullBuffers, strides, offsets);
         d3dCtx->IASetIndexBuffer(nullptr, DXGI_FORMAT_R16_UINT, 0);
+        ID3D11Buffer* nullCB[1] = { nullptr };
+        d3dCtx->VSSetConstantBuffers(0, 1, nullCB);
+        ID3D11ShaderResourceView* nullSRV[1] = { nullptr };
+        d3dCtx->PSSetShaderResources(0, 1, nullSRV);
+        d3dCtx->Flush();
     }
 
     vertexBuffer_.reset();
@@ -148,10 +149,6 @@ void SpriteBatch::Shutdown() {
     vertexShader_.reset();
     pixelShader_.reset();
     inputLayout_.Reset();
-    blendState_.reset();
-    samplerState_.reset();
-    rasterizerState_.reset();
-    depthStencilState_.reset();
     spriteQueue_.clear();
     sortIndices_.clear();
 
@@ -540,15 +537,18 @@ void SpriteBatch::FlushBatch() {
 
     ctx.SetPixelShader(ps);
 
+    // RenderStateManagerからステートを取得
+    auto& rsm = RenderStateManager::Get();
+
     // カスタムサンプラーステートがあれば使用、なければデフォルト
-    SamplerState* ss = customSamplerState_ ? customSamplerState_ : samplerState_.get();
+    SamplerState* ss = customSamplerState_ ? customSamplerState_ : rsm.GetLinearWrap();
     ctx.SetPSSampler(0, ss);
 
     // カスタムブレンドステートがあれば使用、なければデフォルト
-    BlendState* bs = customBlendState_ ? customBlendState_ : blendState_.get();
+    BlendState* bs = customBlendState_ ? customBlendState_ : rsm.GetAlphaBlend();
     ctx.SetBlendState(bs);
-    ctx.SetDepthStencilState(depthStencilState_.get());
-    ctx.SetRasterizerState(rasterizerState_.get());
+    ctx.SetDepthStencilState(rsm.GetDepthLessEqual());
+    ctx.SetRasterizerState(rsm.GetNoCull());
 
     // バッチ描画
     Texture* currentTexture = nullptr;
