@@ -8,6 +8,8 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <unordered_map>
+#include <string>
 
 //----------------------------------------------------------------------------
 //! @brief 縁マネージャー（シングルトン）
@@ -66,6 +68,11 @@ public:
     //! @brief 縁の数を取得
     [[nodiscard]] size_t GetBondCount() const { return bonds_.size(); }
 
+    //! @brief 指定タイプの縁を取得
+    //! @param type 取得する縁のタイプ
+    //! @return 指定タイプの縁リスト
+    [[nodiscard]] std::vector<Bond*> GetBondsByType(BondType type) const;
+
     //------------------------------------------------------------------------
     // ネットワーク探索（勝利条件判定用）
     //------------------------------------------------------------------------
@@ -97,7 +104,14 @@ private:
     BondManager(const BondManager&) = delete;
     BondManager& operator=(const BondManager&) = delete;
 
+    //! @brief キャッシュを再構築
+    void RebuildCache();
+
     std::vector<std::unique_ptr<Bond>> bonds_;  //!< 全ての縁
+
+    // キャッシュ（O(1)ルックアップ用）
+    std::unordered_map<std::string, std::vector<Bond*>> entityBondsCache_;  //!< エンティティID→縁リスト
+    std::unordered_map<int, std::vector<Bond*>> typeBondsCache_;            //!< BondType→縁リスト
 
     // コールバック
     std::function<void(Bond*)> onBondCreated_;

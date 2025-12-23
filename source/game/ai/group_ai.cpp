@@ -7,6 +7,9 @@
 #include "game/entities/player.h"
 #include "game/systems/stagger_system.h"
 #include "game/systems/combat_system.h"
+#include "game/systems/love_bond_system.h"
+#include "game/bond/bond_manager.h"
+#include "game/bond/bond.h"
 #include "engine/component/camera2d.h"
 #include "common/logging/logging.h"
 #include <random>
@@ -123,6 +126,31 @@ void GroupAI::FindTarget()
 {
     if (!owner_) return;
 
+    // ラブパートナーがいる場合は共有ターゲットを使用
+    LoveBondSystem& loveSys = LoveBondSystem::Get();
+    if (loveSys.HasLovePartners(owner_)) {
+        std::vector<Group*> cluster = loveSys.GetLoveCluster(owner_);
+        AITarget sharedTarget = loveSys.DetermineSharedTarget(cluster);
+
+        // 共有ターゲットを設定
+        if (std::holds_alternative<Group*>(sharedTarget)) {
+            Group* targetGroup = std::get<Group*>(sharedTarget);
+            if (targetGroup) {
+                target_ = targetGroup;
+                LOG_INFO("[GroupAI] " + owner_->GetId() + " (Love) targeting " + targetGroup->GetId());
+                return;
+            }
+        } else if (std::holds_alternative<Player*>(sharedTarget)) {
+            Player* targetPlayer = std::get<Player*>(sharedTarget);
+            if (targetPlayer) {
+                target_ = targetPlayer;
+                LOG_INFO("[GroupAI] " + owner_->GetId() + " (Love) targeting Player");
+                return;
+            }
+        }
+        // 共有ターゲットがない場合は通常のロジックにフォールバック
+    }
+
     // CombatSystemを使ってターゲットを検索
     CombatSystem& combat = CombatSystem::Get();
 
@@ -136,20 +164,10 @@ void GroupAI::FindTarget()
     float groupThreat = groupTarget ? groupTarget->GetThreat() : -1.0f;
     float playerThreat = (canAttackPlayer && player_) ? player_->GetThreat() : -1.0f;
 
-    LOG_INFO("[FindTarget] " + owner_->GetId() +
-             " groupTarget=" + (groupTarget ? groupTarget->GetId() : "none") +
-             " groupThreat=" + std::to_string(static_cast<int>(groupThreat)) +
-             " playerThreat=" + std::to_string(static_cast<int>(playerThreat)) +
-             " canAttackPlayer=" + std::to_string(canAttackPlayer));
-
     if (playerThreat > groupThreat && canAttackPlayer && player_) {
         target_ = player_;
-        LOG_INFO("[GroupAI] " + owner_->GetId() + " targeting Player (threat " +
-                 std::to_string(static_cast<int>(playerThreat)) + " > " +
-                 std::to_string(static_cast<int>(groupThreat)) + ")");
     } else if (groupTarget) {
         target_ = groupTarget;
-        LOG_INFO("[GroupAI] " + owner_->GetId() + " targeting " + groupTarget->GetId());
     } else {
         ClearTarget();
     }
@@ -186,9 +204,67 @@ void GroupAI::UpdateWander(float dt)
 {
     wanderTimer_ += dt;
 
+    // プレイヤーとラブ縁で結ばれているかチェック
+    bool followPlayer = false;
+    if (player_) {
+        BondableEntity groupEntity = owner_;
+        BondableEntity playerEntity = player_;
+        Bond* playerBond = BondManager::Get().GetBond(groupEntity, playerEntity);
+        if (playerBond && playerBond->GetType() == BondType::Love) {
+            followPlayer = true;
+        }
+    }
+
+    // プレイヤーとラブ縁がある場合はプレイヤーを追従
+    if (followPlayer) {
+        Vector2 currentPos = owner_->GetPosition();
+        Vector2 playerPos = player_->GetPosition();
+        Vector2 direction = playerPos - currentPos;
+        float distance = direction.Length();
+
+        // プレイヤーから一定距離離れていたら近づく
+        if (distance > 100.0f) {
+            direction.Normalize();
+            Vector2 newPos = currentPos + direction * moveSpeed_ * dt;
+            owner_->SetPosition(newPos);
+        }
+        return;
+    }
+
+    // ラブパートナー（グループ同士）がいる場合は一緒に徘徊
+    std::vector<Group*> loveCluster = LoveBondSystem::Get().GetLoveCluster(owner_);
+    bool hasLovePartners = loveCluster.size() > 1;
+
     // 一定時間ごとに新しい目標を設定
     if (wanderTimer_ >= wanderInterval_) {
-        SetNewWanderTarget();
+        if (hasLovePartners) {
+            // ラブクラスタの中心を計算
+            Vector2 clusterCenter = Vector2::Zero;
+            for (Group* g : loveCluster) {
+                clusterCenter = clusterCenter + g->GetPosition();
+            }
+            clusterCenter = clusterCenter * (1.0f / static_cast<float>(loveCluster.size()));
+
+            // クラスタ中心から新しい目標を設定（最初のグループのみが計算）
+            if (loveCluster[0] == owner_) {
+                std::random_device rd;
+                std::mt19937 gen(rd());
+                std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * 3.14159f);
+                std::uniform_real_distribution<float> radiusDist(50.0f, wanderRadius_);
+                float angle = angleDist(gen);
+                float radius = radiusDist(gen);
+                wanderTarget_ = clusterCenter + Vector2(std::cos(angle) * radius, std::sin(angle) * radius);
+
+                // 他のグループにも同じ目標を設定
+                for (size_t i = 1; i < loveCluster.size(); ++i) {
+                    if (GroupAI* ai = loveCluster[i]->GetAI()) {
+                        ai->SetWanderTarget(wanderTarget_);
+                    }
+                }
+            }
+        } else {
+            SetNewWanderTarget();
+        }
         wanderTimer_ = 0.0f;
     }
 
@@ -222,21 +298,25 @@ void GroupAI::UpdateSeek(float dt)
     Vector2 currentPos = owner_->GetPosition();
     Vector2 targetPos = GetTargetPosition();
 
+#ifdef _DEBUG
     // デバッグ: どこに向かってるか（ターゲット種別も表示）
-    std::string targetType = "none";
-    std::string targetName = "none";
-    if (std::holds_alternative<Group*>(target_)) {
-        Group* g = std::get<Group*>(target_);
-        targetType = "Group";
-        targetName = g ? g->GetId() : "null";
-    } else if (std::holds_alternative<Player*>(target_)) {
-        targetType = "Player";
-        targetName = "Player";
+    {
+        std::string targetType = "none";
+        std::string targetName = "none";
+        if (std::holds_alternative<Group*>(target_)) {
+            Group* g = std::get<Group*>(target_);
+            targetType = "Group";
+            targetName = g ? g->GetId() : "null";
+        } else if (std::holds_alternative<Player*>(target_)) {
+            targetType = "Player";
+            targetName = "Player";
+        }
+        LOG_DEBUG("[UpdateSeek] " + owner_->GetId() +
+                  " -> " + targetType + ":" + targetName +
+                  " pos=(" + std::to_string(static_cast<int>(targetPos.x)) + "," +
+                  std::to_string(static_cast<int>(targetPos.y)) + ")");
     }
-    LOG_INFO("[UpdateSeek] " + owner_->GetId() +
-             " -> " + targetType + ":" + targetName +
-             " pos=(" + std::to_string(static_cast<int>(targetPos.x)) + "," +
-             std::to_string(static_cast<int>(targetPos.y)) + ")");
+#endif
     Vector2 direction = targetPos - currentPos;
     float distance = direction.Length();
 

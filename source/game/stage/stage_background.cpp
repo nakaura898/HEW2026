@@ -18,8 +18,8 @@
 //----------------------------------------------------------------------------
 // ステージサイズ設定（ここを変更してサイズ調整）
 //----------------------------------------------------------------------------
-constexpr float STAGE_WIDTH  = 5120.0f;
-constexpr float STAGE_HEIGHT = 2880.0f;
+constexpr float STAGE_WIDTH  = 4000.0f;
+constexpr float STAGE_HEIGHT = 4000.0f;
 
 //----------------------------------------------------------------------------
 void StageBackground::Initialize(const std::string& stageId, float screenWidth, float screenHeight)

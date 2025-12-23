@@ -47,8 +47,8 @@ bool Game::Initialize()
         return false;
     }
 
-    // 2. CollisionManager初期化
-    CollisionManager::Get().Initialize(256);
+    // 2. CollisionManager初期化（セルサイズはコライダーサイズの2倍が適切）
+    CollisionManager::Get().Initialize(64);
 
     // 3. ファイルシステムマウント
     LOG_INFO("[Game] Project root: " + PathUtility::toNarrowString(projectRoot));

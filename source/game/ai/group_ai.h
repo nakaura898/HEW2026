@@ -125,6 +125,9 @@ public:
     //! @brief 逃走停止距離を設定
     void SetFleeStopDistance(float distance) { fleeStopDistance_ = distance; }
 
+    //! @brief 徘徊目標を設定（ラブ同期用）
+    void SetWanderTarget(const Vector2& target) { wanderTarget_ = target; wanderTimer_ = 0.0f; }
+
     //------------------------------------------------------------------------
     // コールバック
     //------------------------------------------------------------------------

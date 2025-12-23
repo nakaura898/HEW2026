@@ -4,10 +4,13 @@
 //----------------------------------------------------------------------------
 #include "group.h"
 #include "game/systems/stagger_system.h"
+#include "game/bond/bond_manager.h"
+#include "game/bond/bond.h"
 #include "engine/c_systems/sprite_batch.h"
 #include "common/logging/logging.h"
 #include <random>
 #include <algorithm>
+#include <cmath>
 
 //----------------------------------------------------------------------------
 Group::Group(const std::string& id)
@@ -159,8 +162,33 @@ Vector2 Group::GetPosition() const
 //----------------------------------------------------------------------------
 void Group::SetPosition(const Vector2& position)
 {
+    Vector2 targetPos = position;
+
+    // ラブ縁のみ距離制限があるので、ラブ縁だけチェック（最適化）
+    std::vector<Bond*> loveBonds = BondManager::Get().GetBondsByType(BondType::Love);
+    BondableEntity selfEntity = this;
+
+    for (Bond* bond : loveBonds) {
+        if (!bond->Involves(selfEntity)) continue;
+
+        float maxDist = bond->GetMaxDistance();
+        BondableEntity other = bond->GetOther(selfEntity);
+        Vector2 otherPos = BondableHelper::GetPosition(other);
+
+        // 目標位置と相手の距離を計算
+        Vector2 diff = Vector2(targetPos.x - otherPos.x, targetPos.y - otherPos.y);
+        float dist = std::sqrt(diff.x * diff.x + diff.y * diff.y);
+
+        // 最大距離を超えていたらクランプ
+        if (dist > maxDist && dist > 0.0f) {
+            float ratio = maxDist / dist;
+            targetPos.x = otherPos.x + diff.x * ratio;
+            targetPos.y = otherPos.y + diff.y * ratio;
+        }
+    }
+
     Vector2 currentCenter = GetPosition();
-    Vector2 delta = Vector2(position.x - currentCenter.x, position.y - currentCenter.y);
+    Vector2 delta = Vector2(targetPos.x - currentCenter.x, targetPos.y - currentCenter.y);
 
     // 全個体を相対移動
     for (std::unique_ptr<Individual>& individual : individuals_) {

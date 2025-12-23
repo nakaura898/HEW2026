@@ -210,6 +210,9 @@ public:
     [[nodiscard]] AnimationController& GetAnimationController() { return animationController_; }
     [[nodiscard]] const AnimationController& GetAnimationController() const { return animationController_; }
 
+    //! @brief フレンズ分配ダメージ受信中フラグ設定（FriendsDamageSharing用）
+    void SetReceivingSharedDamage(bool receiving) { isReceivingSharedDamage_ = receiving; }
+
 protected:
     // 定数
     static constexpr float kDefaultColliderSize = 32.0f;    //!< デフォルトコライダーサイズ
@@ -254,6 +257,7 @@ protected:
     IndividualAction action_ = IndividualAction::Idle;
     IndividualAction prevAction_ = IndividualAction::Idle;  //!< 前フレームの行動
     bool isAttacking_ = false;          //!< 攻撃モーション中
+    bool isReceivingSharedDamage_ = false;  //!< フレンズ分配ダメージ受信中（無限ループ防止）
 
     // 攻撃ターゲット
     Individual* attackTarget_ = nullptr; //!< 攻撃対象の個体
