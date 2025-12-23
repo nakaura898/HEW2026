@@ -407,15 +407,9 @@ void StageBackground::BakeGroundTexture()
 
     LOG_INFO("[StageBackground] Ground texture baked successfully");
 
-    // BC1圧縮でVRAM節約（59MB → 7MB）
-    LOG_INFO("[StageBackground] BC1圧縮中...");
-    TexturePtr compressedTexture = TextureManager::Get().CompressToBC1(bakedGroundTexture_.get());
-    if (compressedTexture) {
-        bakedGroundTexture_ = compressedTexture;
-        LOG_INFO("[StageBackground] BC1圧縮完了、VRAMを節約しました");
-    } else {
-        LOG_WARN("[StageBackground] BC1圧縮に失敗、非圧縮テクスチャを使用します");
-    }
+    // TODO: BC圧縮は緑色アーティファクトの問題があるため一時無効化
+    // 非圧縮: 59MB VRAM使用
+    LOG_INFO("[StageBackground] 非圧縮テクスチャを使用（59MB VRAM）");
 }
 
 //----------------------------------------------------------------------------

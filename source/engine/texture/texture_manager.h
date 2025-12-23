@@ -140,6 +140,12 @@ public:
     //! @note 8倍のVRAM削減（例: 59MB → 7MB）、アルファなし
     [[nodiscard]] TexturePtr CompressToBC1(Texture* source);
 
+    //! テクスチャをBC3形式に圧縮
+    //! @param source 圧縮元テクスチャ（レンダーターゲット等）
+    //! @return BC3圧縮されたテクスチャ（失敗時nullptr）
+    //! @note 4倍のVRAM削減、フルアルファ対応
+    [[nodiscard]] TexturePtr CompressToBC3(Texture* source);
+
     //! テクスチャをBC7形式に圧縮
     //! @param source 圧縮元テクスチャ（レンダーターゲット等）
     //! @return BC7圧縮されたテクスチャ（失敗時nullptr）
