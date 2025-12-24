@@ -13,7 +13,7 @@ class Title_Scene : public Scene
 private:
 	//コンポーネント呼び出し
 	//カメラ
-	std::unique_ptr<Camera2D> camera_;
+	//std::unique_ptr<Camera2D> camera_;
 
 
 	//スタートボタンテスト
