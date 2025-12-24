@@ -26,6 +26,12 @@ public:
     void SetHoverColor(const Color& c) { hoverColor_ = c; }    // マウス乗せ時
     void SetPressColor(const Color& c) { pressColor_ = c; }    // クリック中
 
+
+    Vector2 GetPosition() { return position_; }//テスト
+    Vector2 GetSize() { return size_; }//テスト
+    Color GetColor() { return currentColor_; }//テスト
+
+
 private:
   
     // マウスがボタンの範囲内か判定
@@ -34,6 +40,9 @@ private:
     // 位置とサイズ
     Vector2 position_;   // ボタン中心のスクリーン座標
     Vector2 size_;       // ボタンの幅と高さ
+
+    //テスト
+    Color currentColor_;
 
     // 各状態の色
     Color normalColor_ = Color(0.0f, 1.0f, 0.0f, 0.8f);  // 通常: 暗いグレー

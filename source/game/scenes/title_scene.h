@@ -19,6 +19,12 @@ private:
 	//スタートボタンテスト
 	std::unique_ptr<UIButton> startButton_;
 
+
+	// カメラ
+	std::unique_ptr<GameObject> cameraObj_;
+	Camera2D* camera_ = nullptr;
+
+
 //パブリック
 public:
 	//ライフサイクル
