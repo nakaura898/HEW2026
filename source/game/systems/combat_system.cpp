@@ -215,6 +215,7 @@ bool CombatSystem::ShouldSkipCombatForLove(Group* group) const
     if (loveCluster.size() > 1) {
         for (Group* partner : loveCluster) {
             if (partner == group) continue;
+            if (!partner || partner->IsDefeated()) continue;  // null/全滅チェック
             float dist = (partner->GetPosition() - groupPos).Length();
             if (dist > GameConstants::kLoveInterruptDistance) {
                 return true;

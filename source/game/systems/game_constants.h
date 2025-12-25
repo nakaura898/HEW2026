@@ -23,6 +23,12 @@ namespace GameConstants
     //! @brief Love縁停止距離（この距離以内で停止）[単位: ピクセル]
     constexpr float kLoveStopDistance = 5.0f;
 
+    // 距離定数の関係性を検証
+    static_assert(kLoveStopDistance < kLoveFollowStartDistance,
+        "kLoveStopDistance must be less than kLoveFollowStartDistance");
+    static_assert(kLoveFollowStartDistance < kLoveInterruptDistance,
+        "kLoveFollowStartDistance must be less than kLoveInterruptDistance");
+
     //------------------------------------------------------------------------
     // 攻撃関連
     //------------------------------------------------------------------------
