@@ -353,7 +353,7 @@ void GroupAI::UpdateWander(float dt)
     Vector2 direction = wanderTarget_ - currentPos;
     float distance = direction.Length();
 
-    if (distance > 5.0f) {
+    if (distance > GameConstants::kLoveStopDistance) {
         direction.Normalize();
         Vector2 newPos = currentPos + direction * moveSpeed_ * dt;
         owner_->SetPosition(newPos);
