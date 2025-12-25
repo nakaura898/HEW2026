@@ -20,11 +20,14 @@ public:
     //! @brief デストラクタ
     ~Elf() override = default;
 
-    //! @brief 攻撃処理（矢を発射）
+    //! @brief 更新処理
+    void Update(float dt) override;
+
+    //! @brief 攻撃処理（矢を発射予約）
     //! @param target 攻撃対象
     void Attack(Individual* target) override;
 
-    //! @brief プレイヤーへの攻撃処理（矢を発射）
+    //! @brief プレイヤーへの攻撃処理（矢を発射予約）
     //! @param target 攻撃対象プレイヤー
     void AttackPlayer(Player* target) override;
 
@@ -40,13 +43,22 @@ protected:
     void SetupAnimator() override;
 
 private:
+    //! @brief 矢を発射
+    void ShootArrow();
+
     // 定数
     static constexpr float kAttackRange = 600.0f;   //!< 攻撃範囲（弓なので長い）
     static constexpr float kDefaultHp = 80.0f;      //!< デフォルトHP（遠距離なので低め）
     static constexpr float kDefaultDamage = 12.0f;  //!< デフォルトダメージ
     static constexpr float kDefaultSpeed = 100.0f;  //!< デフォルト移動速度
+    static constexpr uint8_t kShootFrame = 1;       //!< 矢を発射するフレーム
 
     // アニメーション設定
     static constexpr int kAnimRows = 4;
     static constexpr int kAnimCols = 4;
+
+    // 攻撃予約
+    Individual* pendingTarget_ = nullptr;      //!< 攻撃予約ターゲット（Individual）
+    Player* pendingTargetPlayer_ = nullptr;    //!< 攻撃予約ターゲット（Player）
+    bool arrowShot_ = false;                   //!< 今回の攻撃で矢を発射済みか
 };

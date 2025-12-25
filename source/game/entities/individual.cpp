@@ -8,6 +8,7 @@
 #include "game/ai/group_ai.h"
 #include "game/systems/bind_system.h"
 #include "game/systems/friends_damage_sharing.h"
+#include "game/systems/time_manager.h"
 #include "game/bond/bondable_entity.h"
 #include "engine/c_systems/sprite_batch.h"
 #include "engine/c_systems/collision_manager.h"
@@ -54,6 +55,9 @@ void Individual::Initialize(const Vector2& position)
     // Collider
     SetupCollider();
 
+    // 前フレーム位置を初期化
+    prevPosition_ = position;
+
     LOG_INFO("[Individual] " + id_ + " initialized");
 }
 
@@ -75,24 +79,54 @@ void Individual::Update(float dt)
 {
     if (!gameObject_) return;
 
+    // 時間スケール適用
+    float scaledDt = TimeManager::Get().GetScaledDeltaTime(dt);
+
+    // 時間停止中は更新しない
+    if (scaledDt <= 0.0f) {
+        return;
+    }
+
     // 死亡状態でもアニメは更新
     if (!IsAlive()) {
         // 死亡アニメをリクエスト
         animationController_.RequestState(AnimationState::Death);
-        animationController_.Update(dt);
-        gameObject_->Update(dt);
+        animationController_.Update(scaledDt);
+        gameObject_->Update(scaledDt);
         return;
     }
+
+    // 攻撃クールダウン更新
+    UpdateAttackCooldown(scaledDt);
+
+    // 行動状態を更新（グループAIの状態に基づく）
+    UpdateAction();
+
+    // 目標速度を計算（行動状態に基づく）
+    UpdateDesiredVelocity();
 
     // 実際の速度 = 目標速度 + 分離オフセット
     Vector2 actualVelocity = desiredVelocity_ + separationOffset_;
 
-    // 位置更新
+    // 位置更新（スケール済み時間で）
     if (transform_ && (actualVelocity.x != 0.0f || actualVelocity.y != 0.0f)) {
         Vector2 pos = transform_->GetPosition();
-        pos.x += actualVelocity.x * dt;
-        pos.y += actualVelocity.y * dt;
+        pos.x += actualVelocity.x * scaledDt;
+        pos.y += actualVelocity.y * scaledDt;
         transform_->SetPosition(pos);
+    }
+
+    // 実際の移動量を計算（Group::SetPositionによる直接移動も検出）
+    Vector2 currentPos = GetPosition();
+    Vector2 posDelta = currentPos - prevPosition_;
+    float actualMovement = posDelta.LengthSquared();
+    constexpr float kMovementThreshold = 0.1f;  // 移動判定閾値（二乗）
+    bool isActuallyMoving = actualMovement > kMovementThreshold;
+
+    // 移動方向に応じてスプライト反転（テクスチャは左向き）
+    if (sprite_ && isActuallyMoving) {
+        // 右に移動中なら反転
+        sprite_->SetFlipX(posDelta.x > 0.0f);
     }
 
     // IndividualActionからAnimationStateへ変換してリクエスト
@@ -102,7 +136,8 @@ void Individual::Update(float dt)
         animState = AnimationState::Idle;
         break;
     case IndividualAction::Walk:
-        animState = AnimationState::Walk;
+        // Walk状態でも実際に移動していなければIdle
+        animState = isActuallyMoving ? AnimationState::Walk : AnimationState::Idle;
         break;
     case IndividualAction::Attack:
         animState = AnimationState::Attack;
@@ -113,11 +148,24 @@ void Individual::Update(float dt)
     }
     animationController_.RequestState(animState);
 
-    // AnimationController更新（アニメ終了検出）
-    animationController_.Update(dt);
+    // AnimationController更新（アニメ終了検出、スケール済み時間で）
+    animationController_.Update(scaledDt);
 
-    // GameObjectの更新（Animatorの更新など）
-    gameObject_->Update(dt);
+    // GameObjectの更新（Animatorの更新など、スケール済み時間で）
+    gameObject_->Update(scaledDt);
+
+    // 前フレーム位置を更新
+    prevPosition_ = currentPos;
+
+    // デバッグ: アニメーション状態確認（最初の個体のみ）
+    static int debugCounter = 0;
+    if (debugCounter++ % 120 == 0 && id_.find("_E0") != std::string::npos) {
+        LOG_INFO("[Anim] " + id_ +
+                 " action=" + std::to_string(static_cast<int>(action_)) +
+                 " animState=" + std::to_string(static_cast<int>(animState)) +
+                 " move=" + std::to_string(static_cast<int>(actualMovement * 1000)) +
+                 " row=" + std::to_string(animator_ ? animator_->GetRow() : -1));
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -315,9 +363,9 @@ void Individual::UpdateAction()
         return;
     }
 
-    // グループがWander → Idle
+    // グループがWander → Walk（グループは徘徊中で移動している）
     if (groupState == AIState::Wander) {
-        action_ = IndividualAction::Idle;
+        action_ = IndividualAction::Walk;
         attackTarget_ = nullptr;
         justEnteredAttackRange_ = false;
         return;
@@ -337,8 +385,9 @@ void Individual::UpdateAction()
         targetGroup = std::get<Group*>(aiTarget);
     }
 
+    // ターゲットがない/無効な場合はWalk（グループは移動中）
     if (!targetGroup || targetGroup->IsDefeated()) {
-        action_ = IndividualAction::Idle;
+        action_ = IndividualAction::Walk;
         attackTarget_ = nullptr;
         justEnteredAttackRange_ = false;
         return;

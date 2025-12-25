@@ -30,10 +30,19 @@
 class StageLoader
 {
 public:
-    //! @brief ファイルからステージデータを読み込む
-    //! @param filePath ファイルパス（例: "assets:/stages/stage1.txt"）
+    //! @brief ファイルからステージデータを読み込む（txt形式）
+    //! @param filePath ファイルパス（例: "stages:/stage1.txt"）
     //! @return 読み込んだデータ（失敗時は空のStageData）
     [[nodiscard]] static StageData Load(const std::string& filePath);
+
+    //! @brief CSVからステージデータを読み込む
+    //! @param basePath ベースパス（例: "stages:/stage1"）
+    //! @details 以下の3ファイルを読み込む:
+    //!   - {basePath}_info.csv   : ステージ情報
+    //!   - {basePath}_groups.csv : グループ定義
+    //!   - {basePath}_bonds.csv  : 縁定義
+    //! @return 読み込んだデータ（失敗時は空のStageData）
+    [[nodiscard]] static StageData LoadFromCSV(const std::string& basePath);
 
 private:
     //! @brief 文字列の前後の空白を削除

@@ -130,5 +130,5 @@ private:
     FormationType formationType_ = FormationType::Circle;
 
     // 間隔
-    float spacing_ = 30.0f;
+    float spacing_ = 50.0f;
 };

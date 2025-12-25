@@ -128,6 +128,12 @@ public:
     //! @brief 移動速度設定
     void SetMoveSpeed(float speed) { moveSpeed_ = speed; }
 
+    //! @brief 最大HP設定
+    void SetMaxHp(float hp) { maxHp_ = hp; hp_ = hp; }
+
+    //! @brief 最大FE設定
+    void SetMaxFe(float fe) { maxFe_ = fe; fe_ = fe; }
+
 private:
     //! @brief 入力処理
     void HandleInput(float dt, Camera2D& camera);

@@ -45,7 +45,7 @@ void Application::MainLoop(TGame& game)
         }
 
         // 時間更新
-        UpdateTime();
+        Timer::Update(desc_.maxDeltaTime);
 
         // 入力処理
         ProcessInput();
@@ -61,7 +61,5 @@ void Application::MainLoop(TGame& game)
 
         // フレーム末処理
         game.EndFrame();
-
-        ++frameCount_;
     }
 }

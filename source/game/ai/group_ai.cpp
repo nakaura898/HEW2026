@@ -8,6 +8,7 @@
 #include "game/systems/stagger_system.h"
 #include "game/systems/combat_system.h"
 #include "game/systems/love_bond_system.h"
+#include "game/systems/time_manager.h"
 #include "game/bond/bond_manager.h"
 #include "game/bond/bond.h"
 #include "engine/component/camera2d.h"
@@ -41,19 +42,27 @@ void GroupAI::Update(float dt)
         return;
     }
 
+    // 時間スケール適用
+    float scaledDt = TimeManager::Get().GetScaledDeltaTime(dt);
+
+    // 時間停止中は更新しない
+    if (scaledDt <= 0.0f) {
+        return;
+    }
+
     // 状態遷移チェック
     CheckStateTransition();
 
-    // 状態に応じた更新
+    // 状態に応じた更新（スケール済み時間で）
     switch (state_) {
     case AIState::Wander:
-        UpdateWander(dt);
+        UpdateWander(scaledDt);
         break;
     case AIState::Seek:
-        UpdateSeek(dt);
+        UpdateSeek(scaledDt);
         break;
     case AIState::Flee:
-        UpdateFlee(dt);
+        UpdateFlee(scaledDt);
         break;
     }
 }

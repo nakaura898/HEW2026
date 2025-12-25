@@ -99,6 +99,11 @@ void Player::HandleInput(float dt, Camera2D& /*camera*/)
 
     if (isMoving_) {
         transform_->Translate(move);
+
+        // 移動方向に応じてスプライト反転（テクスチャは左向き）
+        if (sprite_ && move.x != 0.0f) {
+            sprite_->SetFlipX(move.x > 0.0f);
+        }
     }
 }
 

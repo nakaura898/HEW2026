@@ -19,6 +19,9 @@ struct GroupData
     float y = 0.0f;             //!< Y座標
     float threat = 100.0f;      //!< 脅威度
     float detectionRange = 300.0f;  //!< 索敵範囲
+    float hp = 100.0f;          //!< 個体HP
+    float attack = 10.0f;       //!< 攻撃力
+    float speed = 100.0f;       //!< 移動速度
 };
 
 //----------------------------------------------------------------------------
@@ -39,6 +42,9 @@ struct StageData
     std::string name;                       //!< ステージ名
     float playerX = 640.0f;                 //!< プレイヤー初期X
     float playerY = 360.0f;                 //!< プレイヤー初期Y
+    float playerHp = 100.0f;                //!< プレイヤーHP
+    float playerFe = 100.0f;                //!< プレイヤーFE
+    float playerSpeed = 200.0f;             //!< プレイヤー移動速度
     std::vector<GroupData> groups;          //!< グループ一覧
     std::vector<BondData> bonds;            //!< 縁一覧
 

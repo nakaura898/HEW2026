@@ -56,7 +56,7 @@ void Elf::SetupAnimator()
     // Row 1: Walk (4フレーム)
     // Row 2: Attack (3フレーム)
     // Row 3: Death (2フレーム)
-    animator_->SetRowFrameCount(0, 1, 12);   // Idle: 1フレーム, 12F間隔
+    animator_->SetRowFrameCount(0, 2, 12);   // Idle: 2フレーム, 12F間隔
     animator_->SetRowFrameCount(1, 4, 6);    // Walk: 4フレーム, 6F間隔
     animator_->SetRowFrameCount(2, 3, 8);    // Attack: 3フレーム, 8F間隔
     animator_->SetRowFrameCount(3, 2, 10);   // Death: 2フレーム, 10F間隔
@@ -64,6 +64,27 @@ void Elf::SetupAnimator()
     // 初期状態はIdle
     animator_->SetRow(0);
     animator_->SetLooping(true);
+}
+
+//----------------------------------------------------------------------------
+void Elf::Update(float dt)
+{
+    // 基底クラスの更新
+    Individual::Update(dt);
+
+    // 攻撃アニメーション中に特定フレームで矢を発射
+    if (!arrowShot_ && (pendingTarget_ || pendingTargetPlayer_)) {
+        if (animator_ && animator_->GetRow() == 2 && animator_->GetColumn() >= kShootFrame) {
+            ShootArrow();
+        }
+    }
+
+    // 攻撃アニメーション終了で状態リセット
+    if (arrowShot_ && animator_ && !animator_->IsPlaying()) {
+        pendingTarget_ = nullptr;
+        pendingTargetPlayer_ = nullptr;
+        arrowShot_ = false;
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -79,11 +100,10 @@ void Elf::Attack(Individual* target)
         animator_->Reset();
     }
 
-    // 矢を発射
-    Vector2 startPos = GetPosition();
-    ArrowManager::Get().Shoot(this, target, startPos, attackDamage_);
-
-    LOG_INFO("[Elf] " + id_ + " shoots arrow at " + target->GetId());
+    // 矢発射を予約（アニメーションの特定フレームで発射）
+    pendingTarget_ = target;
+    pendingTargetPlayer_ = nullptr;
+    arrowShot_ = false;
 }
 
 //----------------------------------------------------------------------------
@@ -99,9 +119,24 @@ void Elf::AttackPlayer(Player* target)
         animator_->Reset();
     }
 
-    // 矢を発射（プレイヤー対象）
-    Vector2 startPos = GetPosition();
-    ArrowManager::Get().ShootAtPlayer(this, target, startPos, attackDamage_);
+    // 矢発射を予約（アニメーションの特定フレームで発射）
+    pendingTarget_ = nullptr;
+    pendingTargetPlayer_ = target;
+    arrowShot_ = false;
+}
 
-    LOG_INFO("[Elf] " + id_ + " shoots arrow at Player");
+//----------------------------------------------------------------------------
+void Elf::ShootArrow()
+{
+    Vector2 startPos = GetPosition();
+
+    if (pendingTarget_ && pendingTarget_->IsAlive()) {
+        ArrowManager::Get().Shoot(this, pendingTarget_, startPos, attackDamage_);
+        LOG_INFO("[Elf] " + id_ + " shoots arrow at " + pendingTarget_->GetId());
+    } else if (pendingTargetPlayer_ && pendingTargetPlayer_->IsAlive()) {
+        ArrowManager::Get().ShootAtPlayer(this, pendingTargetPlayer_, startPos, attackDamage_);
+        LOG_INFO("[Elf] " + id_ + " shoots arrow at Player");
+    }
+
+    arrowShot_ = true;
 }

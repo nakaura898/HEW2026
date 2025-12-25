@@ -250,3 +250,172 @@ StageData StageLoader::Load(const std::string& filePath)
 
     return stageData;
 }
+
+//----------------------------------------------------------------------------
+StageData StageLoader::LoadFromCSV(const std::string& basePath)
+{
+    StageData stageData;
+
+    // 3つのCSVファイルパスを生成
+    std::string infoPath = basePath + "_info.csv";
+    std::string groupsPath = basePath + "_groups.csv";
+    std::string bondsPath = basePath + "_bonds.csv";
+
+    // === Info CSV読み込み ===
+    std::string infoContent = FileSystemManager::Get().ReadFileAsText(infoPath);
+    if (!infoContent.empty())
+    {
+        std::istringstream stream(infoContent);
+        std::string line;
+        bool isHeader = true;
+
+        while (std::getline(stream, line))
+        {
+            line = Trim(line);
+            if (line.empty() || line[0] == '#')
+            {
+                continue;
+            }
+
+            // ヘッダー行はスキップ
+            if (isHeader)
+            {
+                isHeader = false;
+                continue;
+            }
+
+            // name,playerX,playerY,playerHp,playerFe,playerSpeed
+            std::vector<std::string> parts = SplitByComma(line);
+            if (parts.size() >= 3)
+            {
+                stageData.name = parts[0];
+                try
+                {
+                    stageData.playerX = std::stof(parts[1]);
+                    stageData.playerY = std::stof(parts[2]);
+                    if (parts.size() >= 4) stageData.playerHp = std::stof(parts[3]);
+                    if (parts.size() >= 5) stageData.playerFe = std::stof(parts[4]);
+                    if (parts.size() >= 6) stageData.playerSpeed = std::stof(parts[5]);
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_WARN("[StageLoader] Info CSVパースエラー: " + std::string(e.what()));
+                }
+            }
+        }
+        LOG_DEBUG("[StageLoader] Info CSV読み込み完了: " + infoPath);
+    }
+    else
+    {
+        LOG_WARN("[StageLoader] Info CSVが読めない: " + infoPath);
+    }
+
+    // === Groups CSV読み込み ===
+    std::string groupsContent = FileSystemManager::Get().ReadFileAsText(groupsPath);
+    if (!groupsContent.empty())
+    {
+        std::istringstream stream(groupsContent);
+        std::string line;
+        bool isHeader = true;
+
+        while (std::getline(stream, line))
+        {
+            line = Trim(line);
+            if (line.empty() || line[0] == '#')
+            {
+                continue;
+            }
+
+            // ヘッダー行はスキップ
+            if (isHeader)
+            {
+                isHeader = false;
+                continue;
+            }
+
+            // ID,種族,個体数,X,Y,脅威度,索敵範囲,HP,攻撃力,移動速度
+            std::vector<std::string> parts = SplitByComma(line);
+            if (parts.size() >= 6)
+            {
+                GroupData group;
+                group.id = parts[0];
+                group.species = parts[1];
+
+                try
+                {
+                    group.count = std::stoi(parts[2]);
+                    group.x = std::stof(parts[3]);
+                    group.y = std::stof(parts[4]);
+                    group.threat = std::stof(parts[5]);
+
+                    if (parts.size() >= 7) group.detectionRange = std::stof(parts[6]);
+                    if (parts.size() >= 8) group.hp = std::stof(parts[7]);
+                    if (parts.size() >= 9) group.attack = std::stof(parts[8]);
+                    if (parts.size() >= 10) group.speed = std::stof(parts[9]);
+
+                    stageData.groups.push_back(group);
+                    LOG_DEBUG("[StageLoader] グループ追加: " + group.id);
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_WARN("[StageLoader] Groups CSVパースエラー: " + std::string(e.what()));
+                }
+            }
+        }
+        LOG_DEBUG("[StageLoader] Groups CSV読み込み完了: " + groupsPath);
+    }
+    else
+    {
+        LOG_WARN("[StageLoader] Groups CSVが読めない: " + groupsPath);
+    }
+
+    // === Bonds CSV読み込み ===
+    std::string bondsContent = FileSystemManager::Get().ReadFileAsText(bondsPath);
+    if (!bondsContent.empty())
+    {
+        std::istringstream stream(bondsContent);
+        std::string line;
+        bool isHeader = true;
+
+        while (std::getline(stream, line))
+        {
+            line = Trim(line);
+            if (line.empty() || line[0] == '#')
+            {
+                continue;
+            }
+
+            // ヘッダー行はスキップ
+            if (isHeader)
+            {
+                isHeader = false;
+                continue;
+            }
+
+            // 接続元,接続先,タイプ
+            std::vector<std::string> parts = SplitByComma(line);
+            if (parts.size() >= 2)
+            {
+                BondData bond;
+                bond.fromId = parts[0];
+                bond.toId = parts[1];
+                bond.type = (parts.size() >= 3) ? parts[2] : "Basic";
+
+                stageData.bonds.push_back(bond);
+                LOG_DEBUG("[StageLoader] 縁追加: " + bond.fromId + " <-> " + bond.toId);
+            }
+        }
+        LOG_DEBUG("[StageLoader] Bonds CSV読み込み完了: " + bondsPath);
+    }
+    else
+    {
+        LOG_WARN("[StageLoader] Bonds CSVが読めない: " + bondsPath);
+    }
+
+    std::string stageName = stageData.name.empty() ? "(無名)" : stageData.name;
+    LOG_INFO("[StageLoader] CSV読み込み完了: " + stageName +
+             " (グループ: " + std::to_string(stageData.groups.size()) +
+             ", 縁: " + std::to_string(stageData.bonds.size()) + ")");
+
+    return stageData;
+}

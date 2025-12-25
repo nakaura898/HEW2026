@@ -38,6 +38,7 @@
 #include "game/systems/love_bond_system.h"
 #include "game/stage/stage_loader.h"
 #include <set>
+#include <unordered_map>
 
 //----------------------------------------------------------------------------
 void TestScene::OnEnter()
@@ -67,108 +68,93 @@ void TestScene::OnEnter()
     float stageHeight = 4000.0f;
     stageBackground_.Initialize("stage1", stageWidth, stageHeight);
 
-    // プレイヤー作成（マップ中央）
-    player_ = std::make_unique<Player>();
-    player_->Initialize(Vector2(2000.0f, 2000.0f));
+    // CSVからステージデータ読み込み
+    StageData stageData = StageLoader::LoadFromCSV("stages:/stage1");
+    if (!stageData.IsValid()) {
+        LOG_ERROR("[TestScene] Failed to load stage data from CSV!");
+        return;
+    }
 
-    // 共通システム初期化（グループ作成前）
+    // プレイヤー作成
+    player_ = std::make_unique<Player>();
+    player_->Initialize(Vector2(stageData.playerX, stageData.playerY));
+    player_->SetMaxHp(stageData.playerHp);
+    player_->SetMaxFe(stageData.playerFe);
+    player_->SetMoveSpeed(stageData.playerSpeed);
+
+    // 陣営ごとの色（Faction番号から取得）
+    Color factionColors[6] = {
+        Color(1.0f, 0.3f, 0.3f, 1.0f),  // Faction1: 赤
+        Color(1.0f, 0.6f, 0.2f, 1.0f),  // Faction2: オレンジ
+        Color(1.0f, 1.0f, 0.3f, 1.0f),  // Faction3: 黄
+        Color(0.3f, 1.0f, 0.3f, 1.0f),  // Faction4: 緑
+        Color(0.3f, 0.5f, 1.0f, 1.0f),  // Faction5: 青
+        Color(0.7f, 0.3f, 1.0f, 1.0f),  // Faction6: 紫
+    };
+
+    // グループIDからFaction番号を取得するラムダ
+    auto getFactionIndex = [](const std::string& id) -> int {
+        // "Faction1_G1" -> 1 -> index 0
+        size_t pos = id.find("Faction");
+        if (pos != std::string::npos && pos + 7 < id.size()) {
+            char c = id[pos + 7];
+            if (c >= '1' && c <= '6') {
+                return c - '1';
+            }
+        }
+        return 0;
+    };
+
+    // グループ作成
+    for (const GroupData& gd : stageData.groups) {
+        std::unique_ptr<Group> group = std::make_unique<Group>(gd.id);
+        group->SetBaseThreat(gd.threat);
+        group->SetDetectionRange(gd.detectionRange);
+
+        Vector2 groupCenter(gd.x, gd.y);
+        int factionIdx = getFactionIndex(gd.id);
+        Color factionColor = factionColors[factionIdx];
+
+        // 個体追加
+        for (int i = 0; i < gd.count; ++i) {
+            if (gd.species == "Elf") {
+                std::unique_ptr<Elf> elf = std::make_unique<Elf>(gd.id + "_E" + std::to_string(i));
+                elf->Initialize(groupCenter);
+                elf->SetMaxHp(gd.hp);
+                elf->SetAttackDamage(gd.attack);
+                elf->SetMoveSpeed(gd.speed);
+                group->AddIndividual(std::move(elf));
+            } else if (gd.species == "Knight") {
+                std::unique_ptr<Knight> knight = std::make_unique<Knight>(gd.id + "_K" + std::to_string(i));
+                knight->Initialize(groupCenter);
+                knight->SetColor(factionColor);
+                knight->SetMaxHp(gd.hp);
+                knight->SetAttackDamage(gd.attack);
+                knight->SetMoveSpeed(gd.speed);
+                group->AddIndividual(std::move(knight));
+            }
+        }
+
+        group->Initialize(groupCenter);
+
+        std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
+        ai->SetPlayer(player_.get());
+        ai->SetCamera(camera_);
+        ai->SetDetectionRange(gd.detectionRange);
+        group->SetAI(ai.get());
+        groupAIs_.push_back(std::move(ai));
+
+        CombatSystem::Get().RegisterGroup(group.get());
+        GameStateManager::Get().RegisterEnemyGroup(group.get());
+
+        enemyGroups_.push_back(std::move(group));
+    }
+
+    // システム初期化
     CombatSystem::Get().SetPlayer(player_.get());
     GameStateManager::Get().SetPlayer(player_.get());
     GameStateManager::Get().Initialize();
     FESystem::Get().SetPlayer(player_.get());
-
-    //========================================================================
-    // ステージ読み込み
-    // true: ファイルから読み込み / false: ハードコードされたステージ
-    //========================================================================
-    constexpr bool kUseStageFile = true;  // ← ファイル読み込みを有効にするにはtrueに
-
-    bool stageLoaded = false;
-    if (kUseStageFile) {
-        stageLoaded = LoadStageFromFile("stages:/stage1.txt");
-    }
-
-    if (!stageLoaded) {
-    // ========== ハードコードされたステージ（ファイル読み込み失敗時のフォールバック） ==========
-    // 6陣営を配置（各陣営: 3グループ×4個体、縁で接続）
-    // 陣営の中心位置（マップ周辺に配置、中央はプレイヤー）
-    // type: 0=エルフのみ, 1=騎士のみ, 2=混合
-    struct FactionPos { float x; float y; Color color; int type; };
-    // グループオフセット(±250,±220)を考慮
-    // 4000x4000マップ、中央(2000,2000)にプレイヤー
-    // 6陣営を六角形状に配置
-    FactionPos factionPositions[6] = {
-        { 2000.0f, 800.0f,  Color(1.0f, 0.3f, 0.3f, 1.0f), 1 },  // 上（赤）騎士
-        { 3000.0f, 1400.0f, Color(1.0f, 0.6f, 0.2f, 1.0f), 0 },  // 右上（オレンジ）エルフ
-        { 3000.0f, 2600.0f, Color(1.0f, 1.0f, 0.3f, 1.0f), 2 },  // 右下（黄）混合
-        { 2000.0f, 3200.0f, Color(0.3f, 1.0f, 0.3f, 1.0f), 1 },  // 下（緑）騎士
-        { 1000.0f, 2600.0f, Color(0.3f, 0.5f, 1.0f, 1.0f), 0 },  // 左下（青）エルフ
-        { 1000.0f, 1400.0f, Color(0.7f, 0.3f, 1.0f, 1.0f), 2 },  // 左上（紫）混合
-    };
-
-    // グループ内オフセット（三角形配置・広め）
-    Vector2 groupOffsets[3] = {
-        Vector2(0.0f, -250.0f),    // 上
-        Vector2(-220.0f, 150.0f),  // 左下
-        Vector2(220.0f, 150.0f),   // 右下
-    };
-
-    for (int f = 0; f < 6; ++f) {
-        FactionPos& fpos = factionPositions[f];
-        std::string factionName = "Faction" + std::to_string(f + 1);
-
-        // 3グループ作成
-        for (int g = 0; g < 3; ++g) {
-            std::string groupId = factionName + "_G" + std::to_string(g + 1);
-            std::unique_ptr<Group> group = std::make_unique<Group>(groupId);
-            group->SetBaseThreat(80.0f + static_cast<float>(f * 5));
-            group->SetDetectionRange(500.0f);
-
-            Vector2 groupCenter(fpos.x + groupOffsets[g].x, fpos.y + groupOffsets[g].y);
-
-            // 4個体追加
-            for (int i = 0; i < 4; ++i) {
-                if (fpos.type == 0) {
-                    // エルフのみ
-                    std::unique_ptr<Elf> elf = std::make_unique<Elf>(groupId + "_E" + std::to_string(i));
-                    elf->Initialize(groupCenter);
-                    group->AddIndividual(std::move(elf));
-                } else if (fpos.type == 1) {
-                    // 騎士のみ
-                    std::unique_ptr<Knight> knight = std::make_unique<Knight>(groupId + "_K" + std::to_string(i));
-                    knight->Initialize(groupCenter);
-                    knight->SetColor(fpos.color);
-                    group->AddIndividual(std::move(knight));
-                } else {
-                    // 混合（交互）
-                    if (i % 2 == 0) {
-                        std::unique_ptr<Elf> elf = std::make_unique<Elf>(groupId + "_E" + std::to_string(i));
-                        elf->Initialize(groupCenter);
-                        group->AddIndividual(std::move(elf));
-                    } else {
-                        std::unique_ptr<Knight> knight = std::make_unique<Knight>(groupId + "_K" + std::to_string(i));
-                        knight->Initialize(groupCenter);
-                        knight->SetColor(fpos.color);
-                        group->AddIndividual(std::move(knight));
-                    }
-                }
-            }
-
-            group->Initialize(groupCenter);
-
-            std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
-            ai->SetPlayer(player_.get());
-            ai->SetCamera(camera_);
-            ai->SetDetectionRange(500.0f);
-            group->SetAI(ai.get());
-            groupAIs_.push_back(std::move(ai));
-
-            CombatSystem::Get().RegisterGroup(group.get());
-            GameStateManager::Get().RegisterEnemyGroup(group.get());
-
-            enemyGroups_.push_back(std::move(group));
-        }
-    }
 
     // FactionManagerにエンティティを登録
     FactionManager::Get().ClearEntities();
@@ -177,23 +163,32 @@ void TestScene::OnEnter()
         FactionManager::Get().RegisterEntity(group.get());
     }
 
-    // 各陣営内のグループを縁で接続（三角形に結ぶ）
-    LOG_INFO("[TestScene] Creating faction bonds...");
-    for (int f = 0; f < 6; ++f) {
-        int baseIdx = f * 3;  // 各陣営の最初のグループインデックス
-        Group* g0 = enemyGroups_[baseIdx].get();
-        Group* g1 = enemyGroups_[baseIdx + 1].get();
-        Group* g2 = enemyGroups_[baseIdx + 2].get();
-
-        // A-B-C の直線接続
-        BondManager::Get().CreateBond(g0, g1, BondType::Basic);
-        BondManager::Get().CreateBond(g1, g2, BondType::Basic);
+    // グループIDからGroupポインタを取得するマップ作成
+    std::unordered_map<std::string, Group*> groupMap;
+    for (const auto& group : enemyGroups_) {
+        groupMap[group->GetId()] = group.get();
     }
-    LOG_INFO("[TestScene] Faction bonds created: " + std::to_string(BondManager::Get().GetAllBonds().size()));
+
+    // 縁を作成
+    LOG_INFO("[TestScene] Creating bonds from CSV...");
+    for (const BondData& bd : stageData.bonds) {
+        Group* fromGroup = groupMap[bd.fromId];
+        Group* toGroup = groupMap[bd.toId];
+
+        if (fromGroup && toGroup) {
+            BondType bondType = BondType::Basic;
+            if (bd.type == "Friends") {
+                bondType = BondType::Friends;
+            } else if (bd.type == "Love") {
+                bondType = BondType::Love;
+            }
+            BondManager::Get().CreateBond(fromGroup, toGroup, bondType);
+        }
+    }
+    LOG_INFO("[TestScene] Bonds created: " + std::to_string(BondManager::Get().GetAllBonds().size()));
 
     // Factionを再構築
     FactionManager::Get().RebuildFactions();
-    } // end if (!stageLoaded) - ハードコードセクション終了
 
     // AI状態変更コールバック設定
     for (size_t i = 0; i < groupAIs_.size(); ++i) {
@@ -713,7 +708,6 @@ void TestScene::Render()
     // UI描画
     DrawUI();
 
-#ifdef _DEBUG
     // モード別オーバーレイ描画（画面全体に半透明）
     if (BindSystem::Get().IsEnabled() || CutSystem::Get().IsEnabled()) {
         DebugDraw& debug = DebugDraw::Get();
@@ -730,7 +724,6 @@ void TestScene::Render()
             debug.DrawRectFilled(cameraPos, overlaySize, Color(1.0f, 0.0f, 0.0f, 0.15f));
         }
     }
-#endif
 
     // ラジアルメニュー描画
     RadialMenu::Get().Render(spriteBatch);
@@ -998,137 +991,4 @@ void TestScene::SetupEventSubscriptions()
     );
 
     LOG_INFO("[TestScene] EventBus subscriptions registered");
-}
-
-//----------------------------------------------------------------------------
-// ステージローダー関連
-//----------------------------------------------------------------------------
-
-bool TestScene::LoadStageFromFile(const std::string& filePath)
-{
-    LOG_INFO("[TestScene] Loading stage from: " + filePath);
-
-    StageData stageData = StageLoader::Load(filePath);
-
-    if (!stageData.IsValid()) {
-        LOG_WARN("[TestScene] Failed to load stage or no groups defined");
-        return false;
-    }
-
-    currentStageFile_ = filePath;
-
-    // プレイヤー位置を設定
-    if (player_) {
-        player_->Initialize(Vector2(stageData.playerX, stageData.playerY));
-    }
-
-    // グループ作成
-    for (const GroupData& groupData : stageData.groups) {
-        std::unique_ptr<Group> group = CreateGroupFromData(groupData);
-        if (!group) continue;
-
-        // AI作成
-        std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
-        ai->SetPlayer(player_.get());
-        ai->SetCamera(camera_);
-        ai->SetDetectionRange(groupData.detectionRange);
-        group->SetAI(ai.get());
-        groupAIs_.push_back(std::move(ai));
-
-        // システムに登録
-        CombatSystem::Get().RegisterGroup(group.get());
-        GameStateManager::Get().RegisterEnemyGroup(group.get());
-
-        enemyGroups_.push_back(std::move(group));
-    }
-
-    // FactionManagerにエンティティを登録
-    FactionManager::Get().ClearEntities();
-    FactionManager::Get().RegisterEntity(player_.get());
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
-        FactionManager::Get().RegisterEntity(group.get());
-    }
-
-    // 初期縁を作成
-    for (const BondData& bondData : stageData.bonds) {
-        Group* groupA = FindGroupById(bondData.fromId);
-        Group* groupB = FindGroupById(bondData.toId);
-
-        if (groupA && groupB) {
-            BondType type = GetBondTypeFromString(bondData.type);
-            BondManager::Get().CreateBond(groupA, groupB, type);
-            LOG_DEBUG("[TestScene] Bond created: " + bondData.fromId + " <-> " + bondData.toId);
-        } else {
-            LOG_WARN("[TestScene] Could not find groups for bond: " +
-                     bondData.fromId + " <-> " + bondData.toId);
-        }
-    }
-
-    // Factionを再構築
-    FactionManager::Get().RebuildFactions();
-
-    LOG_INFO("[TestScene] Stage loaded: " + stageData.name +
-             " (" + std::to_string(enemyGroups_.size()) + " groups, " +
-             std::to_string(BondManager::Get().GetBondCount()) + " bonds)");
-
-    return true;
-}
-
-//----------------------------------------------------------------------------
-std::unique_ptr<Group> TestScene::CreateGroupFromData(const GroupData& data)
-{
-    std::unique_ptr<Group> group = std::make_unique<Group>(data.id);
-    group->SetBaseThreat(data.threat);
-    group->SetDetectionRange(data.detectionRange);
-
-    Vector2 groupCenter(data.x, data.y);
-
-    // 種族に応じて個体を作成
-    for (int i = 0; i < data.count; ++i) {
-        std::string individualId = data.id + "_" + std::to_string(i);
-
-        if (data.species == "Elf") {
-            std::unique_ptr<Elf> elf = std::make_unique<Elf>(individualId);
-            elf->Initialize(groupCenter);
-            group->AddIndividual(std::move(elf));
-        }
-        else if (data.species == "Knight") {
-            std::unique_ptr<Knight> knight = std::make_unique<Knight>(individualId);
-            knight->Initialize(groupCenter);
-            group->AddIndividual(std::move(knight));
-        }
-        else {
-            // 未知の種族はElf扱い
-            LOG_WARN("[TestScene] Unknown species: " + data.species + ", using Elf");
-            std::unique_ptr<Elf> elf = std::make_unique<Elf>(individualId);
-            elf->Initialize(groupCenter);
-            group->AddIndividual(std::move(elf));
-        }
-    }
-
-    group->Initialize(groupCenter);
-    return group;
-}
-
-//----------------------------------------------------------------------------
-BondType TestScene::GetBondTypeFromString(const std::string& typeName) const
-{
-    if (typeName == "Friends") {
-        return BondType::Friends;
-    }
-    if (typeName == "Love") {
-        return BondType::Love;
-    }
-    return BondType::Basic;
-}
-
-//----------------------------------------------------------------------------
-Group* TestScene::FindGroupById(const std::string& id) const
-{
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
-        if (group->GetId() == id) {
-            return group.get();
-        }
-    }
-    return nullptr;
 }

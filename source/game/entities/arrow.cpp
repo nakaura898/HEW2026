@@ -9,8 +9,7 @@
 #include "engine/c_systems/sprite_batch.h"
 #include "engine/c_systems/collision_manager.h"
 #include "engine/c_systems/collision_layers.h"
-#include "engine/debug/debug_draw.h"
-#include "engine/math/color.h"
+#include "game/systems/time_manager.h"
 #include "common/logging/logging.h"
 #include <cmath>
 
@@ -52,6 +51,11 @@ void Arrow::Initialize(const Vector2& startPos, const Vector2& targetPos)
             return;
         }
 
+        // 時間停止中はダメージを与えない
+        if (TimeManager::Get().IsFrozen()) {
+            return;
+        }
+
         // Individual対象
         if (target_ != nullptr && target_->GetCollider() == other) {
             if (target_->IsAlive()) {
@@ -79,21 +83,22 @@ void Arrow::Initialize(const Vector2& startPos, const Vector2& targetPos)
         }
     });
 
-    // 白テクスチャを作成（矢の形）
-    std::vector<uint32_t> arrowPixels(16 * 4, 0xFFFFFFFF);
-    texture_ = TextureManager::Get().Create2D(
-        16, 4,
-        DXGI_FORMAT_R8G8B8A8_UNORM,
-        D3D11_BIND_SHADER_RESOURCE,
-        arrowPixels.data(),
-        16 * sizeof(uint32_t)
-    );
+    // 矢テクスチャをロード
+    texture_ = TextureManager::Get().LoadTexture2D("Elf_arrow.png");
 
     if (sprite_ && texture_) {
         sprite_->SetTexture(texture_.get());
-        sprite_->SetColor(Color(0.8f, 0.6f, 0.2f, 1.0f)); // 茶色
-        sprite_->SetPivot(8.0f, 2.0f); // 中心
         sprite_->SetSortingLayer(15);
+
+        // ピボットを中心に設定
+        float texWidth = static_cast<float>(texture_->Width());
+        float texHeight = static_cast<float>(texture_->Height());
+        sprite_->SetPivotFromCenter(texWidth, texHeight, 0.0f, 0.0f);
+    }
+
+    // スケール設定（小さく）
+    if (transform_) {
+        transform_->SetScale(0.3f);
     }
 
     // 方向計算
@@ -105,7 +110,7 @@ void Arrow::Initialize(const Vector2& startPos, const Vector2& targetPos)
         direction_ = Vector2(1.0f, 0.0f);
     }
 
-    // 回転設定（矢の向き）
+    // 回転設定（テクスチャは左向き）
     if (transform_) {
         float angle = std::atan2(direction_.y, direction_.x);
         transform_->SetRotation(angle);
@@ -120,40 +125,40 @@ void Arrow::Update(float dt)
 {
     if (!isActive_) return;
 
-    // 寿命チェック
-    lifetime_ += dt;
+    // 時間スケール適用
+    float scaledDt = TimeManager::Get().GetScaledDeltaTime(dt);
+
+    // 寿命チェック（スケール済み時間で）
+    lifetime_ += scaledDt;
     if (lifetime_ >= kMaxLifetime) {
         isActive_ = false;
         return;
     }
 
-    // 移動
+    // 移動（スケール済み時間で）
     if (transform_) {
         Vector2 pos = transform_->GetPosition();
-        pos.x += direction_.x * speed_ * dt;
-        pos.y += direction_.y * speed_ * dt;
+        pos.x += direction_.x * speed_ * scaledDt;
+        pos.y += direction_.y * speed_ * scaledDt;
         transform_->SetPosition(pos);
     }
 
     // 命中チェックはCollisionManagerのコールバックで自動処理
 
-    // GameObject更新
+    // GameObject更新（スケール済み時間で）
     if (gameObject_) {
-        gameObject_->Update(dt);
+        gameObject_->Update(scaledDt);
     }
 }
 
 //----------------------------------------------------------------------------
-void Arrow::Render(SpriteBatch& /*spriteBatch*/)
+void Arrow::Render(SpriteBatch& spriteBatch)
 {
     if (!isActive_) return;
-    if (!transform_) return;
+    if (!transform_ || !sprite_) return;
 
-    // 矢をDEBUG_LINEで描画
-    Vector2 pos = transform_->GetPosition();
-    Vector2 endPos = pos + direction_ * 20.0f;  // 20px長さの矢
-    Color arrowColor(0.8f, 0.5f, 0.2f, 1.0f);   // 茶色
-    DEBUG_LINE(pos, endPos, arrowColor, 3.0f);
+    // SpriteBatchで描画
+    spriteBatch.Draw(*sprite_, *transform_);
 }
 
 //----------------------------------------------------------------------------

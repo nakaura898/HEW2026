@@ -197,6 +197,9 @@ void Group::SetPosition(const Vector2& position)
             individual->SetPosition(Vector2(pos.x + delta.x, pos.y + delta.y));
         }
     }
+
+    // Formationの中心位置も更新
+    formation_.SetCenter(targetPos);
 }
 
 //----------------------------------------------------------------------------

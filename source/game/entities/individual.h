@@ -172,6 +172,12 @@ public:
     //! @brief 攻撃ダメージ取得
     [[nodiscard]] float GetAttackDamage() const { return attackDamage_; }
 
+    //! @brief 攻撃ダメージ設定
+    void SetAttackDamage(float damage) { attackDamage_ = damage; }
+
+    //! @brief 最大HP設定
+    void SetMaxHp(float hp) { maxHp_ = hp; hp_ = hp; }
+
     //! @brief 移動速度取得
     [[nodiscard]] float GetMoveSpeed() const { return moveSpeed_; }
 
@@ -269,6 +275,7 @@ protected:
     // 移動
     Vector2 desiredVelocity_ = Vector2::Zero;
     Vector2 separationOffset_ = Vector2::Zero;
+    Vector2 prevPosition_ = Vector2::Zero;    //!< 前フレームの位置（実移動量算出用）
 
     // 分離パラメータ
     float separationRadius_ = 20.0f;    //!< この距離以内で回避開始

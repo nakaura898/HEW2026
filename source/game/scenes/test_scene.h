@@ -17,11 +17,9 @@
 #include "game/ai/group_ai.h"
 #include "game/bond/bondable_entity.h"
 #include "game/bond/bond.h"
-#include "game/stage/stage_data.h"
 #include <memory>
 #include <vector>
 #include <cstdint>
-#include <string>
 
 //----------------------------------------------------------------------------
 //! @brief テストシーン - A-RAS!ゲームプロトタイプ
@@ -131,31 +129,4 @@ private:
 
     //! @brief デバッグ描画表示フラグ（F1で切替）
     bool showDebugDraw_ = true;
-
-    //------------------------------------------------------------------------
-    // ステージローダー
-    //------------------------------------------------------------------------
-
-    //! @brief ステージファイルから読み込んでセットアップ
-    //! @param filePath ステージファイルパス
-    //! @return 読み込み成功ならtrue
-    bool LoadStageFromFile(const std::string& filePath);
-
-    //! @brief GroupDataから実際のGroupを作成
-    //! @param data グループデータ
-    //! @return 作成したGroup
-    std::unique_ptr<Group> CreateGroupFromData(const GroupData& data);
-
-    //! @brief BondDataから縁タイプを取得
-    //! @param typeName タイプ名（"Basic", "Friends", "Love"）
-    //! @return 縁タイプ
-    BondType GetBondTypeFromString(const std::string& typeName) const;
-
-    //! @brief グループIDからGroupを検索
-    //! @param id グループID
-    //! @return 見つかったGroup、なければnullptr
-    Group* FindGroupById(const std::string& id) const;
-
-    //! @brief 現在のステージファイルパス
-    std::string currentStageFile_;
 };

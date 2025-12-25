@@ -3,6 +3,7 @@
 //! @brief  時間管理システム実装
 //----------------------------------------------------------------------------
 #include "time_manager.h"
+#include "engine/time/timer.h"
 #include "common/logging/logging.h"
 #include <algorithm>
 
@@ -57,6 +58,18 @@ void TimeManager::SetSlowMotion(float scale)
     if (onStateChanged_) {
         onStateChanged_(state_);
     }
+}
+
+//----------------------------------------------------------------------------
+float TimeManager::GetRawDeltaTime() const
+{
+    return Timer::GetDeltaTime();
+}
+
+//----------------------------------------------------------------------------
+float TimeManager::GetDeltaTime() const
+{
+    return GetScaledDeltaTime(GetRawDeltaTime());
 }
 
 //----------------------------------------------------------------------------
