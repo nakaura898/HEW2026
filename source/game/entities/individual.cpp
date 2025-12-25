@@ -87,17 +87,32 @@ void Individual::Update(float dt)
         return;
     }
 
+    // 実際の位置変化を検出（前フレームの位置と比較）
+    constexpr float kActualMoveThreshold = 0.5f;
+    Vector2 currentPos = GetPosition();
+    float actualMoveDist = (currentPos - prevPosition_).Length();
+    isActuallyMoving_ = (actualMoveDist > kActualMoveThreshold);
+
     // 死亡状態でもアニメは更新
     if (!IsAlive()) {
-        // 死亡アニメをリクエスト
         animationController_.RequestState(AnimationState::Death);
         animationController_.Update(scaledDt);
         gameObject_->Update(scaledDt);
+        prevPosition_ = GetPosition();
         return;
     }
 
     // 攻撃クールダウン更新
     UpdateAttackCooldown(scaledDt);
+
+    // 攻撃持続タイマー更新
+    if (isAttacking_ && attackDurationTimer_ > 0.0f) {
+        attackDurationTimer_ -= scaledDt;
+        if (attackDurationTimer_ <= 0.0f) {
+            // 攻撃終了
+            EndAttack();
+        }
+    }
 
     // 行動状態を更新（グループAIの状態に基づく）
     UpdateAction();
@@ -116,56 +131,21 @@ void Individual::Update(float dt)
         transform_->SetPosition(pos);
     }
 
-    // 実際の移動量を計算（Group::SetPositionによる直接移動も検出）
-    Vector2 currentPos = GetPosition();
-    Vector2 posDelta = currentPos - prevPosition_;
-    float actualMovement = posDelta.LengthSquared();
-    constexpr float kMovementThreshold = 0.1f;  // 移動判定閾値（二乗）
-    bool isActuallyMoving = actualMovement > kMovementThreshold;
+    // 向き更新（意図ベース）
+    UpdateFacingDirection();
 
-    // 移動方向に応じてスプライト反転（テクスチャは左向き）
-    if (sprite_ && isActuallyMoving) {
-        // 右に移動中なら反転
-        sprite_->SetFlipX(posDelta.x > 0.0f);
-    }
-
-    // IndividualActionからAnimationStateへ変換してリクエスト
-    AnimationState animState = AnimationState::Idle;
-    switch (action_) {
-    case IndividualAction::Idle:
-        animState = AnimationState::Idle;
-        break;
-    case IndividualAction::Walk:
-        // Walk状態でも実際に移動していなければIdle
-        animState = isActuallyMoving ? AnimationState::Walk : AnimationState::Idle;
-        break;
-    case IndividualAction::Attack:
-        animState = AnimationState::Attack;
-        break;
-    case IndividualAction::Death:
-        animState = AnimationState::Death;
-        break;
-    }
-    animationController_.RequestState(animState);
-
-    // AnimationController更新（アニメ終了検出、スケール済み時間で）
+    // AnimationController更新（アニメ終了検出→ロック解除）
     animationController_.Update(scaledDt);
+
+    // アニメーション状態決定（意図ベース）- ロック解除後に実行
+    AnimationState animState = DetermineAnimationState();
+    animationController_.RequestState(animState);
 
     // GameObjectの更新（Animatorの更新など、スケール済み時間で）
     gameObject_->Update(scaledDt);
 
     // 前フレーム位置を更新
-    prevPosition_ = currentPos;
-
-    // デバッグ: アニメーション状態確認（最初の個体のみ）
-    static int debugCounter = 0;
-    if (debugCounter++ % 120 == 0 && id_.find("_E0") != std::string::npos) {
-        LOG_INFO("[Anim] " + id_ +
-                 " action=" + std::to_string(static_cast<int>(action_)) +
-                 " animState=" + std::to_string(static_cast<int>(animState)) +
-                 " move=" + std::to_string(static_cast<int>(actualMovement * 1000)) +
-                 " row=" + std::to_string(animator_ ? animator_->GetRow() : -1));
-    }
+    prevPosition_ = GetPosition();
 }
 
 //----------------------------------------------------------------------------
@@ -353,6 +333,11 @@ void Individual::UpdateAction()
         return;
     }
 
+    // 攻撃モーション中は状態変えない（AnimationControllerがロック中の場合のみ）
+    if (action_ == IndividualAction::Attack && animationController_.IsLocked()) {
+        return;
+    }
+
     AIState groupState = ai->GetState();
 
     // グループがFlee → Walk
@@ -372,10 +357,6 @@ void Individual::UpdateAction()
     }
 
     // グループがSeek → 射程判定
-    // 攻撃モーション中は状態変えない
-    if (action_ == IndividualAction::Attack && isAttacking_) {
-        return;
-    }
 
     // ターゲットGroupを取得
     AITarget aiTarget = ai->GetTarget();
@@ -452,6 +433,11 @@ void Individual::UpdateDesiredVelocity()
 
     if (!IsAlive() || !ownerGroup_) return;
 
+    // 攻撃中は移動しない
+    if (isAttacking_) {
+        return;
+    }
+
     switch (action_) {
     case IndividualAction::Idle:
         {
@@ -519,6 +505,27 @@ void Individual::UpdateDesiredVelocity()
 }
 
 //----------------------------------------------------------------------------
+bool Individual::GetCurrentAttackTargetPosition(Vector2& outPosition) const
+{
+    // 基底クラス実装: attackTarget_を使用
+    if (attackTarget_ && attackTarget_->IsAlive()) {
+        outPosition = attackTarget_->GetPosition();
+        return true;
+    }
+
+    // フォールバック: グループAIのターゲット
+    if (ownerGroup_) {
+        GroupAI* ai = ownerGroup_->GetAI();
+        if (ai && ai->HasTarget()) {
+            outPosition = ai->GetTargetPosition();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+//----------------------------------------------------------------------------
 void Individual::SelectAttackTarget()
 {
     attackTarget_ = nullptr;
@@ -545,6 +552,7 @@ void Individual::SelectAttackTarget()
 void Individual::StartAttack()
 {
     isAttacking_ = true;
+    attackDurationTimer_ = kAttackDuration;  // 攻撃持続時間を設定
     // AnimationControllerが攻撃アニメをロック中になる
     // RequestState(Attack)は Update() で呼ばれる
 }
@@ -553,14 +561,209 @@ void Individual::StartAttack()
 void Individual::EndAttack()
 {
     isAttacking_ = false;
+    attackDurationTimer_ = 0.0f;
+
+    // アニメーションロックを解除
+    animationController_.ForceUnlock();
 
     // 攻撃終了後、ターゲットが死亡していれば再選択
     if (attackTarget_ && !attackTarget_->IsAlive()) {
         SelectAttackTarget();
+    }
 
-        // グループ全滅ならIdle/Walk に戻る
-        if (!attackTarget_) {
-            action_ = IndividualAction::Idle;
+    // アクションを非攻撃状態にリセット（呼び出し側で必要に応じて上書き可能）
+    action_ = IndividualAction::Idle;
+}
+
+//----------------------------------------------------------------------------
+void Individual::InterruptAttack()
+{
+    // 攻撃状態をリセット
+    isAttacking_ = false;
+    attackDurationTimer_ = 0.0f;
+    action_ = IndividualAction::Idle;
+    attackTarget_ = nullptr;
+
+    // アニメーションロックを強制解除し、即座にIdleアニメーションをリクエスト
+    animationController_.ForceUnlock();
+    animationController_.RequestState(AnimationState::Idle);
+}
+
+//----------------------------------------------------------------------------
+GroupIntent Individual::GetGroupIntent() const
+{
+    // GroupAIからのイベント通知で設定されたフラグを使用
+    if (!isGroupMoving_) {
+        return GroupIntent::Idle;
+    }
+
+    // グループが移動中の場合、AI状態を返す
+    if (!ownerGroup_) {
+        return GroupIntent::Idle;
+    }
+
+    GroupAI* ai = ownerGroup_->GetAI();
+    if (!ai) {
+        return GroupIntent::Idle;
+    }
+
+    switch (ai->GetState()) {
+    case AIState::Wander:
+        return GroupIntent::Wander;
+    case AIState::Seek:
+        return GroupIntent::Seek;
+    case AIState::Flee:
+        return GroupIntent::Flee;
+    default:
+        return GroupIntent::Idle;
+    }
+}
+
+//----------------------------------------------------------------------------
+IndividualIntent Individual::GetIndividualIntent() const
+{
+    // 死亡チェック
+    if (!IsAlive()) {
+        return IndividualIntent::Dead;
+    }
+
+    // 攻撃モーション中
+    if (action_ == IndividualAction::Attack) {
+        return IndividualIntent::Attacking;
+    }
+
+    // ターゲット追跡中（攻撃対象がいて、攻撃範囲外の場合）
+    if (attackTarget_ && attackTarget_->IsAlive()) {
+        float distToTarget = (attackTarget_->GetPosition() - GetPosition()).Length();
+        if (distToTarget > GetAttackRange()) {
+            return IndividualIntent::ChasingTarget;
         }
     }
+
+    // スロット到達判定
+    if (ownerGroup_) {
+        Formation& formation = ownerGroup_->GetFormation();
+        Vector2 slotPos = formation.GetSlotPosition(this);
+        Vector2 diff = slotPos - GetPosition();
+        float dist = diff.Length();
+
+        if (dist >= kFormationThreshold) {
+            return IndividualIntent::MovingToSlot;
+        }
+    }
+
+    return IndividualIntent::AtSlot;
+}
+
+//----------------------------------------------------------------------------
+AnimationState Individual::DetermineAnimationState() const
+{
+    IndividualIntent indIntent = GetIndividualIntent();
+    GroupIntent grpIntent = GetGroupIntent();
+
+#ifdef _DEBUG
+    // デバッグ: 意図とアニメーション状態をログ
+    if (++debugLogCounter_ % 60 == 0) {  // 1秒に1回
+        std::string indIntentStr;
+        switch (indIntent) {
+        case IndividualIntent::AtSlot: indIntentStr = "AtSlot"; break;
+        case IndividualIntent::MovingToSlot: indIntentStr = "MovingToSlot"; break;
+        case IndividualIntent::ChasingTarget: indIntentStr = "ChasingTarget"; break;
+        case IndividualIntent::Attacking: indIntentStr = "Attacking"; break;
+        case IndividualIntent::Dead: indIntentStr = "Dead"; break;
+        }
+        std::string grpIntentStr;
+        switch (grpIntent) {
+        case GroupIntent::Idle: grpIntentStr = "Idle"; break;
+        case GroupIntent::Wander: grpIntentStr = "Wander"; break;
+        case GroupIntent::Seek: grpIntentStr = "Seek"; break;
+        case GroupIntent::Flee: grpIntentStr = "Flee"; break;
+        }
+        std::string ctrlStateStr;
+        switch (animationController_.GetState()) {
+        case AnimationState::Idle: ctrlStateStr = "Idle"; break;
+        case AnimationState::Walk: ctrlStateStr = "Walk"; break;
+        case AnimationState::Attack: ctrlStateStr = "Attack"; break;
+        case AnimationState::Death: ctrlStateStr = "Death"; break;
+        default: ctrlStateStr = "?"; break;
+        }
+        LOG_INFO("[AnimState] " + id_ + " IndIntent=" + indIntentStr + " GrpIntent=" + grpIntentStr +
+                 " action=" + std::to_string(static_cast<int>(action_)) +
+                 " ctrlState=" + ctrlStateStr + " locked=" + (animationController_.IsLocked() ? "Y" : "N"));
+    }
+#endif
+
+    // 死亡・攻撃は最優先
+    if (indIntent == IndividualIntent::Dead) {
+        return AnimationState::Death;
+    }
+    if (indIntent == IndividualIntent::Attacking) {
+        return AnimationState::Attack;
+    }
+
+    // グループが実際に移動中 → Walk
+    if (grpIntent != GroupIntent::Idle) {
+        return AnimationState::Walk;
+    }
+
+    // グループ停止中：個体の状態で判定
+    if (indIntent == IndividualIntent::MovingToSlot ||
+        indIntent == IndividualIntent::ChasingTarget) {
+        return AnimationState::Walk;
+    }
+
+    // 実際に位置が変化している場合もWalk（LovePull等による移動）
+    if (isActuallyMoving_) {
+        return AnimationState::Walk;
+    }
+
+    return AnimationState::Idle;
+}
+
+//----------------------------------------------------------------------------
+void Individual::UpdateFacingDirection()
+{
+    if (!sprite_) return;
+
+    IndividualIntent intent = GetIndividualIntent();
+
+    // 1. 攻撃中はターゲット方向（仮想メソッドで派生クラス対応）
+    if (intent == IndividualIntent::Attacking) {
+        Vector2 targetPos;
+        if (GetCurrentAttackTargetPosition(targetPos)) {
+            float dx = targetPos.x - GetPosition().x;
+            if (dx > 0.0f) {
+                facingRight_ = true;
+            } else if (dx < 0.0f) {
+                facingRight_ = false;
+            }
+        }
+    }
+    // 2. グループ移動中はグループの移動先方向を向く（個体速度ではなくAIターゲット方向）
+    else if (isGroupMoving_ && ownerGroup_) {
+        GroupAI* ai = ownerGroup_->GetAI();
+        if (ai) {
+            Vector2 targetPos = ai->GetTargetPosition();
+            Vector2 groupPos = ownerGroup_->GetPosition();
+            float dx = targetPos.x - groupPos.x;
+            if (dx > 0.0f) {
+                facingRight_ = true;
+            } else if (dx < 0.0f) {
+                facingRight_ = false;
+            }
+        }
+    }
+    // 3. 実際に移動中（LovePull等）は移動方向を向く
+    else if (isActuallyMoving_) {
+        Vector2 currentPos = GetPosition();
+        float dx = currentPos.x - prevPosition_.x;
+        if (dx > 0.0f) {
+            facingRight_ = true;
+        } else if (dx < 0.0f) {
+            facingRight_ = false;
+        }
+    }
+    // それ以外は現在の向きを維持
+
+    sprite_->SetFlipX(facingRight_);
 }

@@ -3,6 +3,7 @@
 //! @brief  Groupクラス実装
 //----------------------------------------------------------------------------
 #include "group.h"
+#include "game/ai/group_ai.h"
 #include "game/systems/stagger_system.h"
 #include "game/bond/bond_manager.h"
 #include "game/bond/bond.h"
@@ -164,28 +165,7 @@ void Group::SetPosition(const Vector2& position)
 {
     Vector2 targetPos = position;
 
-    // ラブ縁のみ距離制限があるので、ラブ縁だけチェック（最適化）
-    std::vector<Bond*> loveBonds = BondManager::Get().GetBondsByType(BondType::Love);
-    BondableEntity selfEntity = this;
-
-    for (Bond* bond : loveBonds) {
-        if (!bond->Involves(selfEntity)) continue;
-
-        float maxDist = bond->GetMaxDistance();
-        BondableEntity other = bond->GetOther(selfEntity);
-        Vector2 otherPos = BondableHelper::GetPosition(other);
-
-        // 目標位置と相手の距離を計算
-        Vector2 diff = Vector2(targetPos.x - otherPos.x, targetPos.y - otherPos.y);
-        float dist = std::sqrt(diff.x * diff.x + diff.y * diff.y);
-
-        // 最大距離を超えていたらクランプ
-        if (dist > maxDist && dist > 0.0f) {
-            float ratio = maxDist / dist;
-            targetPos.x = otherPos.x + diff.x * ratio;
-            targetPos.y = otherPos.y + diff.y * ratio;
-        }
-    }
+    // Love追従はGroupAI::UpdateWanderで処理するため、ここでは制約をかけない
 
     Vector2 currentCenter = GetPosition();
     Vector2 delta = Vector2(targetPos.x - currentCenter.x, targetPos.y - currentCenter.y);
@@ -258,6 +238,26 @@ void Group::RebuildFormation()
 {
     std::vector<Individual*> alive = GetAliveIndividuals();
     formation_.Rebuild(alive);
+}
+
+//----------------------------------------------------------------------------
+void Group::ResetOnBond()
+{
+    // AIをWander状態に戻す
+    if (ai_) {
+        ai_->SetState(AIState::Wander);
+        ai_->ClearTarget();
+    }
+
+    // 個体の状態をリセット（攻撃中断とアニメーションロック解除含む）
+    for (auto& individual : individuals_) {
+        if (individual && individual->IsAlive()) {
+            individual->InterruptAttack();
+            individual->SetGroupMoving(false);
+        }
+    }
+
+    LOG_INFO("[Group] " + id_ + " reset on bond");
 }
 
 //----------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 //! @brief  縁マネージャー実装
 //----------------------------------------------------------------------------
 #include "bond_manager.h"
+#include "game/entities/group.h"
 #include "common/logging/logging.h"
 #include <algorithm>
 #include <queue>
@@ -35,6 +36,20 @@ Bond* BondManager::CreateBond(BondableEntity a, BondableEntity b, BondType type)
     std::unique_ptr<Bond> bond = std::make_unique<Bond>(a, b, type);
     Bond* bondPtr = bond.get();
     bonds_.push_back(std::move(bond));
+
+    // グループの状態をリセット（攻撃中でも正常に動作するように）
+    if (std::holds_alternative<Group*>(a)) {
+        Group* group = std::get<Group*>(a);
+        if (group) {
+            group->ResetOnBond();
+        }
+    }
+    if (std::holds_alternative<Group*>(b)) {
+        Group* group = std::get<Group*>(b);
+        if (group) {
+            group->ResetOnBond();
+        }
+    }
 
     // キャッシュを再構築
     RebuildCache();

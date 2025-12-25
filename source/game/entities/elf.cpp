@@ -69,9 +69,6 @@ void Elf::SetupAnimator()
 //----------------------------------------------------------------------------
 void Elf::Update(float dt)
 {
-    // 基底クラスの更新
-    Individual::Update(dt);
-
     // 攻撃アニメーション中に特定フレームで矢を発射
     if (!arrowShot_ && (pendingTarget_ || pendingTargetPlayer_)) {
         if (animator_ && animator_->GetRow() == 2 && animator_->GetColumn() >= kShootFrame) {
@@ -79,12 +76,16 @@ void Elf::Update(float dt)
         }
     }
 
-    // 攻撃アニメーション終了で状態リセット
+    // 攻撃アニメーション終了で状態リセット（Individual::Update前に実行）
     if (arrowShot_ && animator_ && !animator_->IsPlaying()) {
         pendingTarget_ = nullptr;
         pendingTargetPlayer_ = nullptr;
         arrowShot_ = false;
+        action_ = IndividualAction::Idle;
     }
+
+    // 基底クラスの更新
+    Individual::Update(dt);
 }
 
 //----------------------------------------------------------------------------
@@ -92,6 +93,9 @@ void Elf::Attack(Individual* target)
 {
     if (!target || !target->IsAlive()) return;
     if (!IsAlive()) return;
+
+    // 攻撃状態に設定
+    action_ = IndividualAction::Attack;
 
     // 攻撃アニメーション開始
     if (animator_) {
@@ -111,6 +115,9 @@ void Elf::AttackPlayer(Player* target)
 {
     if (!target || !target->IsAlive()) return;
     if (!IsAlive()) return;
+
+    // 攻撃状態に設定
+    action_ = IndividualAction::Attack;
 
     // 攻撃アニメーション開始
     if (animator_) {
@@ -139,4 +146,22 @@ void Elf::ShootArrow()
     }
 
     arrowShot_ = true;
+}
+
+//----------------------------------------------------------------------------
+bool Elf::GetCurrentAttackTargetPosition(Vector2& outPosition) const
+{
+    // Elfは pendingTarget_ / pendingTargetPlayer_ を使用
+    if (pendingTarget_ && pendingTarget_->IsAlive()) {
+        outPosition = pendingTarget_->GetPosition();
+        return true;
+    }
+
+    if (pendingTargetPlayer_ && pendingTargetPlayer_->IsAlive()) {
+        outPosition = pendingTargetPlayer_->GetPosition();
+        return true;
+    }
+
+    // フォールバック: 基底クラスの実装
+    return Individual::GetCurrentAttackTargetPosition(outPosition);
 }

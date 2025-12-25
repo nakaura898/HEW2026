@@ -136,6 +136,13 @@ public:
     //! @brief 状態変更時コールバック
     void SetOnStateChanged(std::function<void(AIState)> callback) { onStateChanged_ = callback; }
 
+    //! @brief ターゲットの位置を取得（移動目標位置）
+    [[nodiscard]] Vector2 GetTargetPosition() const;
+
+    //! @brief グループが実際に移動中かどうか判定
+    //! @return 目標に向かって移動中ならtrue
+    [[nodiscard]] bool IsMoving() const;
+
 private:
     //! @brief Wander状態の更新
     void UpdateWander(float dt);
@@ -152,11 +159,12 @@ private:
     //! @brief 新しい徘徊目標を設定
     void SetNewWanderTarget();
 
-    //! @brief ターゲットの位置を取得
-    [[nodiscard]] Vector2 GetTargetPosition() const;
-
     //! @brief ターゲットが有効か判定（生存しているか）
     [[nodiscard]] bool IsTargetValid() const;
+
+    //! @brief Love縁相手との距離が離れすぎているかチェック
+    //! @return 離れすぎていればtrue（攻撃中断すべき）
+    [[nodiscard]] bool CheckLovePartnerDistance() const;
 
     Group* owner_ = nullptr;        //!< 所有Group
     AITarget target_;               //!< 攻撃ターゲット（Group* or Player*）
@@ -183,4 +191,9 @@ private:
     mutable std::mt19937 rng_{std::random_device{}()};
 
     std::function<void(AIState)> onStateChanged_;
+
+    bool wasMoving_ = false;            //!< 前フレームの移動状態（変化検出用）
+
+    //! @brief 移動状態の変化を検出して個体に通知
+    void NotifyMovementChange();
 };

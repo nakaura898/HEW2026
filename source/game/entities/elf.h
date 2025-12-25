@@ -35,6 +35,11 @@ public:
     //! @return 攻撃範囲（弓なので長い）
     [[nodiscard]] float GetAttackRange() const override { return kAttackRange; }
 
+    //! @brief 現在の攻撃対象の位置を取得（pendingTarget_を使用）
+    //! @param[out] outPosition 攻撃対象の位置
+    //! @return 攻撃対象が存在すればtrue
+    [[nodiscard]] bool GetCurrentAttackTargetPosition(Vector2& outPosition) const override;
+
 protected:
     //! @brief テクスチャセットアップ
     void SetupTexture() override;

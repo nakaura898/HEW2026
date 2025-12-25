@@ -5,10 +5,13 @@
 #include "combat_system.h"
 #include "stagger_system.h"
 #include "faction_manager.h"
+#include "love_bond_system.h"
+#include "game_constants.h"
 #include "game/entities/group.h"
 #include "game/entities/individual.h"
 #include "game/entities/player.h"
 #include "game/bond/bond_manager.h"
+#include "game/bond/bond.h"
 #include "game/systems/event/event_bus.h"
 #include "game/systems/event/game_events.h"
 #include "common/logging/logging.h"
@@ -38,6 +41,9 @@ void CombatSystem::Update(float dt)
 
         // 硬直中は攻撃しない
         if (StaggerSystem::Get().IsStaggered(attacker)) continue;
+
+        // Love縁相手が遠い場合は攻撃しない（追従優先）
+        if (ShouldSkipCombatForLove(attacker)) continue;
 
         // 脅威度ベースでターゲット選定（グループ vs プレイヤー）
         Group* groupTarget = SelectTarget(attacker);
@@ -179,6 +185,45 @@ bool CombatSystem::IsHostileToPlayer(Group* group) const
     BondableEntity playerEntity = player_;
 
     return !FactionManager::Get().AreSameFaction(groupEntity, playerEntity);
+}
+
+//----------------------------------------------------------------------------
+bool CombatSystem::ShouldSkipCombatForLove(Group* group) const
+{
+    if (!group) return false;
+
+    Vector2 groupPos = group->GetPosition();
+
+    // 設計意図: いずれかのLove縁相手が遠い場合は戦闘を中断し、追従を優先する
+    // これにより、Love縁で結ばれた仲間が離れ離れになることを防ぐ
+
+    // プレイヤーとのLove縁チェック（プレイヤーを最優先）
+    if (player_) {
+        BondableEntity groupEntity = group;
+        BondableEntity playerEntity = player_;
+        Bond* playerBond = BondManager::Get().GetBond(groupEntity, playerEntity);
+        if (playerBond && playerBond->GetType() == BondType::Love) {
+            float dist = (player_->GetPosition() - groupPos).Length();
+            if (dist > GameConstants::kLoveInterruptDistance) {
+                return true;
+            }
+        }
+    }
+
+    // グループ同士のLove縁チェック（いずれかが遠い場合は追従優先）
+    std::vector<Group*> loveCluster = LoveBondSystem::Get().GetLoveCluster(group);
+    if (loveCluster.size() > 1) {
+        for (Group* partner : loveCluster) {
+            if (partner == group) continue;
+            if (!partner || partner->IsDefeated()) continue;  // null/全滅チェック
+            float dist = (partner->GetPosition() - groupPos).Length();
+            if (dist > GameConstants::kLoveInterruptDistance) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 //----------------------------------------------------------------------------

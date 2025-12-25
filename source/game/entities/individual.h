@@ -11,6 +11,7 @@
 #include "engine/component/collider2d.h"
 #include "dx11/gpu/texture.h"
 #include "game/systems/animation/animation_controller.h"
+#include "game/systems/animation/individual_intent.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -139,6 +140,12 @@ public:
     //! @brief 攻撃ターゲットを設定
     void SetAttackTarget(Individual* target) { attackTarget_ = target; }
 
+    //! @brief 現在の攻撃対象の位置を取得（向き決定用）
+    //! @param[out] outPosition 攻撃対象の位置
+    //! @return 攻撃対象が存在すればtrue
+    //! @note 派生クラス（Elf等）でオーバーライド可能
+    [[nodiscard]] virtual bool GetCurrentAttackTargetPosition(Vector2& outPosition) const;
+
     //! @brief 攻撃ターゲットを選択（ターゲットGroupからランダム）
     void SelectAttackTarget();
 
@@ -150,6 +157,10 @@ public:
 
     //! @brief 攻撃終了
     void EndAttack();
+
+    //! @brief 攻撃を強制中断（Love追従時などに使用）
+    //! @details アクションをIdleに、アニメーションロックを解除
+    void InterruptAttack();
 
     //! @brief 攻撃可能か（クールダウン完了かつ範囲に入った直後）
     [[nodiscard]] bool CanAttackNow() const;
@@ -219,11 +230,40 @@ public:
     //! @brief フレンズ分配ダメージ受信中フラグ設定（FriendsDamageSharing用）
     void SetReceivingSharedDamage(bool receiving) { isReceivingSharedDamage_ = receiving; }
 
+    //------------------------------------------------------------------------
+    // 意図ベースアニメーション
+    //------------------------------------------------------------------------
+
+    //! @brief グループレベルの意図を取得
+    //! @return グループAIの状態に基づく意図
+    [[nodiscard]] GroupIntent GetGroupIntent() const;
+
+    //! @brief 個体レベルの意図を取得
+    //! @return 個体の現在の状態に基づく意図
+    [[nodiscard]] IndividualIntent GetIndividualIntent() const;
+
+    //! @brief 意図に基づいてアニメーション状態を決定
+    //! @return 適用すべきアニメーション状態
+    [[nodiscard]] AnimationState DetermineAnimationState() const;
+
+    //! @brief 意図に基づいて向き方向を更新
+    void UpdateFacingDirection();
+
+    //! @brief グループ移動状態を設定（GroupAIから呼ばれる）
+    void SetGroupMoving(bool moving) { isGroupMoving_ = moving; }
+
+    //! @brief グループが移動中かどうか取得（GroupAIからの意図）
+    [[nodiscard]] bool IsGroupMoving() const { return isGroupMoving_; }
+
+    //! @brief 実際に位置が変化しているかどうか取得（フレーム間の実移動量に基づく）
+    [[nodiscard]] bool IsActuallyMoving() const { return isActuallyMoving_; }
+
 protected:
     // 定数
     static constexpr float kDefaultColliderSize = 32.0f;    //!< デフォルトコライダーサイズ
     static constexpr float kMinDistanceThreshold = 0.001f;  //!< 零除算防止用の最小距離
     static constexpr float kFormationThreshold = 5.0f;      //!< フォーメーション復帰判定の距離閾値
+    static constexpr float kAttackDuration = 0.8f;          //!< 攻撃モーション持続時間（秒）
 
     //! @brief テクスチャをセットアップ（派生クラスで実装）
     virtual void SetupTexture() = 0;
@@ -263,7 +303,10 @@ protected:
     IndividualAction action_ = IndividualAction::Idle;
     IndividualAction prevAction_ = IndividualAction::Idle;  //!< 前フレームの行動
     bool isAttacking_ = false;          //!< 攻撃モーション中
+    float attackDurationTimer_ = 0.0f;  //!< 攻撃モーション残り時間
     bool isReceivingSharedDamage_ = false;  //!< フレンズ分配ダメージ受信中（無限ループ防止）
+    bool facingRight_ = false;          //!< 向き状態（true=右向き）
+    bool isGroupMoving_ = false;        //!< グループが移動中か（GroupAIから設定）
 
     // 攻撃ターゲット
     Individual* attackTarget_ = nullptr; //!< 攻撃対象の個体
@@ -276,6 +319,7 @@ protected:
     Vector2 desiredVelocity_ = Vector2::Zero;
     Vector2 separationOffset_ = Vector2::Zero;
     Vector2 prevPosition_ = Vector2::Zero;    //!< 前フレームの位置（実移動量算出用）
+    bool isActuallyMoving_ = false;           //!< 実際に位置が変化しているか
 
     // 分離パラメータ
     float separationRadius_ = 20.0f;    //!< この距離以内で回避開始
@@ -288,4 +332,9 @@ protected:
 
     // AnimationController
     AnimationController animationController_;
+
+#ifdef _DEBUG
+    // デバッグログ用カウンター（const関数内で使用するためmutable）
+    mutable int debugLogCounter_ = 0;
+#endif
 };

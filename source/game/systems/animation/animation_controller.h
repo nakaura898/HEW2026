@@ -73,6 +73,13 @@ public:
     //! @brief ロック中か判定
     [[nodiscard]] bool IsLocked() const { return isLocked_; }
 
+    //! @brief ロックを強制解除（攻撃中断時などに使用）
+    //! @details Death状態では解除不可
+    void ForceUnlock() {
+        if (currentState_ == AnimationState::Death) return;
+        isLocked_ = false;
+    }
+
     //! @brief アニメーション再生中か判定
     [[nodiscard]] bool IsPlaying() const;
 

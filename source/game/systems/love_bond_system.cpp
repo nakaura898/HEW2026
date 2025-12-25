@@ -53,6 +53,9 @@ void LoveBondSystem::RebuildLoveGroups()
                     clusterIndexCache_[g] = clusterIndex;
                 }
 
+                // クラスタ全体で共通のwanderTargetを設定（接続直後に動き出すように）
+                SyncClusterWanderTarget(cluster);
+
                 LOG_INFO("[LoveBondSystem] Built cluster with " +
                          std::to_string(cluster.size()) + " groups");
             }
@@ -192,4 +195,44 @@ float LoveBondSystem::GetTargetThreat(const AITarget& target) const
         return (player != nullptr) ? player->GetThreat() : -1.0f;
     }
     return -1.0f;
+}
+
+//----------------------------------------------------------------------------
+void LoveBondSystem::SyncClusterWanderTarget(const std::vector<Group*>& cluster)
+{
+    if (cluster.empty()) return;
+
+    // クラスタの中心位置を計算
+    Vector2 clusterCenter = Vector2::Zero;
+    int validCount = 0;
+    for (Group* g : cluster) {
+        if (g && !g->IsDefeated()) {
+            clusterCenter = clusterCenter + g->GetPosition();
+            ++validCount;
+        }
+    }
+    if (validCount == 0) return;
+    clusterCenter = clusterCenter * (1.0f / static_cast<float>(validCount));
+
+    // 共通のwanderTargetを設定 & 攻撃状態をリセット
+    for (Group* g : cluster) {
+        if (!g || g->IsDefeated()) continue;
+
+        // wanderTarget設定
+        GroupAI* ai = g->GetAI();
+        if (ai) {
+            ai->SetWanderTarget(clusterCenter);
+        }
+
+        // 全個体の攻撃状態をリセット（攻撃中に接続されても動けるように）
+        for (Individual* ind : g->GetAliveIndividuals()) {
+            if (ind->IsAttacking()) {
+                ind->EndAttack();
+                ind->SetAction(IndividualAction::Walk);
+            }
+        }
+    }
+
+    LOG_INFO("[LoveBondSystem] Synced wander target for cluster at (" +
+             std::to_string(clusterCenter.x) + ", " + std::to_string(clusterCenter.y) + ")");
 }

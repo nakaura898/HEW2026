@@ -82,6 +82,10 @@ private:
     //! @return クラスタ内の全グループ
     std::vector<Group*> BuildClusterBFS(Group* start, std::set<Group*>& visited) const;
 
+    //! @brief クラスタ内の全グループに共通のwanderTargetを設定
+    //! @param cluster ラブ縁で繋がったグループリスト
+    void SyncClusterWanderTarget(const std::vector<Group*>& cluster);
+
     //! @brief ターゲットの脅威度を取得
     [[nodiscard]] float GetTargetThreat(const AITarget& target) const;
 
