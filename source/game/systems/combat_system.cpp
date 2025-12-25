@@ -194,7 +194,10 @@ bool CombatSystem::ShouldSkipCombatForLove(Group* group) const
 
     Vector2 groupPos = group->GetPosition();
 
-    // プレイヤーとのLove縁チェック
+    // 設計意図: いずれかのLove縁相手が遠い場合は戦闘を中断し、追従を優先する
+    // これにより、Love縁で結ばれた仲間が離れ離れになることを防ぐ
+
+    // プレイヤーとのLove縁チェック（プレイヤーを最優先）
     if (player_) {
         BondableEntity groupEntity = group;
         BondableEntity playerEntity = player_;
@@ -207,7 +210,7 @@ bool CombatSystem::ShouldSkipCombatForLove(Group* group) const
         }
     }
 
-    // グループ同士のLove縁チェック
+    // グループ同士のLove縁チェック（いずれかが遠い場合は追従優先）
     std::vector<Group*> loveCluster = LoveBondSystem::Get().GetLoveCluster(group);
     if (loveCluster.size() > 1) {
         for (Group* partner : loveCluster) {

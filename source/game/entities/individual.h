@@ -252,8 +252,11 @@ public:
     //! @brief グループ移動状態を設定（GroupAIから呼ばれる）
     void SetGroupMoving(bool moving) { isGroupMoving_ = moving; }
 
-    //! @brief グループが移動中かどうか取得
+    //! @brief グループが移動中かどうか取得（GroupAIからの意図）
     [[nodiscard]] bool IsGroupMoving() const { return isGroupMoving_; }
+
+    //! @brief 実際に位置が変化しているかどうか取得（フレーム間の実移動量に基づく）
+    [[nodiscard]] bool IsActuallyMoving() const { return isActuallyMoving_; }
 
 protected:
     // 定数

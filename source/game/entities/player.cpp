@@ -141,7 +141,9 @@ void Player::HandleInput(float dt, Camera2D& /*camera*/)
             Vector2 diff = playerPos - groupPos;
             float distance = diff.Length();
 
-            if (distance > GameConstants::kLoveInterruptDistance) {
+            // ゼロ距離エッジケースを考慮（正規化時の精度問題回避）
+            constexpr float kMinDistance = 0.0001f;
+            if (distance > GameConstants::kLoveInterruptDistance && distance > kMinDistance) {
                 // 制限距離に押し戻す
                 diff.Normalize();
                 Vector2 constrainedPos = groupPos + diff * GameConstants::kLoveInterruptDistance;

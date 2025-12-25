@@ -632,6 +632,14 @@ IndividualIntent Individual::GetIndividualIntent() const
         return IndividualIntent::Attacking;
     }
 
+    // ターゲット追跡中（攻撃対象がいて、攻撃範囲外の場合）
+    if (attackTarget_ && attackTarget_->IsAlive()) {
+        float distToTarget = (attackTarget_->GetPosition() - GetPosition()).Length();
+        if (distToTarget > GetAttackRange()) {
+            return IndividualIntent::ChasingTarget;
+        }
+    }
+
     // スロット到達判定
     if (ownerGroup_) {
         Formation& formation = ownerGroup_->GetFormation();
