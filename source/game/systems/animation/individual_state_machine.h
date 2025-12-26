@@ -14,6 +14,7 @@
 class Individual;
 class Player;
 class Animator;
+struct AnimationDecisionContext;
 
 //----------------------------------------------------------------------------
 //! @brief 個体アニメーション状態マシン
@@ -60,9 +61,10 @@ public:
     //! @return 遷移が受理されたらtrue
     bool RequestTransition(AnimState newState);
 
-    //! @brief Walk/Idleの遷移をリクエスト（ヒステリシス付き）
-    //! @param shouldWalk Walk状態にするか
-    void RequestWalkOrIdle(bool shouldWalk);
+    //! @brief コンテキストを使用してWalk/Idle判定
+    //! @param ctx アニメーション判定コンテキスト
+    //! @note BuildAnimationContext()で構築したコンテキストを渡す
+    void UpdateWithContext(const AnimationDecisionContext& ctx);
 
     //! @brief 攻撃を開始（Individual対象）
     //! @param target 攻撃対象

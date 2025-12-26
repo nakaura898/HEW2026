@@ -1,4 +1,4 @@
-﻿#include "ui_button.h"
+#include "ui_button.h"
 #include "engine/input/input_manager.h"
 #include "engine/input/key.h"
 #include "engine/debug/debug_draw.h"

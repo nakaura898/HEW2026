@@ -101,9 +101,6 @@ private:
     //! @brief グループ→プレイヤーの戦闘処理
     void ProcessCombatAgainstPlayer(Group* attacker, float dt);
 
-    //! @brief Love縁相手が遠い場合に戦闘をスキップすべきか判定
-    [[nodiscard]] bool ShouldSkipCombatForLove(Group* group) const;
-
     std::vector<Group*> groups_;    //!< 登録されたグループ
     std::set<Group*> defeatedGroups_;  //!< 既に全滅処理済みのグループ
     Player* player_ = nullptr;      //!< プレイヤー参照

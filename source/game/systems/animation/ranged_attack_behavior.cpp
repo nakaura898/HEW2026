@@ -6,6 +6,7 @@
 #include "game/entities/elf.h"
 #include "game/entities/player.h"
 #include "game/entities/arrow_manager.h"
+#include "game/systems/relationship_context.h"
 #include "common/logging/logging.h"
 
 //----------------------------------------------------------------------------
@@ -15,19 +16,29 @@ RangedAttackBehavior::RangedAttackBehavior(Elf* owner)
 }
 
 //----------------------------------------------------------------------------
-void RangedAttackBehavior::OnAttackStart(Individual* /*attacker*/, Individual* target)
+void RangedAttackBehavior::OnAttackStart(Individual* attacker, Individual* target)
 {
     pendingTarget_ = target;
     pendingTargetPlayer_ = nullptr;
     arrowShot_ = false;
+
+    // 関係レジストリに攻撃関係を登録
+    if (attacker && target) {
+        RelationshipContext::Get().RegisterAttack(attacker, target);
+    }
 }
 
 //----------------------------------------------------------------------------
-void RangedAttackBehavior::OnAttackStartPlayer(Individual* /*attacker*/, Player* target)
+void RangedAttackBehavior::OnAttackStartPlayer(Individual* attacker, Player* target)
 {
     pendingTarget_ = nullptr;
     pendingTargetPlayer_ = target;
     arrowShot_ = false;
+
+    // 関係レジストリに攻撃関係を登録
+    if (attacker && target) {
+        RelationshipContext::Get().RegisterAttackPlayer(attacker, target);
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -50,6 +61,11 @@ bool RangedAttackBehavior::OnDamageFrame()
 //----------------------------------------------------------------------------
 void RangedAttackBehavior::OnAttackEnd()
 {
+    // 関係レジストリから攻撃関係を解除
+    if (owner_) {
+        RelationshipContext::Get().UnregisterAttack(owner_);
+    }
+
     pendingTarget_ = nullptr;
     pendingTargetPlayer_ = nullptr;
     arrowShot_ = false;

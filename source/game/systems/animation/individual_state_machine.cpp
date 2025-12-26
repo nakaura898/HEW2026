@@ -1,8 +1,9 @@
-//----------------------------------------------------------------------------
+﻿//----------------------------------------------------------------------------
 //! @file   individual_state_machine.cpp
 //! @brief  個体アニメーション状態マシン実装
 //----------------------------------------------------------------------------
 #include "individual_state_machine.h"
+#include "animation_decision_context.h"
 #include "attack_behavior.h"
 #include "engine/component/animator.h"
 #include "game/entities/individual.h"
@@ -20,6 +21,13 @@ IndividualStateMachine::IndividualStateMachine(Individual* owner, Animator* anim
     rowMapping_[static_cast<size_t>(AnimState::AttackActive)] = 2;
     rowMapping_[static_cast<size_t>(AnimState::AttackRecovery)] = 2;
     rowMapping_[static_cast<size_t>(AnimState::Death)] = 3;
+
+    // 初期状態（Idle）のAnimatorセットアップ
+    if (animator_) {
+        animator_->SetRow(rowMapping_[static_cast<size_t>(AnimState::Idle)]);
+        animator_->SetLooping(true);
+        animator_->SetPlaying(true);
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -77,14 +85,17 @@ bool IndividualStateMachine::RequestTransition(AnimState newState)
 }
 
 //----------------------------------------------------------------------------
-void IndividualStateMachine::RequestWalkOrIdle(bool shouldWalk)
+void IndividualStateMachine::UpdateWithContext(const AnimationDecisionContext& ctx)
 {
-    // ロック中は処理しない
-    if (IsLocked()) {
+    // ロック中または攻撃中は判定しない
+    if (IsLocked() || IsAttacking()) {
         walkRequestFrames_ = 0;
         idleRequestFrames_ = 0;
         return;
     }
+
+    // コンテキストのShouldWalk()を使用して判定
+    bool shouldWalk = ctx.ShouldWalk();
 
     // ヒステリシス: 一定フレーム継続でのみ遷移
     if (shouldWalk) {

@@ -5,6 +5,7 @@
 #include "melee_attack_behavior.h"
 #include "game/entities/knight.h"
 #include "game/entities/player.h"
+#include "game/systems/relationship_context.h"
 #include "engine/component/collider2d.h"
 #include "common/logging/logging.h"
 #include <cmath>
@@ -16,11 +17,16 @@ MeleeAttackBehavior::MeleeAttackBehavior(Knight* owner)
 }
 
 //----------------------------------------------------------------------------
-void MeleeAttackBehavior::OnAttackStart(Individual* /*attacker*/, Individual* target)
+void MeleeAttackBehavior::OnAttackStart(Individual* attacker, Individual* target)
 {
     attackTarget_ = target;
     playerTarget_ = nullptr;
     hasHitTarget_ = false;
+
+    // 関係レジストリに攻撃関係を登録
+    if (attacker && target) {
+        RelationshipContext::Get().RegisterAttack(attacker, target);
+    }
 
     if (target) {
         StartSwordSwing(target->GetPosition());
@@ -28,11 +34,16 @@ void MeleeAttackBehavior::OnAttackStart(Individual* /*attacker*/, Individual* ta
 }
 
 //----------------------------------------------------------------------------
-void MeleeAttackBehavior::OnAttackStartPlayer(Individual* /*attacker*/, Player* target)
+void MeleeAttackBehavior::OnAttackStartPlayer(Individual* attacker, Player* target)
 {
     attackTarget_ = nullptr;
     playerTarget_ = target;
     hasHitTarget_ = false;
+
+    // 関係レジストリに攻撃関係を登録
+    if (attacker && target) {
+        RelationshipContext::Get().RegisterAttackPlayer(attacker, target);
+    }
 
     if (target) {
         StartSwordSwing(target->GetPosition());
@@ -72,6 +83,11 @@ bool MeleeAttackBehavior::OnDamageFrame()
 //----------------------------------------------------------------------------
 void MeleeAttackBehavior::OnAttackEnd()
 {
+    // 関係レジストリから攻撃関係を解除
+    if (owner_) {
+        RelationshipContext::Get().UnregisterAttack(owner_);
+    }
+
     attackTarget_ = nullptr;
     playerTarget_ = nullptr;
     isSwinging_ = false;

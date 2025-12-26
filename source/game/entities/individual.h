@@ -22,6 +22,7 @@
 class Group;
 class Player;
 class SpriteBatch;
+struct AnimationDecisionContext;
 
 //----------------------------------------------------------------------------
 //! @brief 個体の行動状態
@@ -270,6 +271,14 @@ public:
 
     //! @brief 実際に位置が変化しているかどうか取得（フレーム間の実移動量に基づく）
     [[nodiscard]] bool IsActuallyMoving() const { return isActuallyMoving_; }
+
+    //------------------------------------------------------------------------
+    // アニメーション判定コンテキスト
+    //------------------------------------------------------------------------
+
+    //! @brief アニメーション判定コンテキストを構築
+    //! @return 判定に必要な全コンテキスト（個体状態・グループ状態・関係性）
+    [[nodiscard]] AnimationDecisionContext BuildAnimationContext() const;
 
 protected:
     // 定数

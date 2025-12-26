@@ -9,8 +9,13 @@
 #include "game/systems/bind_system.h"
 #include "game/systems/friends_damage_sharing.h"
 #include "game/systems/time_manager.h"
+#include "game/systems/relationship_context.h"
+#include "game/systems/love_bond_system.h"
+#include "game/systems/game_constants.h"
+#include "game/systems/movement/formation.h"
 #include "game/bond/bondable_entity.h"
 #include "game/systems/animation/anim_state.h"
+#include "game/systems/animation/animation_decision_context.h"
 #include "engine/c_systems/sprite_batch.h"
 #include "engine/c_systems/collision_manager.h"
 #include "engine/c_systems/collision_layers.h"
@@ -129,12 +134,11 @@ void Individual::Update(float dt)
     // 向き更新（意図ベース）
     UpdateFacingDirection();
 
-    // StateMachine更新
+    // StateMachine更新（関係性を考慮したコンテキストベース）
     if (stateMachine_) {
-        // Walk/Idle遷移をリクエスト（ヒステリシス付き）
-        bool shouldWalk = (action_ == IndividualAction::Walk) ||
-                          (action_ == IndividualAction::Attack && !IsAttacking());
-        stateMachine_->RequestWalkOrIdle(shouldWalk);
+        // アニメーション判定コンテキストを構築（個体状態＋グループ状態＋関係性）
+        AnimationDecisionContext ctx = BuildAnimationContext();
+        stateMachine_->UpdateWithContext(ctx);
 
         stateMachine_->Update(scaledDt);
     }
@@ -486,7 +490,8 @@ void Individual::UpdateDesiredVelocity()
             Vector2 diff = targetPos - myPos;
             float distance = diff.Length();
 
-            if (distance > kMinDistanceThreshold) {
+            // スロットに十分近ければ停止（Idleと同じ閾値）
+            if (distance > kFormationThreshold) {
                 diff.Normalize();
                 desiredVelocity_ = diff * moveSpeed_;
             }
@@ -561,12 +566,22 @@ void Individual::SelectAttackTarget()
 
     if (std::holds_alternative<Group*>(aiTarget)) {
         targetGroup = std::get<Group*>(aiTarget);
+    } else {
+        // ターゲットがPlayerの場合、Groupターゲットはなし
+        return;
     }
 
-    if (!targetGroup || targetGroup->IsDefeated()) return;
+    if (!targetGroup || targetGroup->IsDefeated()) {
+        LOG_DEBUG("[SelectAttackTarget] " + id_ + " no valid targetGroup");
+        return;
+    }
 
     // ターゲットグループからランダムに生存個体を選ぶ
     attackTarget_ = targetGroup->GetRandomAliveIndividual();
+
+    if (!attackTarget_) {
+        LOG_DEBUG("[SelectAttackTarget] " + id_ + " no alive individual in " + targetGroup->GetId());
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -763,4 +778,80 @@ void Individual::UpdateFacingDirection()
     // それ以外は現在の向きを維持
 
     sprite_->SetFlipX(facingRight_);
+}
+
+//----------------------------------------------------------------------------
+AnimationDecisionContext Individual::BuildAnimationContext() const
+{
+    AnimationDecisionContext ctx;
+
+    //------------------------------------------------------------------------
+    // 個体状態
+    //------------------------------------------------------------------------
+    ctx.velocity = desiredVelocity_ + separationOffset_;
+    ctx.desiredVelocity = desiredVelocity_;
+    ctx.isActuallyMoving = isActuallyMoving_;
+
+    // スロット距離を計算
+    if (ownerGroup_) {
+        Formation& formation = ownerGroup_->GetFormation();
+        Vector2 slotPos = formation.GetSlotPosition(this);
+        Vector2 myPos = GetPosition();
+        ctx.distanceToSlot = (slotPos - myPos).Length();
+    }
+
+    //------------------------------------------------------------------------
+    // グループ状態
+    //------------------------------------------------------------------------
+    ctx.isGroupMoving = isGroupMoving_;
+    if (ownerGroup_) {
+        GroupAI* ai = ownerGroup_->GetAI();
+        if (ai) {
+            ctx.groupAIState = ai->GetState();
+            ctx.groupTargetPosition = ai->GetTargetPosition();
+        }
+    }
+
+    //------------------------------------------------------------------------
+    // Loveクラスター状態（関係性）
+    //------------------------------------------------------------------------
+    ctx.isInLoveCluster = LoveBondSystem::Get().HasLovePartners(ownerGroup_);
+    if (ctx.isInLoveCluster && ownerGroup_) {
+        std::vector<Group*> cluster = LoveBondSystem::Get().GetLoveCluster(ownerGroup_);
+
+        // クラスター中心を計算
+        if (!cluster.empty()) {
+            Vector2 clusterCenter = Vector2::Zero;
+            for (Group* g : cluster) {
+                if (g) {
+                    clusterCenter.x += g->GetPosition().x;
+                    clusterCenter.y += g->GetPosition().y;
+                }
+            }
+            float count = static_cast<float>(cluster.size());
+            ctx.loveClusterCenter = Vector2(clusterCenter.x / count, clusterCenter.y / count);
+            ctx.distanceToClusterCenter = (ownerGroup_->GetPosition() - ctx.loveClusterCenter).Length();
+
+            // クラスターが移動中かどうか（距離が閾値を超えている）
+            ctx.isLoveClusterMoving = (ctx.distanceToClusterCenter > GameConstants::kLoveFollowStartDistance);
+        }
+    }
+
+    //------------------------------------------------------------------------
+    // 戦闘関係（関係性）
+    //------------------------------------------------------------------------
+    ctx.isAttacking = IsAttacking();
+    ctx.attackTarget = RelationshipContext::Get().GetAttackTarget(this);
+    ctx.playerTarget = RelationshipContext::Get().GetPlayerTarget(this);
+
+    if (ctx.attackTarget && ctx.attackTarget->IsAlive()) {
+        ctx.attackTargetPosition = ctx.attackTarget->GetPosition();
+    } else if (ctx.playerTarget && ctx.playerTarget->IsAlive()) {
+        ctx.attackTargetPosition = ctx.playerTarget->GetPosition();
+    }
+
+    ctx.isUnderAttack = RelationshipContext::Get().IsUnderAttack(this);
+    ctx.attackers = RelationshipContext::Get().GetAttackers(this);
+
+    return ctx;
 }

@@ -111,8 +111,7 @@ void Player::HandleInput(float dt, Camera2D& /*camera*/)
         }
     }
 
-    // Love縁グループが攻撃中の場合、移動を制限（移動有無に関わらず毎フレーム適用）
-    // Love縁のある全グループをチェック
+    // Love縁グループとの距離を常に制限（攻撃中でなくても）
     std::vector<Bond*> bonds = BondManager::Get().GetBondsFor(this);
     for (Bond* bond : bonds) {
         if (bond->GetType() != BondType::Love) continue;
@@ -125,31 +124,35 @@ void Player::HandleInput(float dt, Camera2D& /*camera*/)
         if (!groupPtr || !*groupPtr) continue;
         Group* group = *groupPtr;
 
-        // グループ内に攻撃中の個体がいるかチェック
-        bool groupAttacking = false;
-        for (Individual* ind : group->GetAliveIndividuals()) {
-            if (ind->IsAttacking()) {
-                groupAttacking = true;
-                break;
-            }
-        }
+        // グループとの距離を制限
+        Vector2 playerPos = transform_->GetPosition();
+        Vector2 groupPos = group->GetPosition();
+        Vector2 diff = playerPos - groupPos;
+        float distance = diff.Length();
 
-        if (groupAttacking) {
-            // 攻撃中のグループとの距離を制限
-            Vector2 playerPos = transform_->GetPosition();
-            Vector2 groupPos = group->GetPosition();
-            Vector2 diff = playerPos - groupPos;
-            float distance = diff.Length();
+        // ゼロ距離エッジケースを考慮
+        constexpr float kMinDistance = 0.0001f;
+        if (distance > GameConstants::kLoveInterruptDistance && distance > kMinDistance) {
+            // 制限距離に向かって徐々に戻る（急なワープを防ぐ）
+            diff.Normalize();
+            Vector2 constrainedPos = groupPos + diff * GameConstants::kLoveInterruptDistance;
 
-            // ゼロ距離エッジケースを考慮（正規化時の精度問題回避）
-            constexpr float kMinDistance = 0.0001f;
-            if (distance > GameConstants::kLoveInterruptDistance && distance > kMinDistance) {
-                // 制限距離に押し戻す
-                diff.Normalize();
-                Vector2 constrainedPos = groupPos + diff * GameConstants::kLoveInterruptDistance;
+            // 現在位置から制限位置への移動を滑らかに
+            Vector2 toConstrained = constrainedPos - playerPos;
+            float distToConstrained = toConstrained.Length();
+
+            // 最大移動速度（プレイヤーの移動速度より速め）
+            constexpr float kMaxPullSpeed = 400.0f;
+            float maxMove = kMaxPullSpeed * dt;
+
+            if (distToConstrained > maxMove) {
+                // 徐々に制限位置へ移動
+                toConstrained.Normalize();
+                transform_->SetPosition(playerPos + toConstrained * maxMove);
+            } else {
+                // 十分近いのでそのまま設定
                 transform_->SetPosition(constrainedPos);
             }
-            break;  // 1つでも攻撃中なら制限適用
         }
     }
 }

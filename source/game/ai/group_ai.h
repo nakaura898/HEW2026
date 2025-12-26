@@ -166,6 +166,9 @@ private:
     //! @return 離れすぎていればtrue（攻撃中断すべき）
     [[nodiscard]] bool CheckLovePartnerDistance() const;
 
+    //! @brief プレイヤーとLove縁で結ばれているかチェック
+    [[nodiscard]] bool HasLoveBondWithPlayer() const;
+
     Group* owner_ = nullptr;        //!< 所有Group
     AITarget target_;               //!< 攻撃ターゲット（Group* or Player*）
     Player* player_ = nullptr;      //!< プレイヤー参照（Flee時の逃走方向）
@@ -178,6 +181,11 @@ private:
     Vector2 wanderTarget_;              //!< 徘徊目標位置
     float wanderTimer_ = 0.0f;          //!< 徘徊タイマー
     float wanderInterval_ = 3.0f;       //!< 目標変更間隔
+
+    // Love追従パラメータ
+    float loveFollowTimer_ = 0.0f;      //!< Love追従経過時間
+    bool isLoveFollowing_ = false;      //!< Love追従中フラグ
+    static constexpr float kMinLoveFollowDuration = 2.0f;  //!< 最小追従時間（秒）
 
     // 共通パラメータ
     float moveSpeed_ = 100.0f;          //!< 移動速度

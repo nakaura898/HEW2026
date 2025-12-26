@@ -27,6 +27,7 @@
 #include "game/systems/bind_system.h"
 #include "game/systems/cut_system.h"
 #include "game/systems/combat_system.h"
+#include "game/systems/combat_mediator.h"
 #include "game/systems/game_state_manager.h"
 #include "game/systems/fe_system.h"
 #include "game/systems/stagger_system.h"
@@ -151,7 +152,9 @@ void TestScene::OnEnter()
     }
 
     // システム初期化
+    CombatMediator::Get().Initialize();
     CombatSystem::Get().SetPlayer(player_.get());
+    CombatMediator::Get().SetPlayer(player_.get());
     GameStateManager::Get().SetPlayer(player_.get());
     GameStateManager::Get().Initialize();
     FESystem::Get().SetPlayer(player_.get());
@@ -249,6 +252,7 @@ void TestScene::OnExit()
     eventSubscriptions_.clear();
 
     // システムクリア
+    CombatMediator::Get().Shutdown();
     ArrowManager::Get().Clear();
     CombatSystem::Get().ClearGroups();
     GameStateManager::Get().ClearEnemyGroups();

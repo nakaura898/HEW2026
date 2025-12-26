@@ -12,6 +12,7 @@ class Player;
 class Group;
 class Individual;
 class Bond;
+enum class AIState;
 
 //============================================================================
 // モード関連イベント
@@ -155,4 +156,22 @@ struct FEChangedEvent
 struct GameOverEvent
 {
     bool isVictory;
+};
+
+//============================================================================
+// AI状態関連イベント
+//============================================================================
+
+//! @brief AI状態変更イベント
+struct AIStateChangedEvent
+{
+    Group* group;      //!< 対象グループ
+    AIState newState;  //!< 新しい状態
+};
+
+//! @brief Love追従状態変更イベント
+struct LoveFollowingChangedEvent
+{
+    Group* group;      //!< 対象グループ
+    bool isFollowing;  //!< 追従中かどうか
 };
