@@ -37,6 +37,27 @@ public:
     static FileSystemManager& Get() noexcept;
 
     //----------------------------------------------------------
+    //! @name   パスユーティリティ（static）
+    //----------------------------------------------------------
+    //!@{
+
+    //! 実行ファイルのあるディレクトリを取得（末尾に/付き）
+    [[nodiscard]] static std::wstring GetExecutableDirectory();
+
+    //! プロジェクトルートを取得（末尾に/付き）
+    //! @note 実行ファイルから相対パス（../../../../）で取得
+    [[nodiscard]] static std::wstring GetProjectRoot();
+
+    //! アセットディレクトリを取得（末尾に/付き）
+    [[nodiscard]] static std::wstring GetAssetsDirectory();
+
+    //! ディレクトリを作成（親ディレクトリも含めて）
+    //! @return 作成成功または既に存在する場合 true
+    static bool CreateDirectories(const std::wstring& path);
+
+    //!@}
+
+    //----------------------------------------------------------
     //! @name   マウント操作
     //----------------------------------------------------------
     //!@{

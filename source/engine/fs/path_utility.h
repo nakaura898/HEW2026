@@ -3,6 +3,12 @@
 #include <string>
 #include <vector>
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+
 
 //! パスユーティリティ（静的関数）
 class PathUtility {
@@ -341,6 +347,24 @@ public:
             if (toLower(n1[i]) != toLower(n2[i])) return false;
         }
         return true;
+    }
+
+//! wstring → string 変換（UTF-8）
+    [[nodiscard]] static std::string toNarrowString(const std::wstring& wide) {
+        if (wide.empty()) return {};
+        int size = ::WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
+        std::string result(size, '\0');
+        ::WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()), result.data(), size, nullptr, nullptr);
+        return result;
+    }
+
+    //! string → wstring 変換（UTF-8）
+    [[nodiscard]] static std::wstring toWideString(const std::string& narrow) {
+        if (narrow.empty()) return {};
+        int size = ::MultiByteToWideChar(CP_UTF8, 0, narrow.c_str(), static_cast<int>(narrow.size()), nullptr, 0);
+        std::wstring result(size, L'\0');
+        ::MultiByteToWideChar(CP_UTF8, 0, narrow.c_str(), static_cast<int>(narrow.size()), result.data(), size);
+        return result;
     }
 
 private:

@@ -3,6 +3,7 @@
 //! @brief  シーンマネージャー実装
 //----------------------------------------------------------------------------
 #include "scene_manager.h"
+#include <chrono>
 
 //----------------------------------------------------------------------------
 SceneManager& SceneManager::Get() noexcept
@@ -14,6 +15,37 @@ SceneManager& SceneManager::Get() noexcept
 //----------------------------------------------------------------------------
 void SceneManager::ApplyPendingChange(std::unique_ptr<Scene>& current)
 {
+    // 非同期ロード完了チェック
+    if (asyncPending_ && loadingScene_) {
+        // ロード完了を確認（ノンブロッキング）
+        if (loadFuture_.valid()) {
+            auto status = loadFuture_.wait_for(std::chrono::milliseconds(0));
+            if (status == std::future_status::ready) {
+                // ロード完了 - シーン切り替え実行
+                loadFuture_.get();  // 例外があればここで再throw
+
+                // 現在のシーンを終了
+                if (current) {
+                    current->OnExit();
+                }
+
+                // ロード完了コールバック（メインスレッド）
+                loadingScene_->OnLoadComplete();
+
+                // 新しいシーンに切り替え
+                current = std::move(loadingScene_);
+                asyncPending_ = false;
+                loadProgress_.store(0.0f);
+
+                if (current) {
+                    current->OnEnter();
+                }
+            }
+        }
+        return;
+    }
+
+    // 同期ロード
     if (!pendingFactory_) {
         return;
     }
@@ -30,4 +62,35 @@ void SceneManager::ApplyPendingChange(std::unique_ptr<Scene>& current)
     if (current) {
         current->OnEnter();
     }
+}
+
+//----------------------------------------------------------------------------
+bool SceneManager::IsLoading() const
+{
+    if (!loadFuture_.valid()) return false;
+
+    auto status = loadFuture_.wait_for(std::chrono::milliseconds(0));
+    return status != std::future_status::ready;
+}
+
+//----------------------------------------------------------------------------
+float SceneManager::GetLoadProgress() const
+{
+    if (loadingScene_) {
+        return loadingScene_->GetLoadProgress();
+    }
+    return loadProgress_.load();
+}
+
+//----------------------------------------------------------------------------
+void SceneManager::CancelAsyncLoad()
+{
+    // 注: 実行中のOnLoadAsync()は中断できない
+    // futureの完了を待ってからクリーンアップ
+    if (loadFuture_.valid()) {
+        loadFuture_.wait();
+    }
+    loadingScene_.reset();
+    asyncPending_ = false;
+    loadProgress_.store(0.0f);
 }

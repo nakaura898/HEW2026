@@ -55,6 +55,8 @@ bool Keyboard::IsAltPressed() const noexcept
 void Keyboard::Update(float deltaTime) noexcept
 {
     // GetAsyncKeyStateでキー状態をポーリング（Windowメッセージ不要）
+    // NOTE: この方式を使用する場合、OnKeyDown/OnKeyUpは呼び出さないこと
+    //       両方を混在させると状態が不整合になる可能性がある
     for (int i = 0; i < static_cast<int>(Key::KeyCount); ++i) {
         bool currentlyPressed = (GetAsyncKeyState(i) & 0x8000) != 0;
         auto& key = keys_[i];
@@ -72,6 +74,8 @@ void Keyboard::Update(float deltaTime) noexcept
     }
 }
 
+// NOTE: 以下のOnKeyDown/OnKeyUpはWM_KEYDOWN/WM_KEYUPメッセージ用
+//       Update()のポーリング方式を使用する場合は呼び出さないこと
 void Keyboard::OnKeyDown(int virtualKey) noexcept
 {
     if (virtualKey < 0 || virtualKey >= static_cast<int>(Key::KeyCount)) {

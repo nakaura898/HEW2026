@@ -2,6 +2,11 @@
 
 #include "key.h"
 #include <array>
+#include <math/math_types.h>
+
+// 前方宣言
+struct HWND__;
+using HWND = HWND__*;
 
 /// @brief マウス入力管理クラス
 ///
@@ -43,6 +48,11 @@ public:
     /// @return Y方向の移動量（ピクセル）
     int GetDeltaY() const noexcept { return deltaY_; }
 
+
+    /// @brief マウスのX,Y座標を取得
+    /// @return　(マウスのX座標、マウスのY座標)
+    Vector2 GestPosition() const noexcept { return Vector2(static_cast<float>(x_), static_cast<float>(y_)); }
+
     /// @brief ホイールスクロール量を取得
     /// @return このフレームのホイールスクロール量（正=上、負=下）
     float GetWheelDelta() const noexcept { return wheelDelta_; }
@@ -63,7 +73,8 @@ public:
     bool IsButtonUp(MouseButton button) const noexcept;
 
     /// @brief 入力状態を更新（内部用）
-    void Update() noexcept;
+    /// @param hwnd ウィンドウハンドル（nullptrの場合はアクティブウィンドウを使用）
+    void Update(HWND hwnd = nullptr) noexcept;
 
     /// @brief マウス座標を設定（内部用）
     /// @param x X座標

@@ -6,6 +6,8 @@
 
 #include <string>
 #include <cstdint>
+#include <atomic>
+#include <algorithm>
 
 //----------------------------------------------------------------------------
 //! @brief シーン基底クラス
@@ -37,6 +39,27 @@ public:
     virtual void OnExit() {}
 
     //!@}
+    //----------------------------------------------------------
+    //! @name 非同期ロード
+    //----------------------------------------------------------
+    //!@{
+
+    //! @brief 非同期ロード処理（バックグラウンドスレッドで実行）
+    //! @note テクスチャ、シェーダー等の重いリソースをここでロード
+    //! @note D3D11はスレッドセーフなのでGPUリソース作成可能
+    virtual void OnLoadAsync() {}
+
+    //! @brief 非同期ロード完了後、メインスレッドで呼ばれる
+    //! @note OnEnter()の前に呼ばれる
+    virtual void OnLoadComplete() {}
+
+    //! @brief ロード進捗を設定（0.0〜1.0）
+    void SetLoadProgress(float progress) { loadProgress_.store(std::clamp(progress, 0.0f, 1.0f)); }
+
+    //! @brief ロード進捗を取得
+    [[nodiscard]] float GetLoadProgress() const { return loadProgress_.load(); }
+
+    //!@}
 
     //----------------------------------------------------------
     //! @name フレームコールバック
@@ -60,4 +83,7 @@ public:
     [[nodiscard]] virtual const char* GetName() const { return "Scene"; }
 
     //!@}
+
+private:
+    std::atomic<float> loadProgress_{ 0.0f };  //!< ロード進捗（0.0〜1.0）
 };

@@ -1,0 +1,66 @@
+name: Discord PR Notification
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    # Draft PRは通知しない
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - name: Send PR notification to Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_USER: ${{ github.event.pull_request.user.login }}
+          PR_AVATAR: ${{ github.event.pull_request.user.avatar_url }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_CREATED: ${{ github.event.pull_request.created_at }}
+          PR_ADDITIONS: ${{ github.event.pull_request.additions }}
+          PR_DELETIONS: ${{ github.event.pull_request.deletions }}
+          PR_HEAD: ${{ github.head_ref }}
+          PR_BASE: ${{ github.base_ref }}
+        run: |
+          # 環境変数から安全に取得してJSON用にエスケープ
+          BODY_ESCAPED=$(printf '%s' "$PR_BODY" | head -c 1800 | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
+
+          # Discord Embed JSON作成（環境変数を使用）
+          JSON=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "🔀 ${PR_TITLE}",
+              "url": "${PR_URL}",
+              "color": 5814783,
+              "author": {
+                "name": "${PR_USER}",
+                "icon_url": "${PR_AVATAR}"
+              },
+              "description": "${BODY_ESCAPED}",
+              "fields": [
+                {
+                  "name": "ブランチ",
+                  "value": "\`${PR_HEAD}\` → \`${PR_BASE}\`",
+                  "inline": true
+                },
+                {
+                  "name": "変更",
+                  "value": "+${PR_ADDITIONS} / -${PR_DELETIONS}",
+                  "inline": true
+                }
+              ],
+              "footer": {
+                "text": "PR #${PR_NUMBER}"
+              },
+              "timestamp": "${PR_CREATED}"
+            }]
+          }
+          EOF
+          )
+
+          # Discordに送信
+          curl -s -H "Content-Type: application/json" -d "$JSON" "$DISCORD_WEBHOOK"

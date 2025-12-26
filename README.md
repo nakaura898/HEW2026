@@ -1,5 +1,7 @@
 # HEW2026
 
+[![Discord Notification](https://github.com/HEW2026-Nihonium113/HEW2026/actions/workflows/discord-pr.yml/badge.svg)](https://github.com/HEW2026-Nihonium113/HEW2026/actions/workflows/discord-pr.yml)
+
 チーム「Nihonium113」の制作物です。
 
 学校主催のゲーム開発コンテスト「HEW」に向けて制作中のゲームプロジェクトです。

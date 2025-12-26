@@ -6,6 +6,7 @@
 #include "dx11/graphics_context.h"
 #include "engine/texture/texture_manager.h"
 #include "common/logging/logging.h"
+#include <string>
 
 //----------------------------------------------------------------------------
 // シングルトン
@@ -53,7 +54,7 @@ bool Renderer::Initialize(
     DXGI_SWAP_CHAIN_DESC1 desc = {};
     desc.Width = windowWidth;
     desc.Height = windowHeight;
-    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;  // FLIP_DISCARDはsRGBを直接サポートしない
     desc.Stereo = FALSE;
     desc.SampleDesc.Count = 1;
     desc.SampleDesc.Quality = 0;
@@ -62,7 +63,7 @@ bool Renderer::Initialize(
     desc.Scaling = DXGI_SCALING_STRETCH;
     desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     desc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-    desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // 可変リフレッシュレート対応
+    desc.Flags = 0;  // VSync有効（ALLOW_TEARINGはVSyncを無効化する環境がある）
 
     // スワップチェーンを作成
     swapChain_ = std::make_unique<SwapChain>(hwnd, desc);
@@ -123,6 +124,10 @@ void Renderer::Shutdown() noexcept
     if (!initialized_) {
         return;
     }
+
+    LOG_INFO("[Renderer] 終了処理開始...");
+    LOG_DEBUG("[Renderer] depthBuffer use_count: " + std::to_string(depthBuffer_.use_count()));
+    LOG_DEBUG("[Renderer] colorBuffer use_count: " + std::to_string(colorBuffer_.use_count()));
 
     depthBuffer_.reset();
     colorBuffer_.reset();

@@ -7,6 +7,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -86,7 +87,8 @@ public:
         , state_(std::make_shared<std::atomic<AsyncReadState>>(AsyncReadState::Running))
         , cancellationRequested_(cancellationToken ? cancellationToken
                                                    : std::make_shared<std::atomic<bool>>(false))
-        , cachedResult_(std::make_shared<std::optional<FileReadResult>>()) {}
+        , cachedResult_(std::make_shared<std::optional<FileReadResult>>())
+        , getOnce_(std::make_shared<std::once_flag>()) {}
 
     //! 完了したか確認
     [[nodiscard]] bool isReady() const noexcept {
@@ -123,7 +125,7 @@ public:
         }
     }
 
-    //! 結果を取得（ブロッキング）
+    //! 結果を取得（ブロッキング、スレッドセーフ）
     //! @note 複数回呼び出し可能。初回呼び出し時に結果をキャッシュする。
     //! @note キャンセル済みの場合でもfutureの結果を返す（I/Oは完了している）
     [[nodiscard]] FileReadResult get() {
@@ -138,25 +140,38 @@ public:
             return result;
         }
 
-        auto result = future_->get();
+        // スレッドセーフにfuture->get()を一度だけ呼び出し
+        if (getOnce_) {
+            std::call_once(*getOnce_, [this]() {
+                auto result = future_->get();
 
-        if (state_) {
-            // キャンセルリクエスト済みの場合
-            if (cancellationRequested_ && cancellationRequested_->load()) {
-                state_->store(AsyncReadState::Cancelled);
-                result.success = false;
-                result.error = FileError::make(FileError::Code::Cancelled, 0, "Operation was cancelled");
-            } else {
-                state_->store(result.success ? AsyncReadState::Completed : AsyncReadState::Failed);
-            }
+                if (state_) {
+                    // キャンセルリクエスト済みの場合
+                    if (cancellationRequested_ && cancellationRequested_->load()) {
+                        state_->store(AsyncReadState::Cancelled);
+                        result.success = false;
+                        result.error = FileError::make(FileError::Code::Cancelled, 0, "Operation was cancelled");
+                    } else {
+                        state_->store(result.success ? AsyncReadState::Completed : AsyncReadState::Failed);
+                    }
+                }
+
+                // 結果をキャッシュ
+                if (cachedResult_) {
+                    *cachedResult_ = result;
+                }
+            });
         }
 
-        // 結果をキャッシュ
-        if (cachedResult_) {
-            *cachedResult_ = result;
+        // キャッシュから返す
+        if (cachedResult_ && cachedResult_->has_value()) {
+            return cachedResult_->value();
         }
 
-        return result;
+        // 万が一キャッシュが空の場合（通常は到達しない）
+        FileReadResult emptyResult;
+        emptyResult.error = FileError::make(FileError::Code::Unknown, 0, "Failed to retrieve result");
+        return emptyResult;
     }
 
     //! 結果を取得（タイムアウト付き）
@@ -189,5 +204,6 @@ private:
     std::shared_ptr<std::atomic<AsyncReadState>> state_;
     std::shared_ptr<std::atomic<bool>> cancellationRequested_;  //!< キャンセルリクエストフラグ
     std::shared_ptr<std::optional<FileReadResult>> cachedResult_;  //!< キャッシュされた結果
+    std::shared_ptr<std::once_flag> getOnce_;  //!< get()の一度だけ実行を保証
 };
 

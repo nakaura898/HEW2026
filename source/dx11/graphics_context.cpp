@@ -361,10 +361,10 @@ void GraphicsContext::UpdateBuffer(Buffer* buffer, const void* data, uint32_t si
     if (!ctx || !buffer || !data) return;
 
     if (buffer->IsDynamic()) {
-        // 動的バッファは部分更新不可（WRITE_DISCARDのため）
-        // 全体をマップして部分コピー
+        // オフセットがある場合はNO_OVERWRITE、なければDISCARD
+        D3D11_MAP mapType = (offsetInBytes > 0) ? D3D11_MAP_WRITE_NO_OVERWRITE : D3D11_MAP_WRITE_DISCARD;
         D3D11_MAPPED_SUBRESOURCE mapped{};
-        if (SUCCEEDED(ctx->Map(buffer->Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+        if (SUCCEEDED(ctx->Map(buffer->Get(), 0, mapType, 0, &mapped))) {
             memcpy(static_cast<uint8_t*>(mapped.pData) + offsetInBytes, data, sizeInBytes);
             ctx->Unmap(buffer->Get(), 0);
         }
@@ -771,7 +771,9 @@ D3D11_MAPPED_SUBRESOURCE GraphicsContext::Map(ID3D11Resource* resource, uint32_t
     D3D11_MAPPED_SUBRESOURCE mapped{};
     auto* ctx = context_.Get();
     if (!ctx || !resource) return mapped;
-    ctx->Map(resource, subresource, mapType, 0, &mapped);
+    if (FAILED(ctx->Map(resource, subresource, mapType, 0, &mapped))) {
+        return D3D11_MAPPED_SUBRESOURCE{};
+    }
     return mapped;
 }
 

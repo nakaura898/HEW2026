@@ -40,6 +40,10 @@ public:
     //! プリマルチプライドアルファブレンド
     [[nodiscard]] static std::unique_ptr<BlendState> CreatePremultipliedAlpha();
 
+    //! MAXブレンド（アルファ累積防止用）
+    //! @details 重なり部分で色が明るくなる問題を防ぐ
+    [[nodiscard]] static std::unique_ptr<BlendState> CreateMaxBlend();
+
     //!@}
     //----------------------------------------------------------
     //! @name   アクセサ

@@ -1,5 +1,8 @@
 #include "mouse.h"
 
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+
 bool Mouse::IsButtonPressed(MouseButton button) const noexcept
 {
     const int index = static_cast<int>(button);
@@ -27,24 +30,77 @@ bool Mouse::IsButtonUp(MouseButton button) const noexcept
     return buttons_[index].up;
 }
 
-void Mouse::Update() noexcept
+void Mouse::Update(HWND hwnd) noexcept
 {
-    // デルタを計算
-    deltaX_ = x_ - prevX_;
-    deltaY_ = y_ - prevY_;
-
     // 前フレームの座標を保存
     prevX_ = x_;
     prevY_ = y_;
 
+    // Win32 APIで直接カーソル位置を取得
+    POINT pt;
+    if (::GetCursorPos(&pt)) {
+        // ウィンドウハンドルが指定されていなければアクティブウィンドウを使用
+        HWND targetHwnd = hwnd ? hwnd : ::GetActiveWindow();
+        if (targetHwnd && ::ScreenToClient(targetHwnd, &pt)) {
+            x_ = pt.x;
+            y_ = pt.y;
+        }
+    }
+
+    // デルタを計算
+    deltaX_ = x_ - prevX_;
+    deltaY_ = y_ - prevY_;
+
+    // マウスボタン状態を直接取得
+    bool leftPressed = (::GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    bool rightPressed = (::GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+    bool middlePressed = (::GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
+    bool x1Pressed = (::GetAsyncKeyState(VK_XBUTTON1) & 0x8000) != 0;
+    bool x2Pressed = (::GetAsyncKeyState(VK_XBUTTON2) & 0x8000) != 0;
+
+    // 左ボタン
+    {
+        auto& btn = buttons_[static_cast<int>(MouseButton::Left)];
+        bool wasPressed = btn.pressed;
+        btn.pressed = leftPressed;
+        btn.down = leftPressed && !wasPressed;
+        btn.up = !leftPressed && wasPressed;
+    }
+    // 右ボタン
+    {
+        auto& btn = buttons_[static_cast<int>(MouseButton::Right)];
+        bool wasPressed = btn.pressed;
+        btn.pressed = rightPressed;
+        btn.down = rightPressed && !wasPressed;
+        btn.up = !rightPressed && wasPressed;
+    }
+    // 中ボタン
+    {
+        auto& btn = buttons_[static_cast<int>(MouseButton::Middle)];
+        bool wasPressed = btn.pressed;
+        btn.pressed = middlePressed;
+        btn.down = middlePressed && !wasPressed;
+        btn.up = !middlePressed && wasPressed;
+    }
+    // X1ボタン（サイドボタン1）
+    {
+        auto& btn = buttons_[static_cast<int>(MouseButton::X1)];
+        bool wasPressed = btn.pressed;
+        btn.pressed = x1Pressed;
+        btn.down = x1Pressed && !wasPressed;
+        btn.up = !x1Pressed && wasPressed;
+    }
+    // X2ボタン（サイドボタン2）
+    {
+        auto& btn = buttons_[static_cast<int>(MouseButton::X2)];
+        bool wasPressed = btn.pressed;
+        btn.pressed = x2Pressed;
+        btn.down = x2Pressed && !wasPressed;
+        btn.up = !x2Pressed && wasPressed;
+    }
+
     // ホイールデルタをリセット（フレーム毎にリセット）
     wheelDelta_ = 0.0f;
-
-    // downとupフラグは1フレームのみ有効
-    for (auto& button : buttons_) {
-        button.down = false;
-        button.up = false;
-    }
 }
 
 void Mouse::SetPosition(int x, int y) noexcept

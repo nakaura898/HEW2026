@@ -5,6 +5,10 @@
 #include "file_system_manager.h"
 #include "file_system_types.h"
 #include <algorithm>
+#include <filesystem>
+
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
 
 //============================================================================
 // ユーティリティ関数
@@ -35,6 +39,35 @@ FileSystemManager& FileSystemManager::Get() noexcept
 {
     static FileSystemManager instance;
     return instance;
+}
+
+std::wstring FileSystemManager::GetExecutableDirectory()
+{
+    wchar_t path[MAX_PATH];
+    DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) {
+        return L"";
+    }
+    std::filesystem::path exePath(path);
+    return exePath.parent_path().wstring() + L"/";
+}
+
+std::wstring FileSystemManager::GetProjectRoot()
+{
+    std::filesystem::path projectRoot = std::filesystem::path(GetExecutableDirectory()) / L"../../../../";
+    return std::filesystem::weakly_canonical(projectRoot).wstring() + L"/";
+}
+
+std::wstring FileSystemManager::GetAssetsDirectory()
+{
+    return GetProjectRoot() + L"assets/";
+}
+
+bool FileSystemManager::CreateDirectories(const std::wstring& path)
+{
+    std::error_code ec;
+    std::filesystem::create_directories(path, ec);
+    return !ec;
 }
 
 bool FileSystemManager::Mount(const std::string& name, std::unique_ptr<IReadableFileSystem> fileSystem)

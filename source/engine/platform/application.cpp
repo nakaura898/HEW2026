@@ -81,16 +81,7 @@ bool Application::Initialize(const ApplicationDesc& desc)
     });
 
     // 6. 時間管理初期化
-    deltaTime_ = 0.0f;
-    totalTime_ = 0.0f;
-    frameCount_ = 0;
-    fps_ = 0.0f;
-    fpsFrameCount_ = 0;
-    fpsTimer_ = 0.0f;
-
-    auto now = std::chrono::high_resolution_clock::now();
-    startTime_ = now;
-    lastFrameTime_ = now;
+    Timer::Start();
 
     initialized_ = true;
     shouldQuit_ = false;
@@ -107,6 +98,13 @@ void Application::Shutdown() noexcept
 {
     if (!initialized_) {
         return;
+    }
+
+    // パイプラインから全リソースをアンバインドしてから解放
+    auto& ctx = GraphicsContext::Get();
+    if (auto* d3dCtx = ctx.GetContext()) {
+        d3dCtx->ClearState();
+        d3dCtx->Flush();
     }
 
     // 逆順で終了
@@ -131,30 +129,6 @@ void Application::Quit() noexcept
 }
 
 //----------------------------------------------------------------------------
-// 時間更新
-//----------------------------------------------------------------------------
-
-void Application::UpdateTime() noexcept
-{
-    auto now = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration<float>(now - lastFrameTime_).count();
-    lastFrameTime_ = now;
-
-    // デバッグ時の異常値防止（ブレークポイント停止後など）
-    deltaTime_ = (std::min)(elapsed, desc_.maxDeltaTime);
-    totalTime_ += deltaTime_;
-
-    // FPS計算（1秒ごとに更新）
-    ++fpsFrameCount_;
-    fpsTimer_ += deltaTime_;
-    if (fpsTimer_ >= 1.0f) {
-        fps_ = static_cast<float>(fpsFrameCount_) / fpsTimer_;
-        fpsFrameCount_ = 0;
-        fpsTimer_ = 0.0f;
-    }
-}
-
-//----------------------------------------------------------------------------
 // リサイズ処理
 //----------------------------------------------------------------------------
 
@@ -176,7 +150,7 @@ void Application::OnResize(uint32_t width, uint32_t height) noexcept
 void Application::ProcessInput()
 {
     if (auto* inputMgr = InputManager::GetInstance()) {
-        inputMgr->Update(deltaTime_);
+        inputMgr->Update(Timer::GetDeltaTime());
     }
 }
 
@@ -186,22 +160,22 @@ void Application::ProcessInput()
 
 float Application::GetDeltaTime() const noexcept
 {
-    return deltaTime_;
+    return Timer::GetDeltaTime();
 }
 
 float Application::GetTotalTime() const noexcept
 {
-    return totalTime_;
+    return Timer::GetTotalTime();
 }
 
 float Application::GetFPS() const noexcept
 {
-    return fps_;
+    return Timer::GetFPS();
 }
 
 uint64_t Application::GetFrameCount() const noexcept
 {
-    return frameCount_;
+    return Timer::GetFrameCount();
 }
 
 //----------------------------------------------------------------------------

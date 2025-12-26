@@ -72,7 +72,6 @@ private:
     /// @brief デストラクタ（private）
     ~InputManager() noexcept = default;
 
-private:
     static InputManager* instance_;
 
     std::unique_ptr<Keyboard> keyboard_;

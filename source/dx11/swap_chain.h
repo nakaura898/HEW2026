@@ -58,7 +58,7 @@ public:
     //! 有効性チェック
     [[nodiscard]] bool IsValid() const noexcept { return swapChain_ != nullptr; }
 
-        //! バックバッファを取得
+    //! バックバッファを取得
     [[nodiscard]] Texture* GetBackBuffer() const noexcept { return backBuffer_.get(); }
     
     //! DXGIスワップチェーンを取得

@@ -32,7 +32,7 @@ public:
     //----------------------------------------------------------
     //! @name   描画コマンド
     //----------------------------------------------------------
-    //!@{
+    //! @{
 
     void Draw(uint32_t vertexCount, uint32_t startVertexLocation = 0);
     void DrawIndexed(uint32_t indexCount, uint32_t startIndexLocation = 0, int32_t baseVertexLocation = 0);

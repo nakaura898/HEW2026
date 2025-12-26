@@ -5,8 +5,8 @@
 #pragma once
 
 #include "component.h"
-#include "engine/scene/math_types.h"
-#include "engine/collision/collision_manager.h"
+#include "engine/math/math_types.h"
+#include "engine/c_systems/collision_manager.h"
 #include <cstdint>
 
 //============================================================================
@@ -53,6 +53,13 @@ public:
     void SetOffset(float x, float y);
     void SetOffset(const Vector2& offset);
     [[nodiscard]] Vector2 GetOffset() const;
+
+    //------------------------------------------------------------------------
+    //! @brief 左上と右下の座標からコライダーを設定
+    //! @param min 左上座標（Transform位置からの相対座標）
+    //! @param max 右下座標（Transform位置からの相対座標）
+    //------------------------------------------------------------------------
+    void SetBounds(const Vector2& min, const Vector2& max);
 
     //------------------------------------------------------------------------
     // レイヤーとマスク
@@ -104,7 +111,25 @@ public:
     // ユーザーデータ
     //------------------------------------------------------------------------
 
-    void* userData = nullptr;
+    void SetUserData(void* data) noexcept { userData_ = data; }
+    [[nodiscard]] void* GetUserData() const noexcept { return userData_; }
+
+    template<typename T>
+    void SetUserData(T* data) noexcept { userData_ = static_cast<void*>(data); }
+
+    template<typename T>
+    [[nodiscard]] T* GetUserDataAs() const noexcept { return static_cast<T*>(userData_); }
+
+    //------------------------------------------------------------------------
+    // Transform同期設定
+    //------------------------------------------------------------------------
+
+    //! @brief Transform2Dとの自動同期を設定
+    //! @param sync trueで自動同期、falseで手動更新モード
+    void SetSyncWithTransform(bool sync) noexcept { syncWithTransform_ = sync; }
+
+    //! @brief Transform2Dとの自動同期状態を取得
+    [[nodiscard]] bool IsSyncWithTransform() const noexcept { return syncWithTransform_; }
 
 private:
     ColliderHandle handle_;
@@ -112,8 +137,10 @@ private:
     // 初期化用の一時保存（OnAttach前に設定された値を保持）
     Vector2 initSize_ = Vector2::Zero;
     Vector2 initOffset_ = Vector2::Zero;
-    uint8_t initLayer_ = 1;
-    uint8_t initMask_ = 0xFF;
+    uint8_t initLayer_ = CollisionConstants::kDefaultLayer;
+    uint8_t initMask_ = CollisionConstants::kDefaultMask;
     bool initTrigger_ = false;
     bool syncWithTransform_ = true;  //!< Transform2Dと自動同期するか
+
+    void* userData_ = nullptr;  //!< ユーザー定義データ
 };

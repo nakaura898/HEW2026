@@ -103,23 +103,25 @@ public:
 
     size_t pollEvents() {
         std::vector<FileChangeEvent> events;
+        std::vector<std::wstring> filterCopy;
 
-        // イベントを取り出し
+        // イベントと拡張子フィルターを取り出し（データ競合防止）
         {
             std::lock_guard<std::mutex> lock(mutex_);
             while (!eventQueue_.empty()) {
                 events.push_back(std::move(eventQueue_.front()));
                 eventQueue_.pop();
             }
+            filterCopy = extensionFilter_;
         }
 
         // コールバック呼び出し
         if (callback_) {
             for (const auto& event : events) {
                 // 拡張子フィルターチェック
-                if (!extensionFilter_.empty()) {
+                if (!filterCopy.empty()) {
                     std::wstring ext = getExtensionW(event.path);
-                    bool match = std::any_of(extensionFilter_.begin(), extensionFilter_.end(),
+                    bool match = std::any_of(filterCopy.begin(), filterCopy.end(),
                         [&ext](const std::wstring& filter) {
                             return _wcsicmp(ext.c_str(), filter.c_str()) == 0;
                         });

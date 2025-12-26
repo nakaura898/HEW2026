@@ -1,37 +1,11 @@
 #include "host_file_system.h"
+#include "path_utility.h"
 
 #include <Windows.h>
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-
-
-namespace {
-
-//! UTF-8 std::stringをstd::wstringに変換
-std::wstring string_to_wstring(const std::string& str) {
-    if (str.empty()) {
-        return L"";
-    }
-    int size_needed = ::MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
-    std::wstring wstrTo(size_needed, 0);
-    ::MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstrTo[0], size_needed);
-    return wstrTo;
-}
-
-//! std::wstringをUTF-8 std::stringに変換
-std::string wstring_to_string(const std::wstring& wstr) {
-    if (wstr.empty()) {
-        return "";
-    }
-    int size_needed = ::WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
-    std::string strTo(size_needed, 0);
-    ::WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
-    return strTo;
-}
-
-} // namespace
 
 
 //==============================================================================
@@ -139,7 +113,7 @@ std::wstring HostFileSystem::toAbsolutePath(const std::string& relativePath) con
     // パスを正規化（スラッシュ統一など）
     // NOTE: ここでPathUtility::normalizeを呼ぶべきかもしれないが、
     //       現状は呼び出し元で正規化されている想定
-    return rootPath_ + string_to_wstring(relativePath);
+    return rootPath_ + PathUtility::toWideString(relativePath);
 }
 
 FileError HostFileSystem::makeError(FileError::Code code) noexcept {
@@ -501,7 +475,7 @@ std::vector<DirectoryEntry> HostFileSystem::listDirectory(const std::string& pat
         }
 
         DirectoryEntry entry;
-        entry.name = wstring_to_string(findData.cFileName);
+        entry.name = PathUtility::toNarrowString(findData.cFileName);
 
         entry.type = (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
             ? FileEntryType::Directory

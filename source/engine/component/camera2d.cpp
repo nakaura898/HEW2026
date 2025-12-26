@@ -6,6 +6,13 @@
 #include "game_object.h"
 #include "transform2d.h"
 
+namespace {
+    //! @brief 最小ズームレベル
+    constexpr float kMinZoom = 0.001f;
+    //! @brief ビューポート中央計算用係数
+    constexpr float kHalf = 0.5f;
+}
+
 //----------------------------------------------------------------------------
 Camera2D::Camera2D(float viewportWidth, float viewportHeight)
     : viewportWidth_(viewportWidth)
@@ -70,7 +77,7 @@ void Camera2D::SetRotationDegrees(float degrees) noexcept
 //----------------------------------------------------------------------------
 void Camera2D::SetZoom(float zoom) noexcept
 {
-    zoom_ = (zoom > 0.001f) ? zoom : 0.001f;
+    zoom_ = (zoom > kMinZoom) ? zoom : kMinZoom;
 }
 
 //----------------------------------------------------------------------------
@@ -90,10 +97,12 @@ Matrix Camera2D::GetViewMatrix() const
 Matrix Camera2D::GetViewProjectionMatrix() const
 {
     Matrix view = BuildViewMatrix();
+    // 座標系: 左上が(0,0)、X+が右、Y+が下（標準スクリーン座標）
+    // 深度範囲: -1.0 ～ 1.0 （スプライトのZ値が0.0～1.0で使用可能）
     Matrix projection = Matrix::CreateOrthographicOffCenter(
         0.0f, viewportWidth_,
         viewportHeight_, 0.0f,
-        0.0f, 1.0f
+        -1.0f, 1.0f
     );
     Matrix viewProj = view * projection;
     return viewProj.Transpose();  // シェーダー用に転置
@@ -102,7 +111,14 @@ Matrix Camera2D::GetViewProjectionMatrix() const
 //----------------------------------------------------------------------------
 Vector2 Camera2D::ScreenToWorld(const Vector2& screenPos) const
 {
-    Matrix viewProj = GetViewProjectionMatrix();
+    // GetViewProjectionMatrix()は転置済みなので、転置前のmatrixを直接計算
+    Matrix view = BuildViewMatrix();
+    Matrix projection = Matrix::CreateOrthographicOffCenter(
+        0.0f, viewportWidth_,
+        viewportHeight_, 0.0f,
+        -1.0f, 1.0f
+    );
+    Matrix viewProj = view * projection;
     Matrix invViewProj = viewProj.Invert();
 
     float ndcX = (screenPos.x / viewportWidth_) * 2.0f - 1.0f;
@@ -115,11 +131,18 @@ Vector2 Camera2D::ScreenToWorld(const Vector2& screenPos) const
 //----------------------------------------------------------------------------
 Vector2 Camera2D::WorldToScreen(const Vector2& worldPos) const
 {
-    Matrix viewProj = GetViewProjectionMatrix();
+    // GetViewProjectionMatrix()は転置済みなので、転置前のmatrixを直接計算
+    Matrix view = BuildViewMatrix();
+    Matrix projection = Matrix::CreateOrthographicOffCenter(
+        0.0f, viewportWidth_,
+        viewportHeight_, 0.0f,
+        -1.0f, 1.0f
+    );
+    Matrix viewProj = view * projection;
     Vector3 ndcPos = Vector3::Transform(Vector3(worldPos.x, worldPos.y, 0.0f), viewProj);
 
-    float screenX = (ndcPos.x + 1.0f) * 0.5f * viewportWidth_;
-    float screenY = (1.0f - ndcPos.y) * 0.5f * viewportHeight_;
+    float screenX = (ndcPos.x + 1.0f) * kHalf * viewportWidth_;
+    float screenY = (1.0f - ndcPos.y) * kHalf * viewportHeight_;
     return Vector2(screenX, screenY);
 }
 
@@ -150,8 +173,8 @@ Matrix Camera2D::BuildViewMatrix() const
     Vector2 position = GetPosition();
     float rotation = GetRotation();
 
-    float halfWidth = viewportWidth_ * 0.5f;
-    float halfHeight = viewportHeight_ * 0.5f;
+    float halfWidth = viewportWidth_ * kHalf;
+    float halfHeight = viewportHeight_ * kHalf;
 
     Matrix translation = Matrix::CreateTranslation(-position.x, -position.y, 0.0f);
     Matrix rot = Matrix::CreateRotationZ(-rotation);

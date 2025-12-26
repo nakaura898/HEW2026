@@ -10,6 +10,7 @@
 #include "dx11/view/depth_stencil_view.h"
 #include "dx11/view/unordered_access_view.h"
 #include "common/logging/logging.h"
+#include <string>
 
 //----------------------------------------------------------------------------
 // Texture静的ファクトリメソッド
@@ -52,6 +53,7 @@ std::shared_ptr<Texture> Texture::Create2D(
 
     // SRV作成
     auto srvWrapper = ShaderResourceView::CreateFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] SRV作成失敗");
     ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
 
     return std::make_shared<Texture>(
@@ -86,10 +88,12 @@ std::shared_ptr<Texture> Texture::CreateRenderTarget(
 
     // SRV作成
     auto srvWrapper = ShaderResourceView::CreateFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] SRV作成失敗");
     ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
 
     // RTV作成
     auto rtvWrapper = RenderTargetView::CreateFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(rtvWrapper, "[Texture] RTV作成失敗");
     ComPtr<ID3D11RenderTargetView> rtv = rtvWrapper->Detach();
 
     return std::make_shared<Texture>(
@@ -165,6 +169,7 @@ std::shared_ptr<Texture> Texture::CreateDepthStencil(
     dsvDesc.Texture2D.MipSlice = 0;
 
     auto dsvWrapper = DepthStencilView::Create(texture.Get(), dsvDesc);
+    RETURN_NULL_IF_NULL(dsvWrapper, "[Texture] DSV作成失敗");
     ComPtr<ID3D11DepthStencilView> dsv = dsvWrapper->Detach();
 
     // SRV作成（オプション）
@@ -177,6 +182,7 @@ std::shared_ptr<Texture> Texture::CreateDepthStencil(
         srvDesc.Texture2D.MostDetailedMip = 0;
 
         auto srvWrapper = ShaderResourceView::Create(texture.Get(), srvDesc);
+        RETURN_NULL_IF_NULL(srvWrapper, "[Texture] 深度SRV作成失敗");
         srv = srvWrapper->Detach();
     }
 
@@ -212,10 +218,12 @@ std::shared_ptr<Texture> Texture::CreateUav(
 
     // SRV作成
     auto srvWrapper = ShaderResourceView::CreateFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] SRV作成失敗");
     ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
 
     // UAV作成
     auto uavWrapper = UnorderedAccessView::CreateFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(uavWrapper, "[Texture] UAV作成失敗");
     ComPtr<ID3D11UnorderedAccessView> uav = uavWrapper->Detach();
 
     return std::make_shared<Texture>(
@@ -256,8 +264,32 @@ std::shared_ptr<Texture> Texture::CreateCube(
     srvDesc.TextureCube.MostDetailedMip = 0;
 
     auto srvWrapper = ShaderResourceView::Create(texture.Get(), srvDesc);
+    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] キューブマップSRV作成失敗");
     ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
 
     return std::make_shared<Texture>(
         std::move(texture), std::move(srv), nullptr, nullptr, nullptr, desc);
+}
+
+//----------------------------------------------------------------------------
+// デストラクタ
+//----------------------------------------------------------------------------
+Texture::~Texture()
+{
+    LOG_INFO("[Texture] 解放開始: " + std::to_string(width_) + "x" + std::to_string(height_));
+
+    // 明示的な解放順序：ビュー → リソース
+    if (uav_) { LOG_INFO("  UAV解放"); uav_.Reset(); }
+    if (dsv_) { LOG_INFO("  DSV解放"); dsv_.Reset(); }
+    if (rtv_) { LOG_INFO("  RTV解放"); rtv_.Reset(); }
+    if (srv_) { LOG_INFO("  SRV解放"); srv_.Reset(); }
+    if (resource_) {
+        // リソースの現在のRefcountを確認（AddRef→Releaseで取得）
+        resource_->AddRef();
+        ULONG refCount = resource_->Release();
+        LOG_INFO("  Resource解放前Refcount: " + std::to_string(refCount));
+        resource_.Reset();
+    }
+
+    LOG_INFO("[Texture] 解放完了");
 }

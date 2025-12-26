@@ -9,8 +9,9 @@
 #include "dx11/graphics_device.h"
 #include "common/logging/logging.h"
 #include "dx11/graphics_context.h"
-#include "dx11/format/format.h"
+#include "dx11/gpu/format.h"
 #include "common/utility/hash.h"
+#include <DirectXTex.h>
 #include "dx11/view/shader_resource_view.h"
 #include "dx11/view/render_target_view.h"
 #include "dx11/view/depth_stencil_view.h"
@@ -547,4 +548,413 @@ uint64_t TextureManager::ComputeCacheKey(
     uint8_t flags = (sRGB ? 1 : 0) | (generateMips ? 2 : 0);
     hash = HashUtil::Fnv1a(&flags, sizeof(flags), hash);
     return hash;
+}
+
+TexturePtr TextureManager::CompressToBC1(Texture* source)
+{
+    if (!source) return nullptr;
+
+    auto* device = GraphicsDevice::Get().Device();
+    auto* context = GraphicsContext::Get().GetContext();
+    if (!device || !context) return nullptr;
+
+    uint32_t width = source->Width();
+    uint32_t height = source->Height();
+
+    // 1. ステージングテクスチャを作成（CPUで読み取り可能）
+    D3D11_TEXTURE2D_DESC stagingDesc{};
+    stagingDesc.Width = width;
+    stagingDesc.Height = height;
+    stagingDesc.MipLevels = 1;
+    stagingDesc.ArraySize = 1;
+    stagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    stagingDesc.SampleDesc.Count = 1;
+    stagingDesc.Usage = D3D11_USAGE_STAGING;
+    stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+
+    ComPtr<ID3D11Texture2D> stagingTexture;
+    HRESULT hr = device->CreateTexture2D(&stagingDesc, nullptr, &stagingTexture);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC1圧縮: ステージングテクスチャの作成に失敗");
+        return nullptr;
+    }
+
+    // 2. ソーステクスチャからステージングにコピー
+    context->CopyResource(stagingTexture.Get(), source->Get());
+
+    // 3. ステージングテクスチャをマップしてピクセルデータを読み取り
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    hr = context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC1圧縮: ステージングテクスチャのマップに失敗");
+        return nullptr;
+    }
+
+    // 4. ScratchImageを作成
+    DirectX::ScratchImage srcImage;
+    hr = srcImage.Initialize2D(DXGI_FORMAT_R8G8B8A8_UNORM, width, height, 1, 1);
+    if (FAILED(hr)) {
+        context->Unmap(stagingTexture.Get(), 0);
+        LOG_ERROR("[TextureManager] BC1圧縮: ScratchImageの初期化に失敗");
+        return nullptr;
+    }
+
+    // ピクセルデータをコピー（アルファを1.0に強制）
+    const DirectX::Image* img = srcImage.GetImage(0, 0, 0);
+    const uint8_t* srcPtr = static_cast<const uint8_t*>(mapped.pData);
+    uint8_t* dstPtr = img->pixels;
+    for (uint32_t y = 0; y < height; ++y) {
+        const uint8_t* srcRow = srcPtr + y * mapped.RowPitch;
+        uint8_t* dstRow = dstPtr + y * img->rowPitch;
+        for (uint32_t x = 0; x < width; ++x) {
+            dstRow[x * 4 + 0] = srcRow[x * 4 + 0];  // R
+            dstRow[x * 4 + 1] = srcRow[x * 4 + 1];  // G
+            dstRow[x * 4 + 2] = srcRow[x * 4 + 2];  // B
+            dstRow[x * 4 + 3] = 255;                 // A = 1.0
+        }
+    }
+    context->Unmap(stagingTexture.Get(), 0);
+
+    // 5. BC1に圧縮（高速、8倍圧縮）
+    DirectX::ScratchImage compressedImage;
+    hr = DirectX::Compress(
+        srcImage.GetImages(),
+        srcImage.GetImageCount(),
+        srcImage.GetMetadata(),
+        DXGI_FORMAT_BC1_UNORM,
+        DirectX::TEX_COMPRESS_DEFAULT,
+        0.5f,
+        compressedImage);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC1圧縮に失敗: HRESULT=" + std::to_string(hr));
+        return nullptr;
+    }
+
+    // 6. 圧縮データからテクスチャを作成
+    const DirectX::Image* compImg = compressedImage.GetImage(0, 0, 0);
+
+    D3D11_TEXTURE2D_DESC texDesc{};
+    texDesc.Width = width;
+    texDesc.Height = height;
+    texDesc.MipLevels = 1;
+    texDesc.ArraySize = 1;
+    texDesc.Format = DXGI_FORMAT_BC1_UNORM;
+    texDesc.SampleDesc.Count = 1;
+    texDesc.Usage = D3D11_USAGE_IMMUTABLE;
+    texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    D3D11_SUBRESOURCE_DATA initData{};
+    initData.pSysMem = compImg->pixels;
+    initData.SysMemPitch = static_cast<UINT>(compImg->rowPitch);
+
+    ComPtr<ID3D11Texture2D> compressedTexture;
+    hr = device->CreateTexture2D(&texDesc, &initData, &compressedTexture);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC1圧縮: 圧縮テクスチャの作成に失敗");
+        return nullptr;
+    }
+
+    // SRVを作成
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    srvDesc.Format = DXGI_FORMAT_BC1_UNORM;
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+
+    ComPtr<ID3D11ShaderResourceView> srv;
+    hr = device->CreateShaderResourceView(compressedTexture.Get(), &srvDesc, &srv);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC1圧縮: SRVの作成に失敗");
+        return nullptr;
+    }
+
+    // Textureオブジェクトを作成して返す
+    TextureDesc desc{};
+    desc.width = width;
+    desc.height = height;
+    desc.depth = 1;
+    desc.format = DXGI_FORMAT_BC1_UNORM;
+    desc.bindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.dimension = TextureDimension::Tex2D;
+
+    auto result = std::make_shared<Texture>(
+        compressedTexture,
+        srv,
+        ComPtr<ID3D11RenderTargetView>(nullptr),
+        ComPtr<ID3D11DepthStencilView>(nullptr),
+        ComPtr<ID3D11UnorderedAccessView>(nullptr),
+        desc);
+
+    LOG_INFO("[TextureManager] BC1圧縮完了: " + std::to_string(width) + "x" + std::to_string(height) +
+             " (VRAM: " + std::to_string(width * height / 2 / 1024 / 1024) + "MB)");
+    return result;
+}
+
+TexturePtr TextureManager::CompressToBC3(Texture* source)
+{
+    if (!source) return nullptr;
+
+    auto* device = GraphicsDevice::Get().Device();
+    auto* context = GraphicsContext::Get().GetContext();
+    if (!device || !context) return nullptr;
+
+    uint32_t width = source->Width();
+    uint32_t height = source->Height();
+
+    // 1. ステージングテクスチャを作成（CPUで読み取り可能）
+    D3D11_TEXTURE2D_DESC stagingDesc{};
+    stagingDesc.Width = width;
+    stagingDesc.Height = height;
+    stagingDesc.MipLevels = 1;
+    stagingDesc.ArraySize = 1;
+    stagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    stagingDesc.SampleDesc.Count = 1;
+    stagingDesc.Usage = D3D11_USAGE_STAGING;
+    stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+
+    ComPtr<ID3D11Texture2D> stagingTexture;
+    HRESULT hr = device->CreateTexture2D(&stagingDesc, nullptr, &stagingTexture);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC3圧縮: ステージングテクスチャの作成に失敗");
+        return nullptr;
+    }
+
+    // 2. ソーステクスチャからステージングにコピー
+    context->CopyResource(stagingTexture.Get(), source->Get());
+
+    // 3. ステージングテクスチャをマップしてピクセルデータを読み取り
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    hr = context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC3圧縮: ステージングテクスチャのマップに失敗");
+        return nullptr;
+    }
+
+    // 4. ScratchImageを作成
+    DirectX::ScratchImage srcImage;
+    hr = srcImage.Initialize2D(DXGI_FORMAT_R8G8B8A8_UNORM, width, height, 1, 1);
+    if (FAILED(hr)) {
+        context->Unmap(stagingTexture.Get(), 0);
+        LOG_ERROR("[TextureManager] BC3圧縮: ScratchImageの初期化に失敗");
+        return nullptr;
+    }
+
+    // ピクセルデータをコピー
+    const DirectX::Image* img = srcImage.GetImage(0, 0, 0);
+    const uint8_t* srcPtr = static_cast<const uint8_t*>(mapped.pData);
+    uint8_t* dstPtr = img->pixels;
+
+    for (uint32_t y = 0; y < height; ++y) {
+        const uint8_t* srcRow = srcPtr + y * mapped.RowPitch;
+        uint8_t* dstRow = dstPtr + y * img->rowPitch;
+        // そのままコピー
+        std::memcpy(dstRow, srcRow, width * 4);
+    }
+    context->Unmap(stagingTexture.Get(), 0);
+
+    // 5. BC3に圧縮（フルアルファ対応）
+    // ソースがリニア色空間の場合はsRGBフラグなしで圧縮
+    DirectX::ScratchImage compressedImage;
+    hr = DirectX::Compress(
+        srcImage.GetImages(),
+        srcImage.GetImageCount(),
+        srcImage.GetMetadata(),
+        DXGI_FORMAT_BC3_UNORM,
+        DirectX::TEX_COMPRESS_DEFAULT,
+        0.5f,
+        compressedImage);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC3圧縮に失敗: HRESULT=" + std::to_string(hr));
+        return nullptr;
+    }
+
+    // 6. 圧縮データからテクスチャを作成
+    const DirectX::Image* compImg = compressedImage.GetImage(0, 0, 0);
+
+    D3D11_TEXTURE2D_DESC texDesc{};
+    texDesc.Width = width;
+    texDesc.Height = height;
+    texDesc.MipLevels = 1;
+    texDesc.ArraySize = 1;
+    texDesc.Format = DXGI_FORMAT_BC3_UNORM;
+    texDesc.SampleDesc.Count = 1;
+    texDesc.Usage = D3D11_USAGE_IMMUTABLE;
+    texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    D3D11_SUBRESOURCE_DATA initData{};
+    initData.pSysMem = compImg->pixels;
+    initData.SysMemPitch = static_cast<UINT>(compImg->rowPitch);
+
+    ComPtr<ID3D11Texture2D> compressedTexture;
+    hr = device->CreateTexture2D(&texDesc, &initData, &compressedTexture);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC3圧縮: 圧縮テクスチャの作成に失敗");
+        return nullptr;
+    }
+
+    // SRVを作成
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    srvDesc.Format = DXGI_FORMAT_BC3_UNORM;
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+
+    ComPtr<ID3D11ShaderResourceView> srv;
+    hr = device->CreateShaderResourceView(compressedTexture.Get(), &srvDesc, &srv);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC3圧縮: SRVの作成に失敗");
+        return nullptr;
+    }
+
+    // Textureオブジェクトを作成して返す
+    TextureDesc desc{};
+    desc.width = width;
+    desc.height = height;
+    desc.depth = 1;
+    desc.format = DXGI_FORMAT_BC3_UNORM;
+    desc.bindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.dimension = TextureDimension::Tex2D;
+
+    auto result = std::make_shared<Texture>(
+        compressedTexture,
+        srv,
+        ComPtr<ID3D11RenderTargetView>(nullptr),
+        ComPtr<ID3D11DepthStencilView>(nullptr),
+        ComPtr<ID3D11UnorderedAccessView>(nullptr),
+        desc);
+
+    LOG_INFO("[TextureManager] BC3圧縮完了: " + std::to_string(width) + "x" + std::to_string(height) +
+             " (VRAM: " + std::to_string(width * height / 1024 / 1024) + "MB)");
+    return result;
+}
+
+TexturePtr TextureManager::CompressToBC7(Texture* source)
+{
+    if (!source) return nullptr;
+
+    auto* device = GraphicsDevice::Get().Device();
+    auto* context = GraphicsContext::Get().GetContext();
+    if (!device || !context) return nullptr;
+
+    uint32_t width = source->Width();
+    uint32_t height = source->Height();
+
+    // 1. ステージングテクスチャを作成（CPUで読み取り可能）
+    D3D11_TEXTURE2D_DESC stagingDesc{};
+    stagingDesc.Width = width;
+    stagingDesc.Height = height;
+    stagingDesc.MipLevels = 1;
+    stagingDesc.ArraySize = 1;
+    stagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    stagingDesc.SampleDesc.Count = 1;
+    stagingDesc.Usage = D3D11_USAGE_STAGING;
+    stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+
+    ComPtr<ID3D11Texture2D> stagingTexture;
+    HRESULT hr = device->CreateTexture2D(&stagingDesc, nullptr, &stagingTexture);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC7圧縮: ステージングテクスチャの作成に失敗");
+        return nullptr;
+    }
+
+    // 2. ソーステクスチャからステージングにコピー
+    context->CopyResource(stagingTexture.Get(), source->Get());
+
+    // 3. ステージングテクスチャをマップしてピクセルデータを読み取り
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    hr = context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC7圧縮: ステージングテクスチャのマップに失敗");
+        return nullptr;
+    }
+
+    // 4. ScratchImageを作成
+    DirectX::ScratchImage srcImage;
+    hr = srcImage.Initialize2D(DXGI_FORMAT_R8G8B8A8_UNORM, width, height, 1, 1);
+    if (FAILED(hr)) {
+        context->Unmap(stagingTexture.Get(), 0);
+        LOG_ERROR("[TextureManager] BC7圧縮: ScratchImageの初期化に失敗");
+        return nullptr;
+    }
+
+    // ピクセルデータをコピー
+    const DirectX::Image* img = srcImage.GetImage(0, 0, 0);
+    const uint8_t* srcPtr = static_cast<const uint8_t*>(mapped.pData);
+    uint8_t* dstPtr = img->pixels;
+    size_t rowSize = width * 4;
+    for (uint32_t y = 0; y < height; ++y) {
+        memcpy(dstPtr + y * img->rowPitch, srcPtr + y * mapped.RowPitch, rowSize);
+    }
+    context->Unmap(stagingTexture.Get(), 0);
+
+    // 5. BC7に圧縮（高品質、アルファ対応）
+    DirectX::ScratchImage compressedImage;
+    hr = DirectX::Compress(
+        srcImage.GetImages(),
+        srcImage.GetImageCount(),
+        srcImage.GetMetadata(),
+        DXGI_FORMAT_BC7_UNORM,
+        DirectX::TEX_COMPRESS_BC7_QUICK,  // 高速モード
+        1.0f,
+        compressedImage);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC7圧縮に失敗: HRESULT=" + std::to_string(hr));
+        return nullptr;
+    }
+
+    // 6. 圧縮データからテクスチャを作成
+    const DirectX::Image* compImg = compressedImage.GetImage(0, 0, 0);
+
+    D3D11_TEXTURE2D_DESC texDesc{};
+    texDesc.Width = width;
+    texDesc.Height = height;
+    texDesc.MipLevels = 1;
+    texDesc.ArraySize = 1;
+    texDesc.Format = DXGI_FORMAT_BC7_UNORM;
+    texDesc.SampleDesc.Count = 1;
+    texDesc.Usage = D3D11_USAGE_IMMUTABLE;
+    texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    D3D11_SUBRESOURCE_DATA initData{};
+    initData.pSysMem = compImg->pixels;
+    initData.SysMemPitch = static_cast<UINT>(compImg->rowPitch);
+
+    ComPtr<ID3D11Texture2D> compressedTexture;
+    hr = device->CreateTexture2D(&texDesc, &initData, &compressedTexture);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC7圧縮: 圧縮テクスチャの作成に失敗");
+        return nullptr;
+    }
+
+    // SRVを作成
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    srvDesc.Format = DXGI_FORMAT_BC7_UNORM;
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+
+    ComPtr<ID3D11ShaderResourceView> srv;
+    hr = device->CreateShaderResourceView(compressedTexture.Get(), &srvDesc, &srv);
+    if (FAILED(hr)) {
+        LOG_ERROR("[TextureManager] BC7圧縮: SRVの作成に失敗");
+        return nullptr;
+    }
+
+    // Textureオブジェクトを作成して返す
+    TextureDesc desc{};
+    desc.width = width;
+    desc.height = height;
+    desc.depth = 1;
+    desc.format = DXGI_FORMAT_BC7_UNORM;
+    desc.bindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.dimension = TextureDimension::Tex2D;
+
+    auto result = std::make_shared<Texture>(
+        compressedTexture,
+        srv,
+        ComPtr<ID3D11RenderTargetView>(nullptr),
+        ComPtr<ID3D11DepthStencilView>(nullptr),
+        ComPtr<ID3D11UnorderedAccessView>(nullptr),
+        desc);
+
+    LOG_INFO("[TextureManager] BC7圧縮完了: " + std::to_string(width) + "x" + std::to_string(height) +
+             " (VRAM: " + std::to_string(width * height / 1024 / 1024) + "MB)");
+    return result;
 }

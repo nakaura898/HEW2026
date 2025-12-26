@@ -6,10 +6,10 @@
 
 #include "dx11/gpu_common.h"
 #include "dx11/swap_chain.h"
+#include "engine/time/timer.h"
 #include "window.h"
 #include <memory>
 #include <cstdint>
-#include <chrono>
 
 //----------------------------------------------------------------------------
 //! @brief アプリケーション設定
@@ -113,21 +113,8 @@ private:
     void MainLoop(TGame& game);
     void ProcessInput();
     void OnResize(uint32_t width, uint32_t height) noexcept;
-    void UpdateTime() noexcept;
 
     std::unique_ptr<Window> window_;
-
-    // 時間管理
-    std::chrono::high_resolution_clock::time_point startTime_;
-    std::chrono::high_resolution_clock::time_point lastFrameTime_;
-    float deltaTime_ = 0.0f;
-    float totalTime_ = 0.0f;
-    uint64_t frameCount_ = 0;
-
-    // FPS計算
-    float fps_ = 0.0f;
-    uint32_t fpsFrameCount_ = 0;
-    float fpsTimer_ = 0.0f;
 
     ApplicationDesc desc_;
     bool initialized_ = false;

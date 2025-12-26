@@ -116,7 +116,6 @@ private:
     /// @return 処理後の値
     static float ApplyDeadZone(float value, float deadZone) noexcept;
 
-private:
     DWORD userIndex_;               // ユーザーインデックス (0-3)
     bool connected_;                // 接続状態
 

@@ -1,0 +1,6 @@
+# 保護対象 (変更には承認が必要)
+/external/ @SYUNTA99
+/tools/ @SYUNTA99
+*.cmd @SYUNTA99
+premake5.lua @SYUNTA99
+/.github/ @SYUNTA99

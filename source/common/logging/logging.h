@@ -50,9 +50,43 @@ public:
         // コンソールウィンドウを割り当て
         if (AllocConsole()) {
             FILE* fp = nullptr;
-            freopen_s(&fp, "CONOUT$", "w", stdout);
-            freopen_s(&fp, "CONOUT$", "w", stderr);
+            if (freopen_s(&fp, "CONOUT$", "w", stdout) != 0) {
+                return;
+            }
+            if (freopen_s(&fp, "CONOUT$", "w", stderr) != 0) {
+                return;
+            }
             SetConsoleOutputCP(CP_UTF8);
+
+
+            //コンソール画面でのクイック編集モードの無効化
+            //ハンドル取得
+            HANDLE ConsoleHandle = GetStdHandle(STD_INPUT_HANDLE);
+            
+            //コンソールがない場合
+            if(ConsoleHandle == INVALID_HANDLE_VALUE)
+            {
+                return;
+            }
+            
+            DWORD ConsoleMode;
+            //コンソールモードの取得
+            if(!GetConsoleMode(ConsoleHandle,&ConsoleMode))
+            {
+                return;
+            }
+            
+            //ENABLE_QUICK_EDIT_MODEを取り除く
+            ConsoleMode &= ~ENABLE_QUICK_EDIT_MODE;
+
+            //ENABLE_EXTENDED_FLAGSを設定
+            ConsoleMode |= ENABLE_EXTENDED_FLAGS;
+
+            //コンソールモードの設定
+            if(!SetConsoleMode(ConsoleHandle,ConsoleMode))
+            {
+                return;
+            }
         }
     }
 
@@ -73,6 +107,56 @@ public:
 };
 
 //----------------------------------------------------------------------------
+// ファイル出力実装
+//----------------------------------------------------------------------------
+class FileLogOutput : public ILogOutput {
+public:
+    FileLogOutput() = default;
+
+    explicit FileLogOutput(const std::wstring& filePath) {
+        open(filePath);
+    }
+
+    ~FileLogOutput() {
+        close();
+    }
+
+    bool open(const std::wstring& filePath) {
+        close();
+        filePath_ = filePath;
+        errno_t err = _wfopen_s(&file_, filePath.c_str(), L"w");
+        return err == 0 && file_ != nullptr;
+    }
+
+    void close() {
+        if (file_) {
+            fclose(file_);
+            file_ = nullptr;
+        }
+    }
+
+    void write(LogLevel level, const std::string& message) override {
+        if (file_) {
+            // タイムスタンプ付きで出力
+            SYSTEMTIME st;
+            GetLocalTime(&st);
+            fprintf(file_, "[%02d:%02d:%02d.%03d] %s",
+                st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+                message.c_str());
+            fflush(file_);  // 即座に書き込み
+        }
+        (void)level;
+    }
+
+    [[nodiscard]] bool isOpen() const noexcept { return file_ != nullptr; }
+    [[nodiscard]] const std::wstring& filePath() const noexcept { return filePath_; }
+
+private:
+    FILE* file_ = nullptr;
+    std::wstring filePath_;
+};
+
+//----------------------------------------------------------------------------
 // デバッグ + コンソール両方出力
 //----------------------------------------------------------------------------
 class MultiLogOutput : public ILogOutput {
@@ -87,19 +171,71 @@ private:
 };
 
 //----------------------------------------------------------------------------
+// デバッグ + コンソール + ファイル出力
+//----------------------------------------------------------------------------
+class FullLogOutput : public ILogOutput {
+public:
+    FullLogOutput() = default;
+
+    explicit FullLogOutput(const std::wstring& filePath) {
+        file_.open(filePath);
+    }
+
+    bool openFile(const std::wstring& filePath) {
+        return file_.open(filePath);
+    }
+
+    void closeFile() {
+        file_.close();
+    }
+
+    void write(LogLevel level, const std::string& message) override {
+        debug_.write(level, message);
+        console_.write(level, message);
+        if (file_.isOpen()) {
+            file_.write(level, message);
+        }
+    }
+
+    [[nodiscard]] FileLogOutput& fileOutput() noexcept { return file_; }
+
+private:
+    DebugLogOutput debug_;
+    ConsoleLogOutput console_;
+    FileLogOutput file_;
+};
+
+//----------------------------------------------------------------------------
 // グローバルログシステム
 //----------------------------------------------------------------------------
 class LogSystem {
 private:
-    static inline ILogOutput* output_ = nullptr;
     static inline LogLevel minLevel_ = LogLevel::Debug;
 
-public:
-    // ログ出力先を設定（nullptr可）
-    static void setOutput(ILogOutput* output) {
-        output_ = output;
+#ifdef _DEBUG
+    //! @brief ログ出力インスタンス取得（遅延初期化）
+    static FullLogOutput& GetOutput() {
+        static FullLogOutput instance = []() {
+            FullLogOutput out;
+            // カレントディレクトリにdebugフォルダを作成
+            wchar_t cwd[MAX_PATH];
+            GetCurrentDirectoryW(MAX_PATH, cwd);
+            std::wstring debugDir = std::wstring(cwd) + L"\\debug";
+            CreateDirectoryW(debugDir.c_str(), nullptr);
+            std::wstring logPath = debugDir + L"\\debug_log.txt";
+            out.openFile(logPath);
+            return out;
+        }();
+        return instance;
     }
+#else
+    static DebugLogOutput& GetOutput() {
+        static DebugLogOutput instance;
+        return instance;
+    }
+#endif
 
+public:
     // 最小ログレベルを設定
     static void setMinLevel(LogLevel level) {
         minLevel_ = level;
@@ -108,12 +244,6 @@ public:
     // ログ出力
     static void log(LogLevel level, const std::string& message, const std::source_location& loc = std::source_location::current()) {
         if (level < minLevel_) return;
-
-        // デフォルト出力先
-        if (!output_) {
-            static DebugLogOutput defaultOutput;
-            output_ = &defaultOutput;
-        }
 
         // フォーマット: [LEVEL] filename(line): message
         std::string levelStr;
@@ -135,7 +265,7 @@ public:
         snprintf(buffer, sizeof(buffer), "[%s] %s(%d): %s\n",
             levelStr.c_str(), filename.c_str(), loc.line(), message.c_str());
 
-        output_->write(level, std::string(buffer));
+        GetOutput().write(level, std::string(buffer));
     }
 };
 
@@ -232,11 +362,35 @@ private:
         } \
     } while(0)
 #else
-// リリース: スルー（何もしない）
-#define THROW_IF_FAILED(hr, msg)        ((void)(hr))
-#define RETURN_FALSE_IF_FAILED(hr, msg) ((void)(hr))
-#define RETURN_NULL_IF_FAILED(hr, msg)  ((void)(hr))
-#define RETURN_IF_FAILED(hr, msg)       ((void)(hr))
+// リリース: エラーチェックは維持、ログのみ無効化
+#define THROW_IF_FAILED(hr, msg) \
+    do { \
+        HRESULT _hr = (hr); \
+        if (FAILED(_hr)) { \
+            throw HResultException(_hr, msg, __FILE__, __LINE__); \
+        } \
+    } while(0)
+
+#define RETURN_FALSE_IF_FAILED(hr, msg) \
+    do { \
+        if (FAILED(hr)) { \
+            return false; \
+        } \
+    } while(0)
+
+#define RETURN_NULL_IF_FAILED(hr, msg) \
+    do { \
+        if (FAILED(hr)) { \
+            return nullptr; \
+        } \
+    } while(0)
+
+#define RETURN_IF_FAILED(hr, msg) \
+    do { \
+        if (FAILED(hr)) { \
+            return; \
+        } \
+    } while(0)
 #endif
 
 //----------------------------------------------------------------------------
@@ -323,14 +477,55 @@ private:
         } \
     } while(0)
 #else
-// リリース: スルー（何もしない）
-#define THROW_IF_NULL(ptr, msg)       ((void)(ptr))
-#define THROW_IF_FALSE(cond, msg)     ((void)(cond))
-#define RETURN_NULL_IF_NULL(ptr, msg) ((void)(ptr))
-#define RETURN_FALSE_IF_NULL(ptr, msg) ((void)(ptr))
-#define RETURN_IF_NULL(ptr, msg)      ((void)(ptr))
-#define RETURN_FALSE_IF_FALSE(cond, msg) ((void)(cond))
-#define RETURN_IF_FALSE(cond, msg)    ((void)(cond))
+// リリース: エラーチェックは維持、ログのみ無効化
+#define THROW_IF_NULL(ptr, msg) \
+    do { \
+        if ((ptr) == nullptr) { \
+            throw LogException(msg, __FILE__, __LINE__); \
+        } \
+    } while(0)
+
+#define THROW_IF_FALSE(cond, msg) \
+    do { \
+        if (!(cond)) { \
+            throw LogException(msg, __FILE__, __LINE__); \
+        } \
+    } while(0)
+
+#define RETURN_NULL_IF_NULL(ptr, msg) \
+    do { \
+        if ((ptr) == nullptr) { \
+            return nullptr; \
+        } \
+    } while(0)
+
+#define RETURN_FALSE_IF_NULL(ptr, msg) \
+    do { \
+        if ((ptr) == nullptr) { \
+            return false; \
+        } \
+    } while(0)
+
+#define RETURN_IF_NULL(ptr, msg) \
+    do { \
+        if ((ptr) == nullptr) { \
+            return; \
+        } \
+    } while(0)
+
+#define RETURN_FALSE_IF_FALSE(cond, msg) \
+    do { \
+        if (!(cond)) { \
+            return false; \
+        } \
+    } while(0)
+
+#define RETURN_IF_FALSE(cond, msg) \
+    do { \
+        if (!(cond)) { \
+            return; \
+        } \
+    } while(0)
 #endif
 
 // Wide文字列変換ヘルパー

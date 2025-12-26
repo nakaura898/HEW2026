@@ -37,6 +37,9 @@ public:
     //! 比較サンプラー（シャドウマップ用）を作成
     [[nodiscard]] static std::unique_ptr<SamplerState> CreateComparison();
 
+    //! クランプサンプラーを作成（テクスチャ境界で端のピクセルを繰り返す）
+    [[nodiscard]] static std::unique_ptr<SamplerState> CreateClamp();
+
     //!@}
     //----------------------------------------------------------
     //! @name   アクセサ

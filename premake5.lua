@@ -46,6 +46,18 @@ objdir_base = "build/obj/" .. outputdir
 -- ビルド時間短縮のため、ソースからのビルドは行わない
 
 --============================================================================
+-- 共通ユーティリティ
+--============================================================================
+project "common"
+    kind "Utility"
+    location "build/common"
+
+    files {
+        "source/common/**.h",
+        "source/common/**.cpp"
+    }
+
+--============================================================================
 -- dx11ライブラリ
 --============================================================================
 project "dx11"
@@ -96,7 +108,7 @@ project "dx11"
     warnings "Extra"
     flags { "FatalWarnings" }
 
-    buildoptions { "/utf-8", "/permissive-" }
+    buildoptions { "/utf-8", "/permissive-", "/FS" }
 
     -- リンカー警告を無視 (Windows SDK重複定義)
     linkoptions { "/ignore:4006" }
@@ -119,6 +131,7 @@ project "engine"
     includedirs {
         "source",
         "source/engine",
+        "external/DirectXTex/DirectXTex",
         "external/DirectXTK/Inc"
     }
 
@@ -129,6 +142,7 @@ project "engine"
 
     links {
         "dx11",
+        "DirectXTex",
         "DirectXTK"
     }
 
@@ -139,7 +153,7 @@ project "engine"
     warnings "Extra"
     flags { "FatalWarnings" }
 
-    buildoptions { "/utf-8", "/permissive-" }
+    buildoptions { "/utf-8", "/permissive-", "/FS" }
 
 --============================================================================
 -- ゲーム実行ファイル
@@ -187,7 +201,7 @@ project "game"
     debugdir "."
 
     warnings "Extra"
-    buildoptions { "/utf-8", "/permissive-" }
+    buildoptions { "/utf-8", "/permissive-", "/FS" }
 
     -- リンカー警告を無視 (外部ライブラリPDB不足)
     linkoptions { "/ignore:4099" }
@@ -236,5 +250,5 @@ project "tests"
     debugdir "."
 
     warnings "Extra"
-    buildoptions { "/utf-8", "/permissive-" }
+    buildoptions { "/utf-8", "/permissive-", "/FS" }
 ]]--

@@ -5,7 +5,7 @@
 #pragma once
 
 #include "component.h"
-#include "engine/scene/math_types.h"
+#include "engine/math/math_types.h"
 
 // 前方宣言
 class Transform2D;

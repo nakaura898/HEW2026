@@ -48,12 +48,6 @@ bool GraphicsDevice::Initialize(bool enableDebug)
     hr = device.As(&device_);
     RETURN_FALSE_IF_FAILED(hr, "[GraphicsDevice] ID3D11Device5へのアップグレードに失敗しました");
 
-    // GraphicsContext を初期化
-  //  if (!GraphicsContext::Get().Initialize()) {
-  //      device_.Reset();
-  //      RETURN_FALSE_IF_FALSE(false, "[GraphicsDevice] GraphicsContextの初期化に失敗しました");
-  //  }
-
     return true;
 }
 
@@ -69,9 +63,9 @@ void GraphicsDevice::Shutdown() noexcept
         ComPtr<ID3D11Debug> debug;
         if (SUCCEEDED(device_.As(&debug))) {
             LOG_INFO("[GraphicsDevice] ライブオブジェクトレポート:");
-            // RLDO_IGNORE_INTERNAL: デバッグレイヤーの内部オブジェクトを除外
-            debug->ReportLiveDeviceObjects(
-                static_cast<D3D11_RLDO_FLAGS>(D3D11_RLDO_DETAIL | D3D11_RLDO_IGNORE_INTERNAL));
+            // D3D11_RLDO_SUMMARY: サマリーを表示
+            // D3D11_RLDO_DETAIL: 詳細を表示
+            debug->ReportLiveDeviceObjects(D3D11_RLDO_DETAIL);
         }
     }
 #endif
