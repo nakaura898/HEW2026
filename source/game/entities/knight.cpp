@@ -79,9 +79,11 @@ void Knight::SetupStateMachine()
     // 基底クラスのセットアップを呼び出し
     Individual::SetupStateMachine();
 
-    // MeleeAttackBehaviorを設定
+    // MeleeAttackBehaviorを設定（ポインタをキャッシュしてからownership移譲）
     if (stateMachine_) {
-        stateMachine_->SetAttackBehavior(std::make_unique<MeleeAttackBehavior>(this));
+        auto behavior = std::make_unique<MeleeAttackBehavior>(this);
+        cachedMeleeAttackBehavior_ = behavior.get();
+        stateMachine_->SetAttackBehavior(std::move(behavior));
     }
 }
 
@@ -102,15 +104,10 @@ void Knight::Render(SpriteBatch& spriteBatch)
 
     // 剣振りエフェクト描画
     if (IsSwinging() && IsAlive()) {
-        // MeleeAttackBehaviorから剣の状態を取得
-        MeleeAttackBehavior* behavior = nullptr;
-        if (stateMachine_) {
-            behavior = dynamic_cast<MeleeAttackBehavior*>(stateMachine_->GetAttackBehavior());
-        }
-
-        if (behavior) {
+        // キャッシュされたポインタを使用（dynamic_cast回避）
+        if (cachedMeleeAttackBehavior_) {
             Vector2 myPos = GetPosition();
-            Vector2 swordTip = behavior->CalculateSwordTip();
+            Vector2 swordTip = cachedMeleeAttackBehavior_->CalculateSwordTip();
 
             // 剣の色（白〜銀色）
             Color swordColor(0.9f, 0.9f, 1.0f, 1.0f);
@@ -157,11 +154,9 @@ void Knight::AttackPlayer(Player* target)
 //----------------------------------------------------------------------------
 bool Knight::IsSwinging() const
 {
-    if (!stateMachine_) return false;
-
-    MeleeAttackBehavior* behavior = dynamic_cast<MeleeAttackBehavior*>(stateMachine_->GetAttackBehavior());
-    if (behavior) {
-        return behavior->IsSwinging();
+    // キャッシュされたポインタを使用（dynamic_cast回避）
+    if (cachedMeleeAttackBehavior_) {
+        return cachedMeleeAttackBehavior_->IsSwinging();
     }
     return false;
 }

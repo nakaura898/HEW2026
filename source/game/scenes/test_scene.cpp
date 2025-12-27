@@ -752,6 +752,7 @@ void TestScene::Render()
     DrawUI();
 
     // モード別オーバーレイ描画（画面全体に半透明）
+#ifdef _DEBUG
     if (BindSystem::Get().IsEnabled() || CutSystem::Get().IsEnabled()) {
         DebugDraw& debug = DebugDraw::Get();
         Vector2 cameraPos = camera_->GetPosition();
@@ -767,6 +768,7 @@ void TestScene::Render()
             debug.DrawRectFilled(cameraPos, overlaySize, Color(1.0f, 0.0f, 0.0f, 0.15f));
         }
     }
+#endif
 
     // ラジアルメニュー描画
     RadialMenu::Get().Render(spriteBatch);

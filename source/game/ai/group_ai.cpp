@@ -102,8 +102,8 @@ void GroupAI::Update(float dt)
     CheckStateTransition();
 
     // 状態に応じた更新（スケール済み時間で）
-    LOG_DEBUG("[GroupAI::Update] " + owner_->GetId() + " state=" +
-              std::to_string(static_cast<int>(state_)) + " (0=Wander,1=Seek,2=Flee)");
+    // LOG_DEBUG("[GroupAI::Update] " + owner_->GetId() + " state=" +
+    //           std::to_string(static_cast<int>(state_)) + " (0=Wander,1=Seek,2=Flee)");
     switch (state_) {
     case AIState::Wander:
         UpdateWander(scaledDt);
@@ -297,8 +297,8 @@ void GroupAI::UpdateWander(float dt)
         BondableEntity playerEntity = player_;
         const EdgeData* edge = RelationshipFacade::Get().GetEdge(groupEntity, playerEntity);
         if (edge) {
-            LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " has bond with player, type=" +
-                      std::to_string(static_cast<int>(edge->type)) + " (2=Love)");
+            // LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " has bond with player, type=" +
+            //           std::to_string(static_cast<int>(edge->type)) + " (2=Love)");
             if (edge->type == BondType::Love) {
                 followPlayer = true;
             }
@@ -306,9 +306,9 @@ void GroupAI::UpdateWander(float dt)
     }
 
     // デバッグ: state確認
-    LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " state=Wander, followPlayer=" +
-              std::string(followPlayer ? "true" : "false") +
-              ", player_=" + std::string(player_ ? "valid" : "null"));
+    // LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " state=Wander, followPlayer=" +
+    //           std::string(followPlayer ? "true" : "false") +
+    //           ", player_=" + std::string(player_ ? "valid" : "null"));
 
     // プレイヤーとラブ縁がある場合はプレイヤーを追従
     if (followPlayer) {
@@ -324,7 +324,7 @@ void GroupAI::UpdateWander(float dt)
                 isLoveFollowing_ = true;
                 loveFollowTimer_ = 0.0f;
                 EventBus::Get().Publish(LoveFollowingChangedEvent{ owner_, true });
-                LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " started Love follow");
+                // LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " started Love follow");
             }
 
             // 追従中はタイマーを更新
@@ -334,15 +334,15 @@ void GroupAI::UpdateWander(float dt)
             float moveAmount = GameConstants::kLoveFollowSpeed * dt;
             Vector2 newPos = currentPos + direction * moveAmount;
             owner_->SetPosition(newPos);
-            LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " MOVED to (" +
-                      std::to_string(newPos.x) + "," + std::to_string(newPos.y) +
-                      "), followTimer=" + std::to_string(loveFollowTimer_));
+            // LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " MOVED to (" +
+            //           std::to_string(newPos.x) + "," + std::to_string(newPos.y) +
+            //           "), followTimer=" + std::to_string(loveFollowTimer_));
         } else {
             // プレイヤーに十分近い場合も追従中ならタイマーを更新
             if (isLoveFollowing_) {
                 loveFollowTimer_ += dt;
-                LOG_DEBUG("[UpdateWander] " + owner_->GetId() +
-                          " within threshold, followTimer=" + std::to_string(loveFollowTimer_));
+                // LOG_DEBUG("[UpdateWander] " + owner_->GetId() +
+                //           " within threshold, followTimer=" + std::to_string(loveFollowTimer_));
             }
         }
         return;
@@ -456,10 +456,10 @@ void GroupAI::UpdateSeek(float dt)
             targetType = "Player";
             targetName = "Player";
         }
-        LOG_DEBUG("[UpdateSeek] " + owner_->GetId() +
-                  " -> " + targetType + ":" + targetName +
-                  " pos=(" + std::to_string(static_cast<int>(targetPos.x)) + "," +
-                  std::to_string(static_cast<int>(targetPos.y)) + ")");
+        // LOG_DEBUG("[UpdateSeek] " + owner_->GetId() +
+        //           " -> " + targetType + ":" + targetName +
+        //           " pos=(" + std::to_string(static_cast<int>(targetPos.x)) + "," +
+        //           std::to_string(static_cast<int>(targetPos.y)) + ")");
     }
 #endif
     Vector2 direction = targetPos - currentPos;
@@ -540,20 +540,8 @@ void GroupAI::CheckStateTransition()
 
     // HP閾値チェック（Flee）- 戦闘中かつHP低下
     if (hpRatio < fleeThreshold_ && inCombat_) {
-        // カメラ範囲内かチェック
-        bool inCameraView = false;
-        if (camera_) {
-            Vector2 minBounds, maxBounds;
-            camera_->GetWorldBounds(minBounds, maxBounds);
-            Vector2 pos = owner_->GetPosition();
-            // 少しマージンを持たせる（画面外に出てからFlee）
-            constexpr float kMargin = 50.0f;
-            inCameraView = (pos.x >= minBounds.x - kMargin && pos.x <= maxBounds.x + kMargin &&
-                           pos.y >= minBounds.y - kMargin && pos.y <= maxBounds.y + kMargin);
-        }
-
         // カメラ範囲内ならSeek状態を維持（攻撃継続）
-        if (inCameraView) {
+        if (IsInCameraView()) {
             if (state_ != AIState::Seek) {
                 LOG_INFO("[GroupAI] " + owner_->GetId() + " HP low but in camera view, staying in Seek");
                 SetState(AIState::Seek);
@@ -589,22 +577,13 @@ void GroupAI::CheckStateTransition()
     }
 
     // Flee中にカメラ範囲内に入ったらSeekに戻る
-    if (state_ == AIState::Flee && camera_) {
-        Vector2 minBounds, maxBounds;
-        camera_->GetWorldBounds(minBounds, maxBounds);
-        Vector2 pos = owner_->GetPosition();
-        constexpr float kMargin = 50.0f;
-        bool inCameraView = (pos.x >= minBounds.x - kMargin && pos.x <= maxBounds.x + kMargin &&
-                            pos.y >= minBounds.y - kMargin && pos.y <= maxBounds.y + kMargin);
-        
-        if (inCameraView) {
-            LOG_INFO("[GroupAI] " + owner_->GetId() + " entered camera view while fleeing, returning to Seek");
-            FindTarget();
-            if (HasTarget()) {
-                SetState(AIState::Seek);
-            }
-            return;
+    if (state_ == AIState::Flee && IsInCameraView()) {
+        LOG_INFO("[GroupAI] " + owner_->GetId() + " entered camera view while fleeing, returning to Seek");
+        FindTarget();
+        if (HasTarget()) {
+            SetState(AIState::Seek);
         }
+        return;
     }
 
     // Seek中にターゲットがいなくなったらWanderに戻る
@@ -628,9 +607,9 @@ void GroupAI::CheckStateTransition()
 
         // Love追従中は最小追従時間が経過するまで攻撃に戻らない
         if (isLoveFollowing_ && loveFollowTimer_ < kMinLoveFollowDuration) {
-            LOG_DEBUG("[GroupAI] " + owner_->GetId() +
-                      " Love following, timer=" + std::to_string(loveFollowTimer_) +
-                      "/" + std::to_string(kMinLoveFollowDuration));
+            // LOG_DEBUG("[GroupAI] " + owner_->GetId() +
+            //           " Love following, timer=" + std::to_string(loveFollowTimer_) +
+            //           "/" + std::to_string(kMinLoveFollowDuration));
             return;
         }
 
@@ -717,8 +696,8 @@ bool GroupAI::IsMoving() const
         // プレイヤーをターゲットにしている場合は通常の判定
         if (std::holds_alternative<Player*>(target_)) {
             bool result = distance > GameConstants::kLoveStopDistance;
-            LOG_DEBUG("[IsMoving] " + owner_->GetId() + " Seek->Player dist=" +
-                      std::to_string(distance) + " result=" + (result ? "true" : "false"));
+            // LOG_DEBUG("[IsMoving] " + owner_->GetId() + " Seek->Player dist=" +
+            //           std::to_string(distance) + " result=" + (result ? "true" : "false"));
             return result;
         }
         // グループターゲットの場合は攻撃範囲で判定
@@ -727,9 +706,9 @@ bool GroupAI::IsMoving() const
             attackRange = GameConstants::kMinMeleeAttackRange;
         }
         bool result = distance > attackRange;
-        LOG_DEBUG("[IsMoving] " + owner_->GetId() + " Seek->Group dist=" +
-                  std::to_string(distance) + " attackRange=" + std::to_string(attackRange) +
-                  " result=" + (result ? "true" : "false"));
+        // LOG_DEBUG("[IsMoving] " + owner_->GetId() + " Seek->Group dist=" +
+        //           std::to_string(distance) + " attackRange=" + std::to_string(attackRange) +
+        //           " result=" + (result ? "true" : "false"));
         return result;
     }
 
@@ -769,9 +748,9 @@ void GroupAI::NotifyMovementChange()
 
     // 状態変化があれば全個体に通知
     if (wasMoving_ != isMoving) {
-        LOG_DEBUG("[NotifyMovementChange] " + owner_->GetId() +
-                  " isMoving changed: " + (wasMoving_ ? "true" : "false") +
-                  " -> " + (isMoving ? "true" : "false"));
+        // LOG_DEBUG("[NotifyMovementChange] " + owner_->GetId() +
+        //           " isMoving changed: " + (wasMoving_ ? "true" : "false") +
+        //           " -> " + (isMoving ? "true" : "false"));
         wasMoving_ = isMoving;
 
         for (Individual* ind : owner_->GetAliveIndividuals()) {
@@ -838,4 +817,17 @@ void GroupAI::OnGroupDefeated(Group* defeatedGroup)
             ClearTarget();
         }
     }
+}
+
+//----------------------------------------------------------------------------
+bool GroupAI::IsInCameraView(float margin) const
+{
+    if (!camera_ || !owner_) return false;
+
+    Vector2 minBounds, maxBounds;
+    camera_->GetWorldBounds(minBounds, maxBounds);
+    Vector2 pos = owner_->GetPosition();
+
+    return (pos.x >= minBounds.x - margin && pos.x <= maxBounds.x + margin &&
+            pos.y >= minBounds.y - margin && pos.y <= maxBounds.y + margin);
 }

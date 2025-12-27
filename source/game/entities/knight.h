@@ -71,4 +71,7 @@ private:
 
     // スプライト色
     Color color_ = Color(0.3f, 0.5f, 1.0f, 1.0f);  //!< デフォルトは青系
+
+    //! @brief キャッシュされたMeleeAttackBehaviorポインタ（dynamic_cast回避用）
+    MeleeAttackBehavior* cachedMeleeAttackBehavior_ = nullptr;
 };

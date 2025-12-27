@@ -213,4 +213,9 @@ private:
 
     //! @brief グループ全滅イベントハンドラ（ターゲットクリア用）
     void OnGroupDefeated(Group* defeatedGroup);
+
+    //! @brief カメラ範囲内かチェック
+    //! @param margin マージン（ピクセル）
+    //! @return カメラ範囲内ならtrue
+    [[nodiscard]] bool IsInCameraView(float margin = 50.0f) const;
 };

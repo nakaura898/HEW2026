@@ -21,6 +21,31 @@
 #include "engine/c_systems/collision_layers.h"
 #include "common/logging/logging.h"
 
+namespace {
+//! @brief 向き反転方向を判定（水平成分が十分な場合のみ）
+//! @param dx 水平移動量
+//! @param dy 垂直移動量
+//! @return 1=右向き, -1=左向き, 0=反転しない
+int DetermineFlipDirection(float dx, float dy)
+{
+    constexpr float kHorizontalThreshold = 0.3f;
+    constexpr float kMinMovement = 0.001f;
+
+    float absDx = std::abs(dx);
+    float absDy = std::abs(dy);
+    float total = absDx + absDy;
+
+    // 移動量が微小な場合は反転しない
+    if (total < kMinMovement) return 0;
+
+    // 水平成分の比率が閾値未満なら反転しない（真上/真下への移動）
+    if (absDx / total < kHorizontalThreshold) return 0;
+
+    // 水平成分が十分 → 反転方向を返す
+    return (dx > 0.0f) ? 1 : -1;
+}
+} // namespace
+
 //----------------------------------------------------------------------------
 Individual::Individual(const std::string& id)
     : id_(id)
@@ -737,27 +762,6 @@ void Individual::UpdateFacingDirection()
 {
     if (!sprite_) return;
 
-    // 向き変更の水平成分しきい値（この比率以上の水平成分がないと反転しない）
-    // absDx/(absDx+absDy) >= 0.3 → 角度 = arctan((1-0.3)/0.3) ≈ 66.8°
-    // つまり水平から約±66.8度以内の移動でのみ反転
-    constexpr float kHorizontalThreshold = 0.3f;
-
-    // 水平成分が十分かチェックするヘルパー
-    auto shouldFlip = [](float dx, float dy) -> int {
-        float absDx = std::abs(dx);
-        float absDy = std::abs(dy);
-        float total = absDx + absDy;
-
-        // 移動量が微小な場合は反転しない
-        if (total < 0.001f) return 0;
-
-        // 水平成分の比率が閾値未満なら反転しない（真上/真下への移動）
-        if (absDx / total < kHorizontalThreshold) return 0;
-
-        // 水平成分が十分 → 反転方向を返す
-        return (dx > 0.0f) ? 1 : -1;
-    };
-
     IndividualIntent intent = GetIndividualIntent();
 
     // 1. 攻撃中はターゲット方向（仮想メソッドで派生クラス対応）
@@ -766,7 +770,7 @@ void Individual::UpdateFacingDirection()
         if (GetCurrentAttackTargetPosition(targetPos)) {
             float dx = targetPos.x - GetPosition().x;
             float dy = targetPos.y - GetPosition().y;
-            int flipDir = shouldFlip(dx, dy);
+            int flipDir = DetermineFlipDirection(dx, dy);
             if (flipDir > 0) facingRight_ = true;
             else if (flipDir < 0) facingRight_ = false;
         }
@@ -779,7 +783,7 @@ void Individual::UpdateFacingDirection()
             Vector2 groupPos = ownerGroup_->GetPosition();
             float dx = targetPos.x - groupPos.x;
             float dy = targetPos.y - groupPos.y;
-            int flipDir = shouldFlip(dx, dy);
+            int flipDir = DetermineFlipDirection(dx, dy);
             if (flipDir > 0) facingRight_ = true;
             else if (flipDir < 0) facingRight_ = false;
         }
@@ -789,7 +793,7 @@ void Individual::UpdateFacingDirection()
         Vector2 currentPos = GetPosition();
         float dx = currentPos.x - prevPosition_.x;
         float dy = currentPos.y - prevPosition_.y;
-        int flipDir = shouldFlip(dx, dy);
+        int flipDir = DetermineFlipDirection(dx, dy);
         if (flipDir > 0) facingRight_ = true;
         else if (flipDir < 0) facingRight_ = false;
     }
