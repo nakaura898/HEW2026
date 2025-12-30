@@ -55,6 +55,9 @@ public:
     //! @brief 全グループをクリア
     void ClearGroups();
 
+    //! @brief 全グループを取得
+    [[nodiscard]] const std::vector<Group*>& GetAllGroups() const { return groups_; }
+
     //! @brief プレイヤーを設定
     void SetPlayer(Player* player) { player_ = player; }
 

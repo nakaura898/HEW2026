@@ -17,6 +17,7 @@
 #include "common/logging/logging.h"
 #include <random>
 #include <cmath>
+#include <limits>
 
 namespace {
     //! @brief 画面端からの可視マージン
@@ -200,6 +201,12 @@ void GroupAI::FindTarget()
 {
     if (!owner_) return;
 
+    // 味方グループは専用のターゲット検索を使用
+    if (owner_->IsAlly()) {
+        FindTargetAsAlly();
+        return;
+    }
+
     // ラブパートナーがいる場合は共有ターゲットを使用
     RelationshipFacade& facade = RelationshipFacade::Get();
     if (facade.HasLovePartners(owner_)) {
@@ -239,6 +246,42 @@ void GroupAI::FindTarget()
         target_ = player_;
     } else if (groupTarget) {
         target_ = groupTarget;
+    } else {
+        ClearTarget();
+    }
+}
+
+//----------------------------------------------------------------------------
+void GroupAI::FindTargetAsAlly()
+{
+    if (!owner_) return;
+
+    // CombatSystemから敵グループを検索
+    CombatSystem& combat = CombatSystem::Get();
+    Vector2 myPos = owner_->GetPosition();
+
+    Group* bestTarget = nullptr;
+    float closestDistance = (std::numeric_limits<float>::max)();
+
+    // すべてのグループから敵（非味方）を検索
+    for (Group* candidate : combat.GetAllGroups()) {
+        if (!candidate || candidate == owner_) continue;
+        if (candidate->IsDefeated()) continue;
+        if (candidate->IsAlly()) continue;  // 味方は攻撃しない
+
+        // 索敵範囲チェック
+        float distance = (candidate->GetPosition() - myPos).Length();
+        if (distance > detectionRange_) continue;
+
+        // 最も近い敵を選択
+        if (distance < closestDistance) {
+            closestDistance = distance;
+            bestTarget = candidate;
+        }
+    }
+
+    if (bestTarget) {
+        target_ = bestTarget;
     } else {
         ClearTarget();
     }

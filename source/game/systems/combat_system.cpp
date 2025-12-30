@@ -244,6 +244,9 @@ bool CombatSystem::AreHostile(Group* a, Group* b) const
 {
     if (!a || !b) return false;
 
+    // 味方同士は敵対しない
+    if (a->IsAlly() && b->IsAlly()) return false;
+
     // RelationshipFacadeで敵対判定（推移的接続を考慮）
     BondableEntity entityA = a;
     BondableEntity entityB = b;
@@ -255,6 +258,9 @@ bool CombatSystem::AreHostile(Group* a, Group* b) const
 bool CombatSystem::IsHostileToPlayer(Group* group) const
 {
     if (!group || !player_) return false;
+
+    // 味方グループはプレイヤーに敵対しない
+    if (group->IsAlly()) return false;
 
     BondableEntity groupEntity = group;
     BondableEntity playerEntity = player_;

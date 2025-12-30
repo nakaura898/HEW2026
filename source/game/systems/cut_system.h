@@ -91,6 +91,34 @@ public:
     void SetCutCost(float cost) { cutCost_ = cost; }
 
     //------------------------------------------------------------------------
+    // 回数制限
+    //------------------------------------------------------------------------
+
+    //! @brief 切る回数上限を設定（-1で無制限）
+    void SetMaxCutCount(int count) { maxCutCount_ = count; }
+
+    //! @brief 切る回数上限を取得
+    [[nodiscard]] int GetMaxCutCount() const { return maxCutCount_; }
+
+    //! @brief 残り回数を取得（-1なら無制限）
+    [[nodiscard]] int GetRemainingCuts() const {
+        if (maxCutCount_ < 0) return -1;
+        return maxCutCount_ - currentCutCount_;
+    }
+
+    //! @brief 現在の使用回数を取得
+    [[nodiscard]] int GetCurrentCutCount() const { return currentCutCount_; }
+
+    //! @brief 回数をリセット
+    void ResetCutCount() { currentCutCount_ = 0; }
+
+    //! @brief 回数制限を考慮して切れるか判定
+    [[nodiscard]] bool CanCutWithLimit() const {
+        if (maxCutCount_ < 0) return true;  // 無制限
+        return currentCutCount_ < maxCutCount_;
+    }
+
+    //------------------------------------------------------------------------
     // コールバック
     //------------------------------------------------------------------------
 
@@ -121,6 +149,8 @@ private:
     BondableEntity selectedEntityA_;  //!< 選択時のエンティティA（use-after-free防止用）
     BondableEntity selectedEntityB_;  //!< 選択時のエンティティB（use-after-free防止用）
     float cutCost_ = 10.0f;         //!< 縁を切るFEコスト
+    int maxCutCount_ = -1;          //!< 切る回数上限（-1=無制限）
+    int currentCutCount_ = 0;       //!< 現在の使用回数
 
     //! @brief BondRemovedEventの購読ID
     uint32_t bondRemovedSubscriptionId_ = 0;
