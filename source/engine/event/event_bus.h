@@ -76,11 +76,11 @@ public:
         return *instance_;
     }
 
-    //! @brief インスタンス生成
+    //! @brief インスタンス生成（スレッドセーフ）
     static void Create() {
-        if (!instance_) {
+        std::call_once(initFlag_, []() {
             instance_.reset(new EventBus());
-        }
+        });
     }
 
     //! @brief インスタンス破棄
@@ -188,6 +188,7 @@ private:
     }
 
     static inline std::unique_ptr<EventBus> instance_ = nullptr;
+    static inline std::once_flag initFlag_;
 
     std::unordered_map<std::type_index, std::unique_ptr<IEventHandler>> handlers_;
     mutable std::mutex mutex_;
