@@ -10,7 +10,7 @@
 #include "engine/component/animator.h"
 #include "engine/component/collider2d.h"
 #include "engine/component/camera2d.h"
-#include "dx11/gpu/texture.h"
+#include "engine/texture/texture_types.h"
 #include <memory>
 #include <string>
 

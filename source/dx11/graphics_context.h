@@ -291,10 +291,30 @@ public:
     [[nodiscard]] ID3D11DeviceContext4* GetContext() const noexcept { return context_.Get(); }
 
     //!@}
+    //----------------------------------------------------------
+    //! @name   ステートキャッシュ管理
+    //----------------------------------------------------------
+    //!@{
+
+    //! ステートキャッシュをリセット
+    void ResetStateCache() noexcept;
+
+    //!@}
 
 private:
     GraphicsContext() = default;
     ~GraphicsContext() = default;
 
     ComPtr<ID3D11DeviceContext4> context_;
+
+    // ステートキャッシュ
+    BlendState* cachedBlendState_ = nullptr;
+    DepthStencilState* cachedDepthStencilState_ = nullptr;
+    uint32_t cachedStencilRef_ = 0;
+    RasterizerState* cachedRasterizerState_ = nullptr;
+    SamplerState* cachedPSSampler0_ = nullptr;
+    Shader* cachedVS_ = nullptr;
+    Shader* cachedPS_ = nullptr;
+    ID3D11InputLayout* cachedInputLayout_ = nullptr;
+    D3D11_PRIMITIVE_TOPOLOGY cachedTopology_ = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
 };

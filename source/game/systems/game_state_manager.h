@@ -62,15 +62,6 @@ public:
     //! @brief プレイヤーを設定
     void SetPlayer(Player* player) { player_ = player; }
 
-    //! @brief 敵グループを登録
-    void RegisterEnemyGroup(Group* group);
-
-    //! @brief 敵グループを登録解除
-    void UnregisterEnemyGroup(Group* group);
-
-    //! @brief 全敵グループをクリア
-    void ClearEnemyGroups();
-
     //------------------------------------------------------------------------
     // 状態取得
     //------------------------------------------------------------------------
@@ -133,7 +124,6 @@ private:
 
     GameState state_ = GameState::Playing;  //!< 現在の状態
     Player* player_ = nullptr;              //!< プレイヤー参照
-    std::vector<Group*> enemyGroups_;       //!< 敵グループリスト
 
     static inline GameState lastResult_ = GameState::Playing;  //!< 最後の結果（シーン間で共有）
 

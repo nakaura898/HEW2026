@@ -10,7 +10,7 @@
 #include "engine/component/sprite_renderer.h"
 #include "engine/component/camera2d.h"
 #include "engine/component/collider2d.h"
-#include "dx11/gpu/texture.h"
+#include "engine/texture/texture_types.h"
 #include "game/entities/player.h"
 #include "game/stage/stage_background.h"
 #include "game/entities/group.h"
@@ -91,10 +91,7 @@ private:
     // プレイヤー
     std::unique_ptr<Player> player_;
 
-    // 敵グループ
-    std::vector<std::unique_ptr<Group>> enemyGroups_;
-
-    // グループAI
+    // グループAI（GroupManagerがグループ所有権を管理）
     std::vector<std::unique_ptr<GroupAI>> groupAIs_;
 
     // ステージ背景

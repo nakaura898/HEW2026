@@ -13,7 +13,6 @@
 #include "engine/event/event_bus.h"
 #include "game/systems/event/game_events.h"
 #include "common/logging/logging.h"
-#include <algorithm>
 
 //----------------------------------------------------------------------------
 CombatSystem::CombatSystem()
@@ -59,15 +58,12 @@ void CombatSystem::Destroy()
 //----------------------------------------------------------------------------
 void CombatSystem::Update(float dt)
 {
-    isUpdating_ = true;
-
-    // コールバック中の変更に備えてコピーを作成
-    std::vector<Group*> groupsCopy = groups_;
+    // GroupManagerから生存グループを取得（スナップショット）
+    std::vector<Group*> aliveGroups = GroupManager::Get().GetAliveGroups();
 
     // 各グループの個体クールダウン更新と戦闘処理
-    for (Group* attacker : groupsCopy) {
-        // 削除予約されたグループはスキップ
-        if (!attacker || attacker->IsDefeated() || IsPendingRemoval(attacker)) continue;
+    for (Group* attacker : aliveGroups) {
+        if (!attacker || attacker->IsDefeated()) continue;
 
         // 全個体のクールダウン更新
         for (Individual* individual : attacker->GetAliveIndividuals()) {
@@ -78,7 +74,8 @@ void CombatSystem::Update(float dt)
         if (!CombatMediator::Get().CanAttack(attacker)) continue;
 
         // 脅威度ベースでターゲット選定（グループ vs プレイヤー）
-        Group* groupTarget = SelectTarget(attacker);
+        // スナップショットを渡して一貫性を保つ
+        Group* groupTarget = SelectTarget(attacker, aliveGroups);
         bool canAttackPlayer = CanAttackPlayer(attacker);
 
         // プレイヤーの脅威度とグループの脅威度を比較
@@ -95,9 +92,8 @@ void CombatSystem::Update(float dt)
     }
 
     // 全滅チェック（各グループにつき一度だけ処理）
-    for (Group* group : groupsCopy) {
-        // 削除予約されたグループはスキップ
-        if (!group || IsPendingRemoval(group)) continue;
+    for (Group* group : aliveGroups) {
+        if (!group) continue;
 
         if (group->IsDefeated()) {
             // 既に処理済みならスキップ
@@ -117,21 +113,14 @@ void CombatSystem::Update(float dt)
             }
         }
     }
-
-    isUpdating_ = false;
-
-    // 遅延削除を実行
-    FlushPendingRemovals();
 }
 
 //----------------------------------------------------------------------------
 void CombatSystem::RegisterGroup(Group* group)
 {
-    if (!group) return;
-
-    auto it = std::find(groups_.begin(), groups_.end(), group);
-    if (it == groups_.end()) {
-        groups_.push_back(group);
+    // グループはGroupManagerで管理されるため、ここでは何もしない
+    // ログのみ出力
+    if (group) {
         LOG_INFO("[CombatSystem] Group registered: " + group->GetId());
     }
 }
@@ -139,22 +128,10 @@ void CombatSystem::RegisterGroup(Group* group)
 //----------------------------------------------------------------------------
 void CombatSystem::UnregisterGroup(Group* group)
 {
-    if (!group) return;
-
-    // Update中は遅延削除
-    if (isUpdating_) {
-        // 既に予約済みならスキップ
-        if (!IsPendingRemoval(group)) {
-            pendingRemovals_.push_back(group);
-            LOG_INFO("[CombatSystem] Group unregister deferred: " + group->GetId());
-        }
-        return;
-    }
-
-    // 即座に削除
-    auto it = std::find(groups_.begin(), groups_.end(), group);
-    if (it != groups_.end()) {
-        groups_.erase(it);
+    // グループはGroupManagerで管理されるため、ここでは何もしない
+    // defeatedGroups_からは削除する
+    if (group) {
+        defeatedGroups_.erase(group);
         LOG_INFO("[CombatSystem] Group unregistered: " + group->GetId());
     }
 }
@@ -162,35 +139,19 @@ void CombatSystem::UnregisterGroup(Group* group)
 //----------------------------------------------------------------------------
 void CombatSystem::ClearGroups()
 {
-    groups_.clear();
-    pendingRemovals_.clear();
     defeatedGroups_.clear();
     LOG_INFO("[CombatSystem] All groups cleared");
 }
 
 //----------------------------------------------------------------------------
-void CombatSystem::FlushPendingRemovals()
-{
-    if (pendingRemovals_.empty()) return;
-
-    for (Group* group : pendingRemovals_) {
-        auto it = std::find(groups_.begin(), groups_.end(), group);
-        if (it != groups_.end()) {
-            groups_.erase(it);
-            LOG_INFO("[CombatSystem] Group unregistered (deferred): " + group->GetId());
-        }
-    }
-    pendingRemovals_.clear();
-}
-
-//----------------------------------------------------------------------------
-bool CombatSystem::IsPendingRemoval(Group* group) const
-{
-    return std::find(pendingRemovals_.begin(), pendingRemovals_.end(), group) != pendingRemovals_.end();
-}
-
-//----------------------------------------------------------------------------
 Group* CombatSystem::SelectTarget(Group* attacker) const
+{
+    // 内部でスナップショットを取得して呼び出し
+    return SelectTarget(attacker, GroupManager::Get().GetAliveGroups());
+}
+
+//----------------------------------------------------------------------------
+Group* CombatSystem::SelectTarget(Group* attacker, const std::vector<Group*>& candidates) const
 {
     if (!attacker) return nullptr;
 
@@ -199,7 +160,8 @@ Group* CombatSystem::SelectTarget(Group* attacker) const
     Vector2 attackerPos = attacker->GetPosition();
     float detectionRange = attacker->GetDetectionRange();
 
-    for (Group* candidate : groups_) {
+    // 渡されたスナップショットを使用（一貫性のため）
+    for (Group* candidate : candidates) {
         if (!candidate || candidate == attacker) continue;
         if (candidate->IsDefeated()) continue;
 
@@ -287,9 +249,6 @@ void CombatSystem::ProcessCombatAgainstPlayer(Group* attacker, float /*dt*/)
     float distance = (playerPos - attackerPos).Length();
     float attackRange = attackerIndividual->GetAttackRange();
 
-    LOG_INFO("[ProcessCombatAgainstPlayer] " + attackerIndividual->GetId() + " -> Player" +
-             " dist=" + std::to_string(distance) + " range=" + std::to_string(attackRange));
-
     if (distance > attackRange) {
         return; // 攻撃範囲外
     }
@@ -344,7 +303,7 @@ void CombatSystem::OnIndividualDied(Individual* diedIndividual)
     if (!diedIndividual) return;
 
     // 全グループ内の全個体を走査し、死亡した個体をattackTarget_にしていればクリア
-    for (Group* group : groups_) {
+    for (Group* group : GroupManager::Get().GetAliveGroups()) {
         if (!group || group->IsDefeated()) continue;
 
         for (Individual* ind : group->GetAliveIndividuals()) {

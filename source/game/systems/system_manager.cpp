@@ -9,6 +9,7 @@
 #include "engine/time/time_manager.h"
 
 // Level 2: 基本システム
+#include "game/systems/group_manager.h"
 #include "game/systems/fe_system.h"
 #include "game/bond/bond_manager.h"
 #include "game/systems/faction_manager.h"
@@ -51,6 +52,7 @@ void SystemManager::CreateAll()
     TimeManager::Create();
 
     // Level 2: 基本システム
+    GroupManager::Create();
     FESystem::Create();
     BondManager::Create();
     FactionManager::Create();
@@ -118,6 +120,7 @@ void SystemManager::DestroyAll()
     FactionManager::Destroy();
     BondManager::Destroy();
     FESystem::Destroy();
+    GroupManager::Destroy();
 
     // Level 1: 基盤システム（最後に破棄）
     TimeManager::Destroy();

@@ -5,14 +5,12 @@
 #include "wave_manager.h"
 #include "game/entities/group.h"
 #include "common/logging/logging.h"
-#include <algorithm>
 
 //----------------------------------------------------------------------------
 void WaveManager::Initialize(const std::vector<WaveData>& waves)
 {
     waves_ = waves;
     currentWave_ = 1;
-    currentWaveGroups_.clear();
     waveCleared_ = false;
     waveTransitionTimer_ = 0.0f;
 
@@ -58,9 +56,9 @@ void WaveManager::Update()
 void WaveManager::Reset()
 {
     currentWave_ = 1;
-    currentWaveGroups_.clear();
     waveCleared_ = false;
     waveTransitionTimer_ = 0.0f;
+    GroupManager::Get().ClearWaveAssignments();
 
     LOG_INFO("[WaveManager] Reset");
 }
@@ -80,24 +78,25 @@ void WaveManager::SpawnCurrentWave()
     }
 
     const WaveData& wave = waves_[waveIndex];
-    currentWaveGroups_.clear();
     waveCleared_ = false;
 
     LOG_INFO("[WaveManager] Spawning wave " + std::to_string(currentWave_) +
              " (" + std::to_string(wave.groups.size()) + " groups)");
 
     // グループスポーナーが設定されていればそれを使用
+    // グループはGroupManagerに登録され、ウェーブ番号も割り当てられる
     if (groupSpawner_) {
         for (const GroupData& gd : wave.groups) {
             Group* group = groupSpawner_(gd);
             if (group) {
-                currentWaveGroups_.push_back(group);
-                LOG_INFO("[WaveManager] Registered group: " + gd.id);
+                LOG_INFO("[WaveManager] Spawned group: " + gd.id);
             }
         }
     }
+
+    std::vector<Group*> waveGroups = GetCurrentWaveGroups();
     LOG_INFO("[WaveManager] Wave " + std::to_string(currentWave_) + " spawned with " +
-             std::to_string(currentWaveGroups_.size()) + " groups");
+             std::to_string(waveGroups.size()) + " groups");
 }
 
 //----------------------------------------------------------------------------
@@ -110,7 +109,6 @@ void WaveManager::AdvanceToNextWave()
 
     currentWave_++;
     waveCleared_ = false;
-    currentWaveGroups_.clear();
 
     LOG_INFO("[WaveManager] Advanced to wave " + std::to_string(currentWave_));
 
@@ -121,14 +119,15 @@ void WaveManager::AdvanceToNextWave()
 //----------------------------------------------------------------------------
 bool WaveManager::IsCurrentWaveCleared() const
 {
-    if (currentWaveGroups_.empty()) {
+    std::vector<Group*> waveGroups = GroupManager::Get().GetGroupsForWave(currentWave_);
+    if (waveGroups.empty()) {
         LOG_DEBUG("[WaveManager] IsCurrentWaveCleared: no groups registered");
         return true;
     }
 
     // 全グループが全滅または味方化していればクリア
     int aliveEnemyCount = 0;
-    for (Group* group : currentWaveGroups_) {
+    for (Group* group : waveGroups) {
         if (!group) continue;
         if (group->IsDefeated()) continue;
         if (group->IsAlly()) continue;
@@ -150,32 +149,6 @@ bool WaveManager::IsAllWavesCleared() const
 {
     // 最終ウェーブまで到達していてクリア済み
     return currentWave_ >= static_cast<int>(waves_.size()) && waveCleared_;
-}
-
-//----------------------------------------------------------------------------
-void WaveManager::RegisterGroup(Group* group)
-{
-    if (!group) return;
-
-    auto it = std::find(currentWaveGroups_.begin(), currentWaveGroups_.end(), group);
-    if (it == currentWaveGroups_.end()) {
-        currentWaveGroups_.push_back(group);
-    }
-}
-
-//----------------------------------------------------------------------------
-void WaveManager::UnregisterGroup(Group* group)
-{
-    auto it = std::find(currentWaveGroups_.begin(), currentWaveGroups_.end(), group);
-    if (it != currentWaveGroups_.end()) {
-        currentWaveGroups_.erase(it);
-    }
-}
-
-//----------------------------------------------------------------------------
-void WaveManager::ClearGroups()
-{
-    currentWaveGroups_.clear();
 }
 
 //----------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-//----------------------------------------------------------------------------
+﻿//----------------------------------------------------------------------------
 //! @file   player.cpp
 //! @brief  Playerクラス実装
 //----------------------------------------------------------------------------
@@ -137,6 +137,9 @@ void Player::HandleInput(float dt, Camera2D& /*camera*/)
         if (!groupPtr || !*groupPtr) continue;
         Group* group = *groupPtr;
 
+        // 死亡したグループはスキップ（GetPosition()がZeroを返すため）
+        if (group->IsDefeated()) continue;
+
         // グループとの距離を制限
         Vector2 groupPos = group->GetPosition();
         Vector2 diff = originalPlayerPos - groupPos;
@@ -191,7 +194,15 @@ void Player::Render(SpriteBatch& spriteBatch)
 //----------------------------------------------------------------------------
 void Player::TakeDamage(float damage)
 {
-    if (!IsAlive()) return;
+    if (!IsAlive()) {
+        LOG_WARN("[Player] BUG: TakeDamage called on dead player");
+        return;
+    }
+
+    if (damage < 0.0f) {
+        LOG_WARN("[Player] BUG: Negative damage: " + std::to_string(damage));
+        return;
+    }
 
     hp_ -= damage;
     if (hp_ < 0.0f) {
@@ -216,6 +227,11 @@ Vector2 Player::GetPosition() const
 //----------------------------------------------------------------------------
 bool Player::ConsumeFe(float amount)
 {
+    if (amount < 0.0f) {
+        LOG_WARN("[Player] BUG: Negative FE consume amount: " + std::to_string(amount));
+        return false;
+    }
+
     if (fe_ < amount) return false;
 
     fe_ -= amount;
@@ -226,6 +242,11 @@ bool Player::ConsumeFe(float amount)
 //----------------------------------------------------------------------------
 void Player::RecoverFe(float amount)
 {
+    if (amount < 0.0f) {
+        LOG_WARN("[Player] BUG: Negative FE recover amount: " + std::to_string(amount));
+        return;
+    }
+
     fe_ += amount;
     if (fe_ > maxFe_) {
         fe_ = maxFe_;

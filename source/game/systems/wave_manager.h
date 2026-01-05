@@ -5,6 +5,7 @@
 #pragma once
 
 #include "game/stage/stage_data.h"
+#include "game/systems/group_manager.h"
 #include <memory>
 #include <vector>
 #include <functional>
@@ -81,7 +82,10 @@ public:
     [[nodiscard]] bool IsAllWavesCleared() const;
 
     //! @brief 現在ウェーブのグループ一覧を取得
-    [[nodiscard]] const std::vector<Group*>& GetCurrentWaveGroups() const { return currentWaveGroups_; }
+    [[nodiscard]] std::vector<Group*> GetCurrentWaveGroups() const
+    {
+        return GroupManager::Get().GetGroupsForWave(currentWave_);
+    }
 
     //------------------------------------------------------------------------
     // トランジション（ウェーブ間スクロール）
@@ -116,19 +120,6 @@ public:
     void UpdateTransition(float dt);
 
     //------------------------------------------------------------------------
-    // グループ管理
-    //------------------------------------------------------------------------
-
-    //! @brief 現在ウェーブにグループを登録
-    void RegisterGroup(Group* group);
-
-    //! @brief グループを登録解除
-    void UnregisterGroup(Group* group);
-
-    //! @brief 全グループをクリア
-    void ClearGroups();
-
-    //------------------------------------------------------------------------
     // コールバック
     //------------------------------------------------------------------------
 
@@ -151,7 +142,6 @@ private:
 
     std::vector<WaveData> waves_;                   //!< ウェーブデータ
     int currentWave_ = 1;                           //!< 現在のウェーブ番号（1始まり）
-    std::vector<Group*> currentWaveGroups_;         //!< 現在ウェーブのグループ
     bool waveCleared_ = false;                      //!< 現在ウェーブクリア済みフラグ
     float waveTransitionTimer_ = 0.0f;              //!< ウェーブ間遷移タイマー
 

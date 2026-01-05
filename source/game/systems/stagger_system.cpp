@@ -62,7 +62,25 @@ void StaggerSystem::Update(float dt)
 //----------------------------------------------------------------------------
 void StaggerSystem::ApplyStagger(Group* group, float duration)
 {
-    if (!group) return;
+    if (!group) {
+        LOG_WARN("[StaggerSystem] BUG: ApplyStagger called with null group");
+        return;
+    }
+
+    if (group->IsDefeated()) {
+        LOG_WARN("[StaggerSystem] BUG: ApplyStagger called on defeated group: " + group->GetId());
+        return;
+    }
+
+    if (duration <= 0.0f) {
+        LOG_WARN("[StaggerSystem] BUG: Invalid stagger duration: " + std::to_string(duration));
+        return;
+    }
+
+    // 二重硬直チェック
+    if (staggerTimers_.find(group) != staggerTimers_.end()) {
+        LOG_WARN("[StaggerSystem] Double stagger on " + group->GetId() + ", overwriting");
+    }
 
     staggerTimers_[group] = duration;
 

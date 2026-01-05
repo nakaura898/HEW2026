@@ -164,7 +164,6 @@ void MeleeAttackBehavior::StartSwordSwing(const Vector2& targetPos)
         swingDirection_ = Vector2(1.0f, 0.0f);
     }
 
-    LOG_INFO("[MeleeAttack] " + owner_->GetId() + " starts sword swing");
 }
 
 //----------------------------------------------------------------------------
@@ -184,9 +183,6 @@ bool MeleeAttackBehavior::CheckSwordHit()
             if (targetAABB.Contains(swordTip.x, swordTip.y)) {
                 attackTarget_->TakeDamage(damage);
                 hasHitTarget_ = true;
-
-                LOG_INFO("[MeleeAttack] " + owner_->GetId() + " sword hit " +
-                         attackTarget_->GetId() + " for " + std::to_string(damage) + " damage");
                 return true;
             }
         }
@@ -202,9 +198,6 @@ bool MeleeAttackBehavior::CheckSwordHit()
             if (targetAABB.Contains(swordTip.x, swordTip.y)) {
                 playerTarget_->TakeDamage(damage);
                 hasHitTarget_ = true;
-
-                LOG_INFO("[MeleeAttack] " + owner_->GetId() + " sword hit Player for " +
-                         std::to_string(damage) + " damage");
                 return true;
             }
         }

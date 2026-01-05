@@ -7,8 +7,8 @@
 #include "game/entities/player.h"
 #include "game/bond/bond_manager.h"
 #include "game/systems/wave_manager.h"
+#include "game/systems/group_manager.h"
 #include "common/logging/logging.h"
-#include <algorithm>
 
 //----------------------------------------------------------------------------
 GameStateManager& GameStateManager::Get()
@@ -60,35 +60,8 @@ void GameStateManager::Update()
 void GameStateManager::Reset()
 {
     state_ = GameState::Playing;
-    enemyGroups_.clear();
     player_ = nullptr;
     LOG_INFO("[GameStateManager] Game reset");
-}
-
-//----------------------------------------------------------------------------
-void GameStateManager::RegisterEnemyGroup(Group* group)
-{
-    if (!group) return;
-
-    auto it = std::find(enemyGroups_.begin(), enemyGroups_.end(), group);
-    if (it == enemyGroups_.end()) {
-        enemyGroups_.push_back(group);
-    }
-}
-
-//----------------------------------------------------------------------------
-void GameStateManager::UnregisterEnemyGroup(Group* group)
-{
-    auto it = std::find(enemyGroups_.begin(), enemyGroups_.end(), group);
-    if (it != enemyGroups_.end()) {
-        enemyGroups_.erase(it);
-    }
-}
-
-//----------------------------------------------------------------------------
-void GameStateManager::ClearEnemyGroups()
-{
-    enemyGroups_.clear();
 }
 
 //----------------------------------------------------------------------------
@@ -165,11 +138,12 @@ void GameStateManager::SetState(GameState state)
 //----------------------------------------------------------------------------
 bool GameStateManager::AreAllEnemiesDefeated() const
 {
-    if (enemyGroups_.empty()) return true;
+    std::vector<Group*> enemyGroups = GroupManager::Get().GetEnemyGroups();
+    if (enemyGroups.empty()) return true;
 
-    for (Group* group : enemyGroups_) {
+    for (Group* group : enemyGroups) {
         if (!group) continue;
-        if (group->IsAlly()) continue;  // 味方化したグループはスキップ
+        // GetEnemyGroups()は既にIsEnemy()==trueのみ返すので、IsAllyチェックは不要
         if (!group->IsDefeated()) {
             return false;
         }
@@ -181,16 +155,17 @@ bool GameStateManager::AreAllEnemiesDefeated() const
 //----------------------------------------------------------------------------
 bool GameStateManager::AreAllEnemiesInPlayerNetwork() const
 {
-    if (!player_ || enemyGroups_.empty()) return false;
+    std::vector<Group*> enemyGroups = GroupManager::Get().GetEnemyGroups();
+    if (!player_ || enemyGroups.empty()) return false;
 
     // プレイヤーの縁ネットワークを取得
     BondableEntity playerEntity = player_;
     std::vector<BondableEntity> network = BondManager::Get().GetConnectedNetwork(playerEntity);
 
     // 全生存敵がネットワーク内にいるかチェック
-    for (Group* group : enemyGroups_) {
+    for (Group* group : enemyGroups) {
         if (!group || group->IsDefeated()) continue;
-        if (group->IsAlly()) continue;  // 味方化したグループはスキップ
+        // GetEnemyGroups()は既にIsEnemy()==trueのみ返すので、IsAllyチェックは不要
 
         BondableEntity groupEntity = group;
         bool inNetwork = false;

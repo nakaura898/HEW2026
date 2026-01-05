@@ -45,15 +45,10 @@ bool FESystem::Consume(float amount)
         return false;
     }
 
-    float before = player_->GetFe();
     player_->ConsumeFe(amount);
-    float after = player_->GetFe();
-
-    LOG_INFO("[FESystem] Consumed " + std::to_string(amount) +
-             " FE (" + std::to_string(before) + " -> " + std::to_string(after) + ")");
 
     if (onFEChanged_) {
-        onFEChanged_(after, player_->GetMaxFe(), -amount);
+        onFEChanged_(player_->GetFe(), player_->GetMaxFe(), -amount);
     }
 
     return true;
@@ -69,13 +64,8 @@ void FESystem::Recover(float amount)
     float after = player_->GetFe();
     float actualRecovery = after - before;
 
-    if (actualRecovery > 0.0f) {
-        LOG_INFO("[FESystem] Recovered " + std::to_string(actualRecovery) +
-                 " FE (" + std::to_string(before) + " -> " + std::to_string(after) + ")");
-
-        if (onFEChanged_) {
-            onFEChanged_(after, player_->GetMaxFe(), actualRecovery);
-        }
+    if (actualRecovery > 0.0f && onFEChanged_) {
+        onFEChanged_(after, player_->GetMaxFe(), actualRecovery);
     }
 }
 

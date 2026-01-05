@@ -42,6 +42,7 @@
 #include "game/stage/stage_loader.h"
 #include "game/systems/stage_progress_manager.h"
 #include "game/systems/wave_manager.h"
+#include "game/systems/group_manager.h"
 #include <set>
 #include <unordered_map>
 
@@ -148,11 +149,12 @@ void TestScene::OnEnter()
         group->SetAI(ai.get());
         groupAIs_.push_back(std::move(ai));
 
-        CombatSystem::Get().RegisterGroup(group.get());
+        // GroupManagerに登録（所有権移譲）
+        Group* ptr = GroupManager::Get().AddGroup(std::move(group));
+        CombatSystem::Get().RegisterGroup(ptr);
         // 味方なのでGameStateManagerには登録しない
 
         LOG_INFO("[TestScene] Restored ally group: " + data.id);
-        enemyGroups_.push_back(std::move(group));
     }
 
     // システム初期化
@@ -169,7 +171,7 @@ void TestScene::OnEnter()
     // 持ち越しグループとプレイヤーの縁を復元
     for (const CarryOverGroupData& data : carryOverGroups) {
         // 復元したグループを探す
-        for (const auto& group : enemyGroups_) {
+        for (const auto& group : GroupManager::Get().GetAllGroups()) {
             if (group->GetId() == data.id && group->IsAlly()) {
                 // プレイヤーとの縁を作成
                 BondableEntity playerEntity = player_.get();
@@ -186,7 +188,7 @@ void TestScene::OnEnter()
 
     // グループIDからGroupポインタを取得するマップ作成
     std::unordered_map<std::string, Group*> groupMap;
-    for (const auto& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         groupMap[group->GetId()] = group.get();
     }
 
@@ -216,11 +218,13 @@ void TestScene::OnEnter()
     LOG_INFO("[TestScene] Bonds created: " + std::to_string(BondManager::Get().GetAllBonds().size()));
 
     // AI状態変更コールバック設定
-    for (size_t i = 0; i < groupAIs_.size(); ++i) {
-        Group* group = enemyGroups_[i].get();
-        groupAIs_[i]->SetOnStateChanged([group](AIState newState) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
+        GroupAI* ai = group->GetAI();
+        if (!ai) continue;
+        Group* groupPtr = group.get();
+        ai->SetOnStateChanged([groupPtr](AIState newState) {
             const char* stateNames[] = { "Wander", "Seek", "Flee" };
-            LOG_INFO("[AI] " + group->GetId() + " -> " + stateNames[static_cast<int>(newState)]);
+            LOG_INFO("[AI] " + groupPtr->GetId() + " -> " + stateNames[static_cast<int>(newState)]);
         });
     }
 
@@ -230,7 +234,7 @@ void TestScene::OnEnter()
 
         // 味方グループを持ち越しデータとして保存
         StageProgressManager::Get().ClearCarryOver();
-        for (const std::unique_ptr<Group>& group : enemyGroups_) {
+        for (const auto& group : GroupManager::Get().GetAllGroups()) {
             if (!group || group->IsDefeated()) continue;
             if (!group->IsAlly()) continue;  // 味方のみ
 
@@ -278,8 +282,9 @@ void TestScene::OnEnter()
     LOG_INFO("  ESC: Cancel mode");
 
     // テスト: 起動時に矢を1本発射
-    if (!enemyGroups_.empty()) {
-        Individual* shooter = enemyGroups_[0]->GetRandomAliveIndividual();
+    std::vector<Group*> enemies = GroupManager::Get().GetEnemyGroups();
+    if (!enemies.empty()) {
+        Individual* shooter = enemies[0]->GetRandomAliveIndividual();
         if (shooter && player_) {
             ArrowManager::Get().ShootAtPlayer(shooter, player_.get(), shooter->GetPosition(), 5.0f);
             LOG_INFO("[TestScene] TEST: Shot arrow at player!");
@@ -329,7 +334,6 @@ void TestScene::OnExit()
     // ========================================================================
     ArrowManager::Get().Clear();
     CombatSystem::Get().ClearGroups();
-    GameStateManager::Get().ClearEnemyGroups();
     WaveManager::Get().Reset();  // ウェーブ状態リセット
     BondManager::Get().Clear();
     StaggerSystem::Get().Clear();
@@ -344,7 +348,7 @@ void TestScene::OnExit()
     // Phase 4: エンティティ削除
     // ========================================================================
     groupAIs_.clear();
-    enemyGroups_.clear();
+    GroupManager::Get().Clear();
 
     if (player_) {
         player_->Shutdown();
@@ -419,7 +423,7 @@ void TestScene::Update()
                 }
                 // 味方グループの開始位置
                 transitionAllyStartY_.clear();
-                for (const auto& group : enemyGroups_) {
+                for (const auto& group : GroupManager::Get().GetAllGroups()) {
                     if (group && group->IsAlly() && !group->IsDefeated()) {
                         transitionAllyStartY_[group.get()] = group->GetPosition().y;
                     }
@@ -433,7 +437,7 @@ void TestScene::Update()
             }
 
             // 味方グループも一緒に移動
-            for (const auto& group : enemyGroups_) {
+            for (const auto& group : GroupManager::Get().GetAllGroups()) {
                 if (group && group->IsAlly() && !group->IsDefeated()) {
                     auto it = transitionAllyStartY_.find(group.get());
                     if (it != transitionAllyStartY_.end()) {
@@ -487,7 +491,7 @@ void TestScene::Update()
     }
 
     // グループ更新
-    for (std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         group->Update(dt);
     }
 
@@ -688,11 +692,12 @@ void TestScene::BindPlayerToGroup(Group* group)
         return;
     }
 
-    // FE消費して縁作成
-    fe.Consume(BindSystem::Get().GetBindCost());
+    // 縁作成を試みる（成功したらFE消費）
     Bond* bond = BondManager::Get().CreateBond(playerEntity, groupEntity, selectedBondType_);
 
     if (bond) {
+        // 縁作成成功時のみFEを消費
+        fe.Consume(BindSystem::Get().GetBindCost());
         // RelationshipFacadeにも同期
         RelationshipFacade::Get().Bind(playerEntity, groupEntity, selectedBondType_);
 
@@ -707,6 +712,8 @@ void TestScene::BindPlayerToGroup(Group* group)
 
         LOG_INFO("[TestScene] Player-Group bond created: " + group->GetId() +
                  " (Type: " + std::to_string(static_cast<int>(selectedBondType_)) + ")");
+    } else {
+        LOG_WARN("[TestScene] Failed to create bond with " + group->GetId());
     }
 }
 
@@ -772,11 +779,11 @@ Group* TestScene::SpawnGroup(const GroupData& gd)
     group->SetAI(ai.get());
     groupAIs_.push_back(std::move(ai));
 
-    CombatSystem::Get().RegisterGroup(group.get());
-    GameStateManager::Get().RegisterEnemyGroup(group.get());
-
-    Group* groupPtr = group.get();
-    enemyGroups_.push_back(std::move(group));
+    // GroupManagerに登録（所有権移譲）
+    Group* groupPtr = GroupManager::Get().AddGroup(std::move(group));
+    GroupManager::Get().AssignToWave(groupPtr, gd.wave);
+    CombatSystem::Get().RegisterGroup(groupPtr);
+    // GameStateManagerは直接GroupManagerから敵グループを取得する
 
     LOG_INFO("[TestScene] Spawned group: " + gd.id + " (Wave " + std::to_string(gd.wave) + ")");
     return groupPtr;
@@ -797,7 +804,7 @@ Group* TestScene::GetGroupUnderCursor() const
     CollisionManager::Get().QueryPoint(mouseWorld, hits, CollisionLayer::Individual);
 
     for (Collider2D* hitCollider : hits) {
-        for (const std::unique_ptr<Group>& group : enemyGroups_) {
+        for (const auto& group : GroupManager::Get().GetAllGroups()) {
             if (group->IsDefeated()) continue;
 
             for (Individual* individual : group->GetAliveIndividuals()) {
@@ -822,7 +829,7 @@ Group* TestScene::GetGroupTouchingPlayer() const
     // プレイヤーと接触しているグループを探す
     std::set<Group*> touchingGroups;
 
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         if (group->IsDefeated()) continue;
 
         for (Individual* individual : group->GetAliveIndividuals()) {
@@ -905,7 +912,7 @@ void TestScene::Render()
     DrawBonds();
 
     // 敵グループ描画
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         group->Render(spriteBatch);
     }
 
@@ -1002,7 +1009,7 @@ void TestScene::DrawBonds()
 
     // 個体コライダーの描画（デバッグ用）
     Color colliderColor(0.0f, 1.0f, 1.0f, 0.5f);  // シアン
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         if (group->IsDefeated()) continue;
 
         for (Individual* individual : group->GetAliveIndividuals()) {
@@ -1032,7 +1039,7 @@ void TestScene::DrawDetectionRanges()
 {
     Color detectionRangeColor(1.0f, 0.5f, 0.0f, 0.3f);  // オレンジ（半透明）
 
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         if (group->IsDefeated()) continue;
 
         Vector2 groupPos = group->GetPosition();
@@ -1046,7 +1053,7 @@ void TestScene::DrawIndividualColliders()
 {
     Color colliderColor(0.0f, 1.0f, 1.0f, 0.8f);  // シアン
 
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         if (group->IsDefeated()) continue;
 
         for (Individual* individual : group->GetAliveIndividuals()) {
@@ -1194,11 +1201,11 @@ void TestScene::LogAIStatus()
     const char* stateNames[] = { "Wander", "Seek", "Flee" };
 
     LOG_INFO("=== AI Status ===");
-    for (size_t i = 0; i < groupAIs_.size() && i < enemyGroups_.size(); ++i) {
-        GroupAI* ai = groupAIs_[i].get();
-        Group* group = enemyGroups_[i].get();
-
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         if (!group || group->IsDefeated()) continue;
+
+        GroupAI* ai = group->GetAI();
+        if (!ai) continue;
 
         std::string status = group->GetId();
         status += " [" + std::string(stateNames[static_cast<int>(ai->GetState())]) + "]";
@@ -1215,7 +1222,7 @@ void TestScene::LogAIStatus()
         }
 
         // 硬直中か
-        if (StaggerSystem::Get().IsStaggered(group)) {
+        if (StaggerSystem::Get().IsStaggered(group.get())) {
             status += " [STAGGER]";
         }
 
