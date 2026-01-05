@@ -6,9 +6,13 @@
 
 #include "dx11/gpu_common.h"
 #include "dx11/gpu/gpu.h"
+#include "engine/texture/texture_handle.h"
 #include <memory>
 #include <string>
 #include <cassert>
+#include <vector>
+#include <queue>
+#include <unordered_map>
 
 class IReadableFileSystem;
 class ITextureLoader;
@@ -34,20 +38,26 @@ struct TextureCacheStats
 //! テクスチャマネージャー（シングルトン）
 //!
 //! テクスチャのロード、キャッシュを一元管理する。
+//! Handle + RefCount + GC方式でテクスチャのライフサイクルを自動管理。
 //!
 //! @note 使用例:
 //! @code
-//!   // 初期化（内部でWIC+DDS+LRUキャッシュを自動構成）
+//!   // 初期化
 //!   TextureManager::Get().Initialize(fileSystem);
 //!
-//!   // 2Dテクスチャ読み込み（デフォルト: sRGB, mipmap生成）
-//!   auto diffuse = TextureManager::Get().LoadTexture2D("textures:/diffuse.png");
+//!   // シーン開始時にスコープ開始
+//!   auto scopeId = TextureManager::Get().BeginScope();
 //!
-//!   // 法線マップ（Linear）
-//!   auto normal = TextureManager::Get().LoadTexture2D("textures:/normal.png", false);
+//!   // テクスチャ読み込み（ハンドルを返す、所有権なし）
+//!   TextureHandle tex = TextureManager::Get().Load("textures:/sprite.png");
 //!
-//!   // キューブマップ
-//!   auto skybox = TextureManager::Get().LoadTextureCube("textures:/skybox.dds");
+//!   // 使用時
+//!   if (Texture* ptr = TextureManager::Get().Get(tex)) {
+//!       sprite->SetTexture(ptr);
+//!   }
+//!
+//!   // シーン終了時にスコープ終了 → 自動GC
+//!   TextureManager::Get().EndScope(scopeId);
 //!
 //!   // 終了
 //!   TextureManager::Get().Shutdown();
@@ -56,6 +66,14 @@ struct TextureCacheStats
 class TextureManager final : private NonCopyableNonMovable
 {
 public:
+    //------------------------------------------------------------------------
+    //! @name スコープ管理型
+    //------------------------------------------------------------------------
+    //!@{
+    using ScopeId = uint32_t;
+    static constexpr ScopeId kGlobalScope = 0;  //!< 永続スコープ（シーン終了で解放されない）
+    //!@}
+
     //! シングルトンインスタンス取得
     static TextureManager& Get()
     {
@@ -89,7 +107,54 @@ public:
 
     //!@}
     //----------------------------------------------------------
-    //! @name   テクスチャ読み込み
+    //! @name   スコープ管理（Handle + RefCount + GC）
+    //----------------------------------------------------------
+    //!@{
+
+    //! @brief スコープ開始（シーン開始時に呼ぶ）
+    //! @return 新しいスコープID
+    //! @note このスコープ内でロードされたテクスチャはEndScope()時に自動解放される
+    [[nodiscard]] ScopeId BeginScope();
+
+    //! @brief スコープ終了（シーン終了時に呼ぶ）
+    //! @param scopeId BeginScope()で取得したスコープID
+    //! @note このスコープでロードされた全テクスチャのrefcountを減らし、GCを実行
+    void EndScope(ScopeId scopeId);
+
+    //! @brief 現在のスコープIDを取得
+    [[nodiscard]] ScopeId GetCurrentScope() const noexcept { return currentScope_; }
+
+    //!@}
+    //----------------------------------------------------------
+    //! @name   ハンドルベースAPI（推奨）
+    //----------------------------------------------------------
+    //!@{
+
+    //! @brief 2Dテクスチャをロード（現在スコープに紐付け）
+    //! @param path マウントパス
+    //! @param sRGB sRGBフォーマットとして扱う
+    //! @return テクスチャハンドル（失敗時Invalid）
+    [[nodiscard]] TextureHandle Load(const std::string& path, bool sRGB = true);
+
+    //! @brief 2Dテクスチャをグローバルスコープでロード（永続）
+    //! @param path マウントパス
+    //! @param sRGB sRGBフォーマットとして扱う
+    //! @return テクスチャハンドル（失敗時Invalid）
+    //! @note シーン終了時も解放されない。Shutdown()まで生存。
+    [[nodiscard]] TextureHandle LoadGlobal(const std::string& path, bool sRGB = true);
+
+    //! @brief ハンドルからTexture*を取得
+    //! @param handle テクスチャハンドル
+    //! @return Texture*（無効なハンドルの場合nullptr）
+    [[nodiscard]] Texture* Get(TextureHandle handle) const noexcept;
+
+    //! @brief refcount=0のテクスチャを解放
+    //! @note EndScope()内で自動呼び出しされるため、通常は手動呼び出し不要
+    void GarbageCollect();
+
+    //!@}
+    //----------------------------------------------------------
+    //! @name   テクスチャ読み込み（レガシーAPI）
     //----------------------------------------------------------
     //!@{
 
@@ -188,6 +253,32 @@ private:
 
     static inline std::unique_ptr<TextureManager> instance_ = nullptr;
 
+    //------------------------------------------------------------------------
+    //! @name 内部構造体
+    //------------------------------------------------------------------------
+    //!@{
+
+    //! @brief テクスチャスロット（内部ストレージ）
+    struct TextureSlot
+    {
+        TexturePtr texture;           //!< 実際のテクスチャ
+        uint32_t refCount = 0;        //!< 参照カウント
+        uint16_t generation = 0;      //!< 世代番号（古いハンドル検出用）
+        bool inUse = false;           //!< スロット使用中フラグ
+    };
+
+    //! @brief スコープデータ（スコープごとのテクスチャ追跡）
+    struct ScopeData
+    {
+        std::vector<TextureHandle> textures;  //!< このスコープで使用中のテクスチャハンドル
+    };
+
+    //!@}
+    //------------------------------------------------------------------------
+    //! @name 内部ヘルパー
+    //------------------------------------------------------------------------
+    //!@{
+
     //! 拡張子に対応するローダーを取得
     [[nodiscard]] ITextureLoader* GetLoaderForExtension(const std::string& path) const;
 
@@ -197,6 +288,26 @@ private:
         bool sRGB,
         bool generateMips) const;
 
+    //! @brief スロットを割り当て
+    [[nodiscard]] TextureHandle AllocateSlot(TexturePtr texture);
+
+    //! @brief 指定スコープにテクスチャを追加
+    void AddToScope(TextureHandle handle, ScopeId scope);
+
+    //! @brief 参照カウントを増加
+    void IncrementRefCount(TextureHandle handle);
+
+    //! @brief 参照カウントを減少
+    void DecrementRefCount(TextureHandle handle);
+
+    //! @brief 指定スコープでテクスチャをロード
+    [[nodiscard]] TextureHandle LoadInScope(const std::string& path, bool sRGB, ScopeId scope);
+
+    //!@}
+    //------------------------------------------------------------------------
+    //! @name メンバ変数
+    //------------------------------------------------------------------------
+
     bool initialized_ = false;
     IReadableFileSystem* fileSystem_ = nullptr;
     std::unique_ptr<ITextureLoader> ddsLoader_;
@@ -205,4 +316,14 @@ private:
 
     // 統計情報
     mutable TextureCacheStats stats_;
+
+    //--- スロットベースストレージ ---
+    std::vector<TextureSlot> slots_;                          //!< テクスチャスロット配列
+    std::queue<uint16_t> freeIndices_;                        //!< 空きスロットインデックス
+    std::unordered_map<uint64_t, TextureHandle> handleCache_; //!< パス→ハンドルキャッシュ
+
+    //--- スコープ管理 ---
+    ScopeId currentScope_ = kGlobalScope;                     //!< 現在のスコープ
+    ScopeId nextScopeId_ = 1;                                 //!< 次のスコープID
+    std::unordered_map<ScopeId, ScopeData> scopes_;           //!< スコープデータ
 };
