@@ -8,8 +8,6 @@
 #include "engine/graphics2d/render_state_manager.h"
 #include "engine/c_systems/sprite_batch.h"
 #include "engine/component/camera2d.h"
-#include "dx11/gpu/texture.h"
-#include "dx11/graphics_device.h"
 #include "dx11/graphics_context.h"
 #include "common/logging/logging.h"
 #include <algorithm>

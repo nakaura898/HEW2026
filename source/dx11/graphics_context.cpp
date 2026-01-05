@@ -54,6 +54,23 @@ void GraphicsContext::Shutdown() noexcept
         context_->Flush();       // 保留中のコマンドをフラッシュ
     }
     context_.Reset();
+    ResetStateCache();
+}
+
+//===========================================================================
+// ステートキャッシュリセット
+//===========================================================================
+void GraphicsContext::ResetStateCache() noexcept
+{
+    cachedBlendState_ = nullptr;
+    cachedDepthStencilState_ = nullptr;
+    cachedStencilRef_ = 0;
+    cachedRasterizerState_ = nullptr;
+    cachedPSSampler0_ = nullptr;
+    cachedVS_ = nullptr;
+    cachedPS_ = nullptr;
+    cachedInputLayout_ = nullptr;
+    cachedTopology_ = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
 }
 
 //===========================================================================
@@ -130,6 +147,9 @@ void GraphicsContext::DispatchIndirect(Buffer* argsBuffer, uint32_t alignedByteO
 //===========================================================================
 void GraphicsContext::SetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY topology)
 {
+    if (cachedTopology_ == topology) return;
+    cachedTopology_ = topology;
+
     auto* ctx = context_.Get();
     if (!ctx) return;
     ctx->IASetPrimitiveTopology(topology);
@@ -137,6 +157,9 @@ void GraphicsContext::SetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY topology)
 
 void GraphicsContext::SetInputLayout(ID3D11InputLayout* inputLayout)
 {
+    if (cachedInputLayout_ == inputLayout) return;
+    cachedInputLayout_ = inputLayout;
+
     auto* ctx = context_.Get();
     if (!ctx) return;
     ctx->IASetInputLayout(inputLayout);
@@ -596,6 +619,12 @@ void GraphicsContext::SetVSSampler(uint32_t slot, SamplerState* sampler)
 
 void GraphicsContext::SetPSSampler(uint32_t slot, SamplerState* sampler)
 {
+    // slot 0のみキャッシュ（最も頻繁に使用）
+    if (slot == 0) {
+        if (cachedPSSampler0_ == sampler) return;
+        cachedPSSampler0_ = sampler;
+    }
+
     auto* ctx = context_.Get();
     if (!ctx) return;
     ID3D11SamplerState* samplers[] = { sampler ? sampler->GetD3DSamplerState() : nullptr };
@@ -639,6 +668,9 @@ void GraphicsContext::SetCSSampler(uint32_t slot, SamplerState* sampler)
 //===========================================================================
 void GraphicsContext::SetBlendState(BlendState* state, const float blendFactor[4], uint32_t sampleMask)
 {
+    if (cachedBlendState_ == state) return;
+    cachedBlendState_ = state;
+
     auto* ctx = context_.Get();
     if (!ctx) return;
 
@@ -649,6 +681,10 @@ void GraphicsContext::SetBlendState(BlendState* state, const float blendFactor[4
 
 void GraphicsContext::SetDepthStencilState(DepthStencilState* state, uint32_t stencilRef)
 {
+    if (cachedDepthStencilState_ == state && cachedStencilRef_ == stencilRef) return;
+    cachedDepthStencilState_ = state;
+    cachedStencilRef_ = stencilRef;
+
     auto* ctx = context_.Get();
     if (!ctx) return;
     ctx->OMSetDepthStencilState(state ? state->GetD3DDepthStencilState() : nullptr, stencilRef);
@@ -656,6 +692,9 @@ void GraphicsContext::SetDepthStencilState(DepthStencilState* state, uint32_t st
 
 void GraphicsContext::SetRasterizerState(RasterizerState* state)
 {
+    if (cachedRasterizerState_ == state) return;
+    cachedRasterizerState_ = state;
+
     auto* ctx = context_.Get();
     if (!ctx) return;
     ctx->RSSetState(state ? state->GetD3DRasterizerState() : nullptr);
@@ -666,6 +705,9 @@ void GraphicsContext::SetRasterizerState(RasterizerState* state)
 //===========================================================================
 void GraphicsContext::SetVertexShader(Shader* shader)
 {
+    if (cachedVS_ == shader) return;
+    cachedVS_ = shader;
+
     auto* ctx = context_.Get();
     if (!ctx) return;
     ctx->VSSetShader(shader ? shader->AsVs() : nullptr, nullptr, 0);
@@ -673,6 +715,9 @@ void GraphicsContext::SetVertexShader(Shader* shader)
 
 void GraphicsContext::SetPixelShader(Shader* shader)
 {
+    if (cachedPS_ == shader) return;
+    cachedPS_ = shader;
+
     auto* ctx = context_.Get();
     if (!ctx) return;
     ctx->PSSetShader(shader ? shader->AsPs() : nullptr, nullptr, 0);

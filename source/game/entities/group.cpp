@@ -1,4 +1,4 @@
-//----------------------------------------------------------------------------
+﻿//----------------------------------------------------------------------------
 //! @file   group.cpp
 //! @brief  Groupクラス実装
 //----------------------------------------------------------------------------
@@ -35,8 +35,19 @@ Group::~Group()
 //----------------------------------------------------------------------------
 void Group::Initialize(const Vector2& centerPosition)
 {
+    if (individuals_.empty()) {
+        LOG_WARN("[Group] BUG: Initialize called with no individuals: " + id_);
+        return;
+    }
+
     // Formationを初期化
     std::vector<Individual*> individuals = GetAliveIndividuals();
+
+    if (individuals.empty()) {
+        LOG_WARN("[Group] BUG: Initialize called but all individuals are dead: " + id_);
+        return;
+    }
+
     formation_.Initialize(individuals, centerPosition);
 
     // 個体を初期位置に配置
@@ -107,7 +118,15 @@ void Group::Render(SpriteBatch& spriteBatch)
 //----------------------------------------------------------------------------
 void Group::AddIndividual(std::unique_ptr<Individual> individual)
 {
-    if (!individual) return;
+    if (!individual) {
+        LOG_WARN("[Group] BUG: AddIndividual called with null individual");
+        return;
+    }
+
+    if (!individual->IsAlive()) {
+        LOG_WARN("[Group] BUG: AddIndividual called with dead individual: " + individual->GetId());
+        return;
+    }
 
     individual->SetOwnerGroup(this);
     individuals_.push_back(std::move(individual));
@@ -256,10 +275,16 @@ void Group::RebuildFormation()
 //----------------------------------------------------------------------------
 void Group::ResetOnBond()
 {
-    // AIをWander状態に戻す
+    if (IsDefeated()) {
+        LOG_WARN("[Group] BUG: ResetOnBond called on defeated group: " + id_);
+        return;
+    }
+
+    // AIをWander状態に戻す + 戦闘状態をリセット
     if (ai_) {
         ai_->SetState(AIState::Wander);
         ai_->ClearTarget();
+        ai_->ExitCombat();  // inCombat_をfalseに
     }
 
     // 個体の状態をリセット（攻撃中断とアニメーションロック解除含む）
@@ -280,7 +305,28 @@ void Group::CheckDefeated()
 
     if (GetAliveCount() == 0) {
         isDefeated_ = true;
-        LOG_INFO("[Group] " + id_ + " defeated!");
+        
+        // このグループに関連する縁の状況をログ出力
+        LOG_INFO("[Group] === " + id_ + " Defeated ===");
+        
+        BondableEntity thisEntity = this;
+        std::vector<Bond*> bonds = BondManager::Get().GetBondsFor(thisEntity);
+        
+        if (bonds.empty()) {
+            LOG_INFO("[Group]   No bonds");
+        } else {
+            LOG_INFO("[Group]   Related bonds (" + std::to_string(bonds.size()) + "):");
+            for (Bond* bond : bonds) {
+                std::string typeName;
+                switch (bond->GetType()) {
+                    case BondType::Friends: typeName = "Friends"; break;
+                    case BondType::Love: typeName = "Love"; break;
+                    default: typeName = "Unknown"; break;
+                }
+                BondableEntity other = bond->GetOther(thisEntity);
+                LOG_INFO("[Group]     - " + id_ + " <-[" + typeName + "]-> " + BondableHelper::GetId(other));
+            }
+        }
 
         // コールバック呼び出し
         if (onDefeated_) {

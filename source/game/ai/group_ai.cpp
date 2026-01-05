@@ -17,6 +17,7 @@
 #include "common/logging/logging.h"
 #include <random>
 #include <cmath>
+#include <limits>
 
 namespace {
     //! @brief 画面端からの可視マージン
@@ -143,6 +144,14 @@ void GroupAI::SetState(AIState state)
 //----------------------------------------------------------------------------
 void GroupAI::EnterCombat()
 {
+    if (!owner_) {
+        LOG_WARN("[GroupAI] BUG: EnterCombat called with null owner");
+        return;
+    }
+    if (owner_->IsDefeated()) {
+        LOG_WARN("[GroupAI] BUG: EnterCombat called on defeated group: " + owner_->GetId());
+        return;
+    }
     inCombat_ = true;
     if (state_ == AIState::Wander) {
         SetState(AIState::Seek);
@@ -161,6 +170,11 @@ void GroupAI::ExitCombat()
 void GroupAI::SetTarget(Group* target)
 {
     if (target) {
+        if (target->IsDefeated()) {
+            LOG_WARN("[GroupAI] BUG: SetTarget called with defeated group: " + target->GetId());
+            ClearTarget();
+            return;
+        }
         target_ = target;
         if (inCombat_) {
             SetState(AIState::Seek);
@@ -174,6 +188,11 @@ void GroupAI::SetTarget(Group* target)
 void GroupAI::SetTargetPlayer(Player* target)
 {
     if (target) {
+        if (!target->IsAlive()) {
+            LOG_WARN("[GroupAI] BUG: SetTargetPlayer called with dead player");
+            ClearTarget();
+            return;
+        }
         target_ = target;
         if (inCombat_) {
             SetState(AIState::Seek);
@@ -199,6 +218,12 @@ void GroupAI::ClearTarget()
 void GroupAI::FindTarget()
 {
     if (!owner_) return;
+
+    // 味方グループは専用のターゲット検索を使用
+    if (owner_->IsAlly()) {
+        FindTargetAsAlly();
+        return;
+    }
 
     // ラブパートナーがいる場合は共有ターゲットを使用
     RelationshipFacade& facade = RelationshipFacade::Get();
@@ -245,6 +270,42 @@ void GroupAI::FindTarget()
 }
 
 //----------------------------------------------------------------------------
+void GroupAI::FindTargetAsAlly()
+{
+    if (!owner_) return;
+
+    // CombatSystemから敵グループを検索
+    CombatSystem& combat = CombatSystem::Get();
+    Vector2 myPos = owner_->GetPosition();
+
+    Group* bestTarget = nullptr;
+    float closestDistance = (std::numeric_limits<float>::max)();
+
+    // すべてのグループから敵（非味方）を検索
+    for (Group* candidate : combat.GetAllGroups()) {
+        if (!candidate || candidate == owner_) continue;
+        if (candidate->IsDefeated()) continue;
+        if (candidate->IsAlly()) continue;  // 味方は攻撃しない
+
+        // 索敵範囲チェック
+        float distance = (candidate->GetPosition() - myPos).Length();
+        if (distance > detectionRange_) continue;
+
+        // 最も近い敵を選択
+        if (distance < closestDistance) {
+            closestDistance = distance;
+            bestTarget = candidate;
+        }
+    }
+
+    if (bestTarget) {
+        target_ = bestTarget;
+    } else {
+        ClearTarget();
+    }
+}
+
+//----------------------------------------------------------------------------
 Vector2 GroupAI::GetTargetPosition() const
 {
     // Wander状態の場合
@@ -277,10 +338,32 @@ bool GroupAI::IsTargetValid() const
 {
     if (std::holds_alternative<Group*>(target_)) {
         Group* group = std::get<Group*>(target_);
-        return group && !group->IsDefeated();
+        if (!group || group->IsDefeated()) return false;
+        
+        // 味方グループは攻撃対象として無効
+        // 自分が味方なら、味方グループは攻撃しない
+        // 自分が敵なら、味方グループは攻撃しない（プレイヤー側）
+        if (owner_ && owner_->IsAlly() && group->IsAlly()) {
+            return false;  // 味方同士は攻撃しない
+        }
+        if (owner_ && !owner_->IsAlly() && group->IsAlly()) {
+            // 敵が味方グループを攻撃しようとしている - これはOK
+        }
+        if (owner_ && owner_->IsAlly() && !group->IsAlly()) {
+            // 味方が敵グループを攻撃 - これはOK
+        }
+        
+        return true;
     } else if (std::holds_alternative<Player*>(target_)) {
         Player* player = std::get<Player*>(target_);
-        return player && player->IsAlive();
+        if (!player || !player->IsAlive()) return false;
+        
+        // 味方グループはプレイヤーを攻撃しない
+        if (owner_ && owner_->IsAlly()) {
+            return false;
+        }
+        
+        return true;
     }
     return false;
 }
@@ -541,12 +624,16 @@ void GroupAI::CheckStateTransition()
     // HP閾値チェック（Flee）- 戦闘中かつHP低下
     if (hpRatio < fleeThreshold_ && inCombat_) {
         // カメラ範囲内ならSeek状態を維持（攻撃継続）
+        // ただしターゲットがいない場合はWanderを許可
         if (IsInCameraView()) {
-            if (state_ != AIState::Seek) {
-                LOG_INFO("[GroupAI] " + owner_->GetId() + " HP low but in camera view, staying in Seek");
-                SetState(AIState::Seek);
+            if (HasTarget() && IsTargetValid()) {
+                if (state_ != AIState::Seek) {
+                    LOG_INFO("[GroupAI] " + owner_->GetId() + " HP low but in camera view with target, staying in Seek");
+                    SetState(AIState::Seek);
+                }
+                return;
             }
-            return;
+            // ターゲットがいない場合はWanderを許可（Seekに強制しない）
         }
 
         // カメラ範囲外ならFlee

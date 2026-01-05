@@ -6,6 +6,7 @@
 #include "individual.h"
 #include "player.h"
 #include "engine/c_systems/sprite_batch.h"
+#include "common/logging/logging.h"
 #include <algorithm>
 
 //----------------------------------------------------------------------------
@@ -32,7 +33,26 @@ void ArrowManager::Destroy()
 //----------------------------------------------------------------------------
 void ArrowManager::Shoot(Individual* owner, Individual* target, const Vector2& startPos, float damage)
 {
-    if (!owner || !target) return;
+    if (!owner) {
+        LOG_WARN("[ArrowManager] BUG: Shoot called with null owner");
+        return;
+    }
+    if (!target) {
+        LOG_WARN("[ArrowManager] BUG: Shoot called with null target");
+        return;
+    }
+    if (!owner->IsAlive()) {
+        LOG_WARN("[ArrowManager] BUG: Shoot called with dead owner: " + owner->GetId());
+        return;
+    }
+    if (!target->IsAlive()) {
+        LOG_WARN("[ArrowManager] BUG: Shoot called with dead target: " + target->GetId());
+        return;
+    }
+    if (damage < 0.0f) {
+        LOG_WARN("[ArrowManager] BUG: Negative damage: " + std::to_string(damage));
+        return;
+    }
 
     std::unique_ptr<Arrow> arrow = std::make_unique<Arrow>(owner, target, damage);
     arrow->Initialize(startPos, target->GetPosition());
@@ -42,7 +62,26 @@ void ArrowManager::Shoot(Individual* owner, Individual* target, const Vector2& s
 //----------------------------------------------------------------------------
 void ArrowManager::ShootAtPlayer(Individual* owner, Player* targetPlayer, const Vector2& startPos, float damage)
 {
-    if (!owner || !targetPlayer) return;
+    if (!owner) {
+        LOG_WARN("[ArrowManager] BUG: ShootAtPlayer called with null owner");
+        return;
+    }
+    if (!targetPlayer) {
+        LOG_WARN("[ArrowManager] BUG: ShootAtPlayer called with null targetPlayer");
+        return;
+    }
+    if (!owner->IsAlive()) {
+        LOG_WARN("[ArrowManager] BUG: ShootAtPlayer called with dead owner: " + owner->GetId());
+        return;
+    }
+    if (!targetPlayer->IsAlive()) {
+        LOG_WARN("[ArrowManager] BUG: ShootAtPlayer called with dead player");
+        return;
+    }
+    if (damage < 0.0f) {
+        LOG_WARN("[ArrowManager] BUG: Negative damage: " + std::to_string(damage));
+        return;
+    }
 
     std::unique_ptr<Arrow> arrow = std::make_unique<Arrow>(owner, targetPlayer, damage);
     arrow->Initialize(startPos, targetPlayer->GetPosition());

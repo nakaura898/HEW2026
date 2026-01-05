@@ -9,7 +9,7 @@
 #include "engine/component/sprite_renderer.h"
 #include "engine/component/animator.h"
 #include "engine/component/collider2d.h"
-#include "dx11/gpu/texture.h"
+#include "engine/texture/texture_types.h"
 #include "game/systems/animation/individual_state_machine.h"
 #include "game/systems/animation/individual_intent.h"
 #include "game/systems/animation/animation_controller.h"  // AnimationState enum

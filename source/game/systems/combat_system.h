@@ -4,6 +4,7 @@
 //----------------------------------------------------------------------------
 #pragma once
 
+#include "game/systems/group_manager.h"
 #include <vector>
 #include <functional>
 #include <set>
@@ -55,6 +56,12 @@ public:
     //! @brief 全グループをクリア
     void ClearGroups();
 
+    //! @brief 全グループを取得
+    [[nodiscard]] std::vector<Group*> GetAllGroups() const
+    {
+        return GroupManager::Get().GetAliveGroups();
+    }
+
     //! @brief プレイヤーを設定
     void SetPlayer(Player* player) { player_ = player; }
 
@@ -62,10 +69,17 @@ public:
     // ターゲット選定
     //------------------------------------------------------------------------
 
-    //! @brief 攻撃ターゲットを選定（脅威度ベース）
+    //! @brief 攻撃ターゲットを選定（脅威度ベース）- 内部でスナップショットを取得
     //! @param attacker 攻撃者グループ
     //! @return ターゲットグループ。攻撃対象がいなければnullptr
     [[nodiscard]] Group* SelectTarget(Group* attacker) const;
+
+    //! @brief 攻撃ターゲットを選定（脅威度ベース）- スナップショット指定版
+    //! @param attacker 攻撃者グループ
+    //! @param candidates ターゲット候補のグループリスト（スナップショット）
+    //! @return ターゲットグループ。攻撃対象がいなければnullptr
+    //! @note Update()内で一貫性が必要な場合はこちらを使用
+    [[nodiscard]] Group* SelectTarget(Group* attacker, const std::vector<Group*>& candidates) const;
 
     //! @brief プレイヤーを攻撃可能か判定
     //! @param attacker 攻撃者グループ
@@ -111,22 +125,13 @@ private:
     //! @brief グループ→プレイヤーの戦闘処理
     void ProcessCombatAgainstPlayer(Group* attacker, float dt);
 
-    //! @brief 遅延削除を実行
-    void FlushPendingRemovals();
-
-    //! @brief グループが削除予約されているか判定
-    [[nodiscard]] bool IsPendingRemoval(Group* group) const;
-
     //! @brief 個体死亡イベントハンドラ（attackTarget_クリア用）
     void OnIndividualDied(Individual* diedIndividual);
 
     static inline std::unique_ptr<CombatSystem> instance_ = nullptr;
 
-    std::vector<Group*> groups_;            //!< 登録されたグループ
-    std::vector<Group*> pendingRemovals_;   //!< 削除予約されたグループ
     std::set<Group*> defeatedGroups_;       //!< 既に全滅処理済みのグループ
     Player* player_ = nullptr;              //!< プレイヤー参照
-    bool isUpdating_ = false;               //!< Update中フラグ（TOCTOU防止）
 
     float attackInterval_ = 1.0f;   //!< 攻撃間隔（1.0秒）
     float attackTimer_ = 1.0f;      //!< 攻撃タイマー（初期値=間隔で即攻撃可能）

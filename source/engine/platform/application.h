@@ -19,8 +19,8 @@ struct ApplicationDesc
 {
     HINSTANCE hInstance = nullptr;        //!< アプリケーションインスタンス
     WindowDesc window;                    //!< ウィンドウ設定
-    uint32_t renderWidth = 1280;          //!< レンダリング解像度幅（固定）
-    uint32_t renderHeight = 720;          //!< レンダリング解像度高さ（固定）
+    uint32_t renderWidth = 1920;          //!< レンダリング解像度幅（固定）
+    uint32_t renderHeight = 1080;         //!< レンダリング解像度高さ（固定）
     bool enableDebugLayer = true;         //!< D3Dデバッグレイヤー有効化
     VSyncMode vsync = VSyncMode::On;      //!< 垂直同期モード
     float maxDeltaTime = 0.25f;           //!< deltaTime上限（秒）デバッグ時異常値防止

@@ -10,16 +10,18 @@
 #include "engine/component/sprite_renderer.h"
 #include "engine/component/camera2d.h"
 #include "engine/component/collider2d.h"
-#include "dx11/gpu/texture.h"
+#include "engine/texture/texture_types.h"
 #include "game/entities/player.h"
 #include "game/stage/stage_background.h"
 #include "game/entities/group.h"
 #include "game/ai/group_ai.h"
 #include "game/bond/bondable_entity.h"
 #include "game/bond/bond.h"
+#include "game/stage/stage_data.h"
 #include <memory>
 #include <vector>
 #include <cstdint>
+#include <unordered_map>
 
 //----------------------------------------------------------------------------
 //! @brief テストシーン - A-RAS!ゲームプロトタイプ
@@ -89,10 +91,7 @@ private:
     // プレイヤー
     std::unique_ptr<Player> player_;
 
-    // 敵グループ
-    std::vector<std::unique_ptr<Group>> enemyGroups_;
-
-    // グループAI
+    // グループAI（GroupManagerがグループ所有権を管理）
     std::vector<std::unique_ptr<GroupAI>> groupAIs_;
 
     // ステージ背景
@@ -127,9 +126,23 @@ private:
     //! @brief プレイヤーとグループを結ぶ（簡易操作）
     void BindPlayerToGroup(Group* group);
 
+    //! @brief グループをスポーン（WaveManagerから呼ばれる）
+    //! @param data グループデータ
+    //! @return 生成したGroupポインタ
+    Group* SpawnGroup(const GroupData& data);
+
+    //! @brief 保存されたステージデータ（ウェーブスポーン用）
+    StageData stageData_;
+
     //! @brief デバッグ描画表示フラグ（F1で切替）
     bool showDebugDraw_ = true;
 
     //! @brief システム初期化完了フラグ（OnExit時のShutdown呼び出し制御用）
     bool systemsInitialized_ = false;
+
+    //! @brief トランジション開始時のプレイヤーY座標
+    float transitionPlayerStartY_ = 0.0f;
+
+    //! @brief トランジション開始時の味方グループY座標
+    std::unordered_map<Group*, float> transitionAllyStartY_;
 };

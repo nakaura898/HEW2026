@@ -40,6 +40,9 @@
 #include "game/systems/love_bond_system.h"
 #include "game/relationships/relationship_facade.h"
 #include "game/stage/stage_loader.h"
+#include "game/systems/stage_progress_manager.h"
+#include "game/systems/wave_manager.h"
+#include "game/systems/group_manager.h"
 #include <set>
 #include <unordered_map>
 
@@ -51,9 +54,17 @@ void TestScene::OnEnter()
     screenWidth_ = static_cast<float>(window->GetWidth());
     screenHeight_ = static_cast<float>(window->GetHeight());
 
-    // カメラ作成
+    // マップサイズ定数（3エリア分）
+    constexpr float kAreaHeight = 1080.0f;
+    constexpr int kTotalAreas = 3;
+    constexpr float kMapWidth = 1920.0f;
+    constexpr float kMapHeight = kAreaHeight * kTotalAreas;  // 3240
+
+    // カメラ作成（Wave 1エリアの中央 = 最下部）
+    // Wave 1 = 最下部: Y = (kTotalAreas - 1) * kAreaHeight + kAreaHeight/2 = 2700
+    float initialCameraY = (kTotalAreas - 1) * kAreaHeight + kAreaHeight * 0.5f;
     cameraObj_ = std::make_unique<GameObject>("MainCamera");
-    cameraObj_->AddComponent<Transform2D>(Vector2(2000.0f, 2000.0f));  // マップ中央
+    cameraObj_->AddComponent<Transform2D>(Vector2(kMapWidth * 0.5f, initialCameraY));
     camera_ = cameraObj_->AddComponent<Camera2D>(screenWidth_, screenHeight_);
 
     // UI用白テクスチャ作成
@@ -66,76 +77,68 @@ void TestScene::OnEnter()
         32 * sizeof(uint32_t)
     );
 
-    // ステージ背景初期化
-    float stageWidth = 4000.0f;
-    float stageHeight = 4000.0f;
-    stageBackground_.Initialize("stage1", stageWidth, stageHeight);
+    // ステージ背景初期化（3エリア分）
+    stageBackground_.Initialize("stage1", kMapWidth, kMapHeight);
 
     // CSVからステージデータ読み込み
-    StageData stageData = StageLoader::LoadFromCSV("stages:/stage1");
-    if (!stageData.IsValid()) {
+    stageData_ = StageLoader::LoadFromCSV("stages:/stage1");
+    if (!stageData_.IsValid()) {
         LOG_ERROR("[TestScene] Failed to load stage data from CSV!");
         return;
     }
 
+    // 回数制限を設定
+    BindSystem::Get().SetMaxBindCount(stageData_.maxBindCount);
+    BindSystem::Get().ResetBindCount();
+    CutSystem::Get().SetMaxCutCount(stageData_.maxCutCount);
+    CutSystem::Get().ResetCutCount();
+    LOG_INFO("[TestScene] Bind limit: " +
+             (stageData_.maxBindCount < 0 ? "unlimited" : std::to_string(stageData_.maxBindCount)));
+    LOG_INFO("[TestScene] Cut limit: " +
+             (stageData_.maxCutCount < 0 ? "unlimited" : std::to_string(stageData_.maxCutCount)));
+
     // プレイヤー作成
     player_ = std::make_unique<Player>();
-    player_->Initialize(Vector2(stageData.playerX, stageData.playerY));
-    player_->SetMaxHp(stageData.playerHp);
-    player_->SetMaxFe(stageData.playerFe);
-    player_->SetMoveSpeed(stageData.playerSpeed);
+    player_->Initialize(Vector2(stageData_.playerX, stageData_.playerY));
+    player_->SetMaxHp(stageData_.playerHp);
+    player_->SetMaxFe(stageData_.playerFe);
+    player_->SetMoveSpeed(stageData_.playerSpeed);
 
-    // 陣営ごとの色（Faction番号から取得）
-    Color factionColors[6] = {
-        Color(1.0f, 0.3f, 0.3f, 1.0f),  // Faction1: 赤
-        Color(1.0f, 0.6f, 0.2f, 1.0f),  // Faction2: オレンジ
-        Color(1.0f, 1.0f, 0.3f, 1.0f),  // Faction3: 黄
-        Color(0.3f, 1.0f, 0.3f, 1.0f),  // Faction4: 緑
-        Color(0.3f, 0.5f, 1.0f, 1.0f),  // Faction5: 青
-        Color(0.7f, 0.3f, 1.0f, 1.0f),  // Faction6: 紫
-    };
+    // WaveManagerを初期化
+    WaveManager::Get().SetAreaHeight(kAreaHeight);
+    WaveManager::Get().Initialize(stageData_.waves);
+    WaveManager::Get().SetGroupSpawner([this](const GroupData& gd) -> Group* {
+        return SpawnGroup(gd);
+    });
+    WaveManager::Get().SetOnWaveCleared([](int wave) {
+        LOG_INFO("[Wave] Wave " + std::to_string(wave) + " cleared!");
+    });
+    WaveManager::Get().SetOnAllWavesCleared([this]() {
+        LOG_INFO("[Wave] All waves cleared! Stage complete!");
+        // GameStateManagerが勝利判定を行う
+    });
 
-    // グループIDからFaction番号を取得するラムダ
-    auto getFactionIndex = [](const std::string& id) -> int {
-        // "Faction1_G1" -> 1 -> index 0
-        size_t pos = id.find("Faction");
-        if (pos != std::string::npos && pos + 7 < id.size()) {
-            char c = id[pos + 7];
-            if (c >= '1' && c <= '6') {
-                return c - '1';
-            }
-        }
-        return 0;
-    };
+    // 最初のウェーブをスポーン
+    WaveManager::Get().SpawnCurrentWave();
 
-    // グループ作成
-    for (const GroupData& gd : stageData.groups) {
-        std::unique_ptr<Group> group = std::make_unique<Group>(gd.id);
-        group->SetBaseThreat(gd.threat);
-        group->SetDetectionRange(gd.detectionRange);
+    // 持ち越しグループを味方として復元
+    const std::vector<CarryOverGroupData>& carryOverGroups = StageProgressManager::Get().GetCarryOverGroups();
+    for (const CarryOverGroupData& data : carryOverGroups) {
+        std::unique_ptr<Group> group = std::make_unique<Group>(data.id);
+        group->SetBaseThreat(data.threat);
+        group->SetDetectionRange(300.0f);  // デフォルト値
+        group->SetFaction(GroupFaction::Ally);  // 味方として設定
 
-        Vector2 groupCenter(gd.x, gd.y);
-        int factionIdx = getFactionIndex(gd.id);
-        Color factionColor = factionColors[factionIdx];
+        // プレイヤー付近に配置
+        Vector2 groupCenter(stageData_.playerX + 100.0f, stageData_.playerY + 100.0f);
 
-        // 個体追加
-        for (int i = 0; i < gd.count; ++i) {
-            if (gd.species == "Elf") {
-                std::unique_ptr<Elf> elf = std::make_unique<Elf>(gd.id + "_E" + std::to_string(i));
-                elf->Initialize(groupCenter);
-                elf->SetMaxHp(gd.hp);
-                elf->SetAttackDamage(gd.attack);
-                elf->SetMoveSpeed(gd.speed);
-                group->AddIndividual(std::move(elf));
-            } else if (gd.species == "Knight") {
-                std::unique_ptr<Knight> knight = std::make_unique<Knight>(gd.id + "_K" + std::to_string(i));
-                knight->Initialize(groupCenter);
-                knight->SetColor(factionColor);
-                knight->SetMaxHp(gd.hp);
-                knight->SetAttackDamage(gd.attack);
-                knight->SetMoveSpeed(gd.speed);
-                group->AddIndividual(std::move(knight));
-            }
+        // 個体を復元
+        for (int i = 0; i < data.aliveCount; ++i) {
+            std::unique_ptr<Knight> knight = std::make_unique<Knight>(data.id + "_K" + std::to_string(i));
+            knight->Initialize(groupCenter);
+            knight->SetColor(Color(0.3f, 0.8f, 1.0f, 1.0f));  // 味方色（シアン）
+            knight->SetMaxHp(data.aliveCount > 0 ? data.totalHp / data.aliveCount : data.totalHp);
+            group->AddIndividual(std::move(knight));
         }
 
         group->Initialize(groupCenter);
@@ -143,14 +146,15 @@ void TestScene::OnEnter()
         std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
         ai->SetPlayer(player_.get());
         ai->SetCamera(camera_);
-        ai->SetDetectionRange(gd.detectionRange);
         group->SetAI(ai.get());
         groupAIs_.push_back(std::move(ai));
 
-        CombatSystem::Get().RegisterGroup(group.get());
-        GameStateManager::Get().RegisterEnemyGroup(group.get());
+        // GroupManagerに登録（所有権移譲）
+        Group* ptr = GroupManager::Get().AddGroup(std::move(group));
+        CombatSystem::Get().RegisterGroup(ptr);
+        // 味方なのでGameStateManagerには登録しない
 
-        enemyGroups_.push_back(std::move(group));
+        LOG_INFO("[TestScene] Restored ally group: " + data.id);
     }
 
     // システム初期化
@@ -164,15 +168,33 @@ void TestScene::OnEnter()
     GameStateManager::Get().Initialize();
     FESystem::Get().SetPlayer(player_.get());
 
+    // 持ち越しグループとプレイヤーの縁を復元
+    for (const CarryOverGroupData& data : carryOverGroups) {
+        // 復元したグループを探す
+        for (const auto& group : GroupManager::Get().GetAllGroups()) {
+            if (group->GetId() == data.id && group->IsAlly()) {
+                // プレイヤーとの縁を作成
+                BondableEntity playerEntity = player_.get();
+                BondableEntity groupEntity = group.get();
+                Bond* bond = BondManager::Get().CreateBond(playerEntity, groupEntity, BondType::Basic);
+                if (bond) {
+                    RelationshipFacade::Get().Bind(playerEntity, groupEntity, BondType::Basic);
+                    LOG_INFO("[TestScene] Restored bond: Player <-> " + group->GetId());
+                }
+                break;
+            }
+        }
+    }
+
     // グループIDからGroupポインタを取得するマップ作成
     std::unordered_map<std::string, Group*> groupMap;
-    for (const auto& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         groupMap[group->GetId()] = group.get();
     }
 
     // 縁を作成
     LOG_INFO("[TestScene] Creating bonds from CSV...");
-    for (const BondData& bd : stageData.bonds) {
+    for (const BondData& bd : stageData_.bonds) {
         Group* fromGroup = groupMap[bd.fromId];
         Group* toGroup = groupMap[bd.toId];
 
@@ -196,17 +218,45 @@ void TestScene::OnEnter()
     LOG_INFO("[TestScene] Bonds created: " + std::to_string(BondManager::Get().GetAllBonds().size()));
 
     // AI状態変更コールバック設定
-    for (size_t i = 0; i < groupAIs_.size(); ++i) {
-        Group* group = enemyGroups_[i].get();
-        groupAIs_[i]->SetOnStateChanged([group](AIState newState) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
+        GroupAI* ai = group->GetAI();
+        if (!ai) continue;
+        Group* groupPtr = group.get();
+        ai->SetOnStateChanged([groupPtr](AIState newState) {
             const char* stateNames[] = { "Wander", "Seek", "Flee" };
-            LOG_INFO("[AI] " + group->GetId() + " -> " + stateNames[static_cast<int>(newState)]);
+            LOG_INFO("[AI] " + groupPtr->GetId() + " -> " + stateNames[static_cast<int>(newState)]);
         });
     }
 
     // コールバック設定
-    GameStateManager::Get().SetOnVictory([]() {
+    GameStateManager::Get().SetOnVictory([this]() {
         LOG_INFO("[TestScene] VICTORY!");
+
+        // 味方グループを持ち越しデータとして保存
+        StageProgressManager::Get().ClearCarryOver();
+        for (const auto& group : GroupManager::Get().GetAllGroups()) {
+            if (!group || group->IsDefeated()) continue;
+            if (!group->IsAlly()) continue;  // 味方のみ
+
+            const std::vector<Individual*>& aliveMembers = group->GetAliveIndividuals();
+            CarryOverGroupData data;
+            data.id = group->GetId();
+            data.aliveCount = static_cast<int>(aliveMembers.size());
+            // 生存個体のHP合計
+            float totalHp = 0.0f;
+            for (Individual* ind : aliveMembers) {
+                totalHp += ind->GetHp();
+            }
+            data.totalHp = totalHp;
+            data.threat = group->GetThreat();
+
+            StageProgressManager::Get().AddCarryOverGroup(data);
+            LOG_INFO("[TestScene] Saved ally group for carry-over: " + data.id +
+                     " (" + std::to_string(data.aliveCount) + " members)");
+        }
+
+        // ステージを進める
+        StageProgressManager::Get().AdvanceToNextStage();
     });
     GameStateManager::Get().SetOnDefeat([]() {
         LOG_INFO("[TestScene] DEFEAT!");
@@ -232,8 +282,9 @@ void TestScene::OnEnter()
     LOG_INFO("  ESC: Cancel mode");
 
     // テスト: 起動時に矢を1本発射
-    if (!enemyGroups_.empty()) {
-        Individual* shooter = enemyGroups_[0]->GetRandomAliveIndividual();
+    std::vector<Group*> enemies = GroupManager::Get().GetEnemyGroups();
+    if (!enemies.empty()) {
+        Individual* shooter = enemies[0]->GetRandomAliveIndividual();
         if (shooter && player_) {
             ArrowManager::Get().ShootAtPlayer(shooter, player_.get(), shooter->GetPosition(), 5.0f);
             LOG_INFO("[TestScene] TEST: Shot arrow at player!");
@@ -283,7 +334,7 @@ void TestScene::OnExit()
     // ========================================================================
     ArrowManager::Get().Clear();
     CombatSystem::Get().ClearGroups();
-    GameStateManager::Get().ClearEnemyGroups();
+    WaveManager::Get().Reset();  // ウェーブ状態リセット
     BondManager::Get().Clear();
     StaggerSystem::Get().Clear();
     InsulationSystem::Get().Clear();
@@ -297,7 +348,7 @@ void TestScene::OnExit()
     // Phase 4: エンティティ削除
     // ========================================================================
     groupAIs_.clear();
-    enemyGroups_.clear();
+    GroupManager::Get().Clear();
 
     if (player_) {
         player_->Shutdown();
@@ -346,32 +397,83 @@ void TestScene::Update()
         return;
     }
 
+    // トランジション処理
+    WaveManager& waveManager = WaveManager::Get();
+    if (waveManager.IsTransitioning()) {
+        waveManager.UpdateTransition(dt);
+
+        // カメラをスムーズにスクロール（イージング）
+        if (Transform2D* camTr = cameraObj_->GetComponent<Transform2D>()) {
+            float t = waveManager.GetTransitionProgress();
+            // イーズアウト（減速）
+            float easedT = 1.0f - (1.0f - t) * (1.0f - t);
+
+            float startY = waveManager.GetStartCameraY();
+            float targetY = waveManager.GetTargetCameraY();
+            float newY = startY + (targetY - startY) * easedT;
+            camTr->SetPosition(camTr->GetPosition().x, newY);
+
+            float deltaY = (targetY - startY) * easedT;
+
+            // 初回のみ開始位置を記録
+            if (t < 0.01f) {
+                // プレイヤーの開始位置
+                if (player_ && player_->GetTransform()) {
+                    transitionPlayerStartY_ = player_->GetTransform()->GetPosition().y;
+                }
+                // 味方グループの開始位置
+                transitionAllyStartY_.clear();
+                for (const auto& group : GroupManager::Get().GetAllGroups()) {
+                    if (group && group->IsAlly() && !group->IsDefeated()) {
+                        transitionAllyStartY_[group.get()] = group->GetPosition().y;
+                    }
+                }
+            }
+
+            // プレイヤーを移動
+            if (player_ && player_->GetTransform()) {
+                Transform2D* playerTr = player_->GetTransform();
+                playerTr->SetPosition(playerTr->GetPosition().x, transitionPlayerStartY_ + deltaY);
+            }
+
+            // 味方グループも一緒に移動
+            for (const auto& group : GroupManager::Get().GetAllGroups()) {
+                if (group && group->IsAlly() && !group->IsDefeated()) {
+                    auto it = transitionAllyStartY_.find(group.get());
+                    if (it != transitionAllyStartY_.end()) {
+                        float allyStartY = it->second;
+                        Vector2 currentPos = group->GetPosition();
+                        group->SetPosition(Vector2(currentPos.x, allyStartY + deltaY));
+                    }
+                }
+            }
+        }
+        return;  // トランジション中は他の更新をスキップ
+    }
+
+    // マップサイズ定数
+    constexpr float kMapWidth = 1920.0f;
+    constexpr float kAreaHeight = 1080.0f;
+
     // プレイヤー更新（時間停止中も動ける）
     if (player_ && camera_) {
         player_->Update(rawDt, *camera_);
 
-        // マップサイズ定数
-        constexpr float kMapWidth = 4000.0f;
-        constexpr float kMapHeight = 4000.0f;
-
-        // プレイヤーをマップ範囲内にクランプ
+        // プレイヤーを現在エリア内にクランプ
         if (Transform2D* playerTr = player_->GetTransform()) {
             Vector2 playerPos = playerTr->GetPosition();
+
+            // 現在ウェーブのエリア範囲
+            float cameraY = waveManager.GetCurrentWaveCameraY();
+            float areaMinY = cameraY - kAreaHeight * 0.5f;
+            float areaMaxY = cameraY + kAreaHeight * 0.5f;
+
             float clampedPX = (std::max)(0.0f, (std::min)(playerPos.x, kMapWidth));
-            float clampedPY = (std::max)(0.0f, (std::min)(playerPos.y, kMapHeight));
+            float clampedPY = (std::max)(areaMinY, (std::min)(playerPos.y, areaMaxY));
             playerTr->SetPosition(clampedPX, clampedPY);
         }
 
-        camera_->Follow(player_->GetTransform()->GetPosition(), 0.1f);
-
-        // カメラをマップ範囲内にクランプ
-        float halfViewW = camera_->GetViewportWidth() * 0.5f;
-        float halfViewH = camera_->GetViewportHeight() * 0.5f;
-
-        Vector2 camPos = camera_->GetPosition();
-        float clampedX = (std::max)(halfViewW, (std::min)(camPos.x, kMapWidth - halfViewW));
-        float clampedY = (std::max)(halfViewH, (std::min)(camPos.y, kMapHeight - halfViewH));
-        camera_->SetPosition(clampedX, clampedY);
+        // カメラは各ウェーブのエリア中央に固定
     }
 
     // AI更新（時間停止中は動かない）
@@ -389,7 +491,7 @@ void TestScene::Update()
     }
 
     // グループ更新
-    for (std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         group->Update(dt);
     }
 
@@ -406,6 +508,9 @@ void TestScene::Update()
 
     // 衝突判定
     CollisionManager::Get().Update(rawDt);
+
+    // ウェーブマネージャー更新
+    WaveManager::Get().Update();
 }
 
 //----------------------------------------------------------------------------
@@ -587,17 +692,101 @@ void TestScene::BindPlayerToGroup(Group* group)
         return;
     }
 
-    // FE消費して縁作成
-    fe.Consume(BindSystem::Get().GetBindCost());
+    // 縁作成を試みる（成功したらFE消費）
     Bond* bond = BondManager::Get().CreateBond(playerEntity, groupEntity, selectedBondType_);
 
     if (bond) {
+        // 縁作成成功時のみFEを消費
+        fe.Consume(BindSystem::Get().GetBindCost());
         // RelationshipFacadeにも同期
         RelationshipFacade::Get().Bind(playerEntity, groupEntity, selectedBondType_);
 
+        // グループを味方に変換
+        if (group->IsEnemy()) {
+            group->SetFaction(GroupFaction::Ally);
+            LOG_INFO("[TestScene] Group " + group->GetId() + " became ally");
+
+            // EventBus通知
+            EventBus::Get().Publish(GroupBecameAllyEvent{ group });
+        }
+
         LOG_INFO("[TestScene] Player-Group bond created: " + group->GetId() +
                  " (Type: " + std::to_string(static_cast<int>(selectedBondType_)) + ")");
+    } else {
+        LOG_WARN("[TestScene] Failed to create bond with " + group->GetId());
     }
+}
+
+//----------------------------------------------------------------------------
+Group* TestScene::SpawnGroup(const GroupData& gd)
+{
+    // 陣営ごとの色
+    static const Color factionColors[6] = {
+        Color(1.0f, 0.3f, 0.3f, 1.0f),  // Faction1: 赤
+        Color(1.0f, 0.6f, 0.2f, 1.0f),  // Faction2: オレンジ
+        Color(1.0f, 1.0f, 0.3f, 1.0f),  // Faction3: 黄
+        Color(0.3f, 1.0f, 0.3f, 1.0f),  // Faction4: 緑
+        Color(0.3f, 0.5f, 1.0f, 1.0f),  // Faction5: 青
+        Color(0.7f, 0.3f, 1.0f, 1.0f),  // Faction6: 紫
+    };
+
+    // グループIDからFaction番号を取得
+    auto getFactionIndex = [](const std::string& id) -> int {
+        size_t pos = id.find("Faction");
+        if (pos != std::string::npos && pos + 7 < id.size()) {
+            char c = id[pos + 7];
+            if (c >= '1' && c <= '6') {
+                return c - '1';
+            }
+        }
+        return 0;
+    };
+
+    std::unique_ptr<Group> group = std::make_unique<Group>(gd.id);
+    group->SetBaseThreat(gd.threat);
+    group->SetDetectionRange(gd.detectionRange);
+
+    Vector2 groupCenter(gd.x, gd.y);
+    int factionIdx = getFactionIndex(gd.id);
+    Color factionColor = factionColors[factionIdx];
+
+    // 個体追加
+    for (int i = 0; i < gd.count; ++i) {
+        if (gd.species == "Elf") {
+            std::unique_ptr<Elf> elf = std::make_unique<Elf>(gd.id + "_E" + std::to_string(i));
+            elf->Initialize(groupCenter);
+            elf->SetMaxHp(gd.hp);
+            elf->SetAttackDamage(gd.attack);
+            elf->SetMoveSpeed(gd.speed);
+            group->AddIndividual(std::move(elf));
+        } else if (gd.species == "Knight") {
+            std::unique_ptr<Knight> knight = std::make_unique<Knight>(gd.id + "_K" + std::to_string(i));
+            knight->Initialize(groupCenter);
+            knight->SetColor(factionColor);
+            knight->SetMaxHp(gd.hp);
+            knight->SetAttackDamage(gd.attack);
+            knight->SetMoveSpeed(gd.speed);
+            group->AddIndividual(std::move(knight));
+        }
+    }
+
+    group->Initialize(groupCenter);
+
+    std::unique_ptr<GroupAI> ai = std::make_unique<GroupAI>(group.get());
+    ai->SetPlayer(player_.get());
+    ai->SetCamera(camera_);
+    ai->SetDetectionRange(gd.detectionRange);
+    group->SetAI(ai.get());
+    groupAIs_.push_back(std::move(ai));
+
+    // GroupManagerに登録（所有権移譲）
+    Group* groupPtr = GroupManager::Get().AddGroup(std::move(group));
+    GroupManager::Get().AssignToWave(groupPtr, gd.wave);
+    CombatSystem::Get().RegisterGroup(groupPtr);
+    // GameStateManagerは直接GroupManagerから敵グループを取得する
+
+    LOG_INFO("[TestScene] Spawned group: " + gd.id + " (Wave " + std::to_string(gd.wave) + ")");
+    return groupPtr;
 }
 
 //----------------------------------------------------------------------------
@@ -615,7 +804,7 @@ Group* TestScene::GetGroupUnderCursor() const
     CollisionManager::Get().QueryPoint(mouseWorld, hits, CollisionLayer::Individual);
 
     for (Collider2D* hitCollider : hits) {
-        for (const std::unique_ptr<Group>& group : enemyGroups_) {
+        for (const auto& group : GroupManager::Get().GetAllGroups()) {
             if (group->IsDefeated()) continue;
 
             for (Individual* individual : group->GetAliveIndividuals()) {
@@ -640,7 +829,7 @@ Group* TestScene::GetGroupTouchingPlayer() const
     // プレイヤーと接触しているグループを探す
     std::set<Group*> touchingGroups;
 
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         if (group->IsDefeated()) continue;
 
         for (Individual* individual : group->GetAliveIndividuals()) {
@@ -723,7 +912,7 @@ void TestScene::Render()
     DrawBonds();
 
     // 敵グループ描画
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         group->Render(spriteBatch);
     }
 
@@ -820,7 +1009,7 @@ void TestScene::DrawBonds()
 
     // 個体コライダーの描画（デバッグ用）
     Color colliderColor(0.0f, 1.0f, 1.0f, 0.5f);  // シアン
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         if (group->IsDefeated()) continue;
 
         for (Individual* individual : group->GetAliveIndividuals()) {
@@ -850,7 +1039,7 @@ void TestScene::DrawDetectionRanges()
 {
     Color detectionRangeColor(1.0f, 0.5f, 0.0f, 0.3f);  // オレンジ（半透明）
 
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         if (group->IsDefeated()) continue;
 
         Vector2 groupPos = group->GetPosition();
@@ -864,7 +1053,7 @@ void TestScene::DrawIndividualColliders()
 {
     Color colliderColor(0.0f, 1.0f, 1.0f, 0.8f);  // シアン
 
-    for (const std::unique_ptr<Group>& group : enemyGroups_) {
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         if (group->IsDefeated()) continue;
 
         for (Individual* individual : group->GetAliveIndividuals()) {
@@ -924,7 +1113,76 @@ void TestScene::DrawUI()
         }
     }
 
-    // モード表示（背景色で判別できるため削除）
+    // 結ぶ/切る残り回数表示（HP/FEバーの下）
+    {
+        int remainingBinds = BindSystem::Get().GetRemainingBinds();
+        int maxBinds = BindSystem::Get().GetMaxBindCount();
+        int remainingCuts = CutSystem::Get().GetRemainingCuts();
+        int maxCuts = CutSystem::Get().GetMaxCutCount();
+
+        Vector2 bindPos = camera_->ScreenToWorld(Vector2(screenWidth_ - 220.0f, 75.0f));
+        Vector2 cutPos = camera_->ScreenToWorld(Vector2(screenWidth_ - 220.0f, 100.0f));
+
+        Color bindBgColor(0.3f, 0.3f, 0.0f, 0.8f);
+        Color bindColor(1.0f, 1.0f, 0.3f, 0.9f);  // 黄色
+        Color cutBgColor(0.3f, 0.0f, 0.0f, 0.8f);
+        Color cutColor(1.0f, 0.3f, 0.3f, 0.9f);   // 赤
+
+        // 結ぶ残り回数バー
+        DEBUG_RECT_FILL(bindPos + Vector2(100.0f, 0.0f), Vector2(200.0f, 15.0f), bindBgColor);
+        if (maxBinds > 0) {
+            float bindRatio = static_cast<float>(remainingBinds) / static_cast<float>(maxBinds);
+            if (bindRatio > 0.0f) {
+                DEBUG_RECT_FILL(bindPos + Vector2(bindRatio * 100.0f, 0.0f),
+                               Vector2(bindRatio * 200.0f, 15.0f), bindColor);
+            }
+        } else {
+            // 無制限
+            DEBUG_RECT_FILL(bindPos + Vector2(100.0f, 0.0f), Vector2(200.0f, 15.0f), bindColor);
+        }
+
+        // 切る残り回数バー
+        DEBUG_RECT_FILL(cutPos + Vector2(100.0f, 0.0f), Vector2(200.0f, 15.0f), cutBgColor);
+        if (maxCuts > 0) {
+            float cutRatio = static_cast<float>(remainingCuts) / static_cast<float>(maxCuts);
+            if (cutRatio > 0.0f) {
+                DEBUG_RECT_FILL(cutPos + Vector2(cutRatio * 100.0f, 0.0f),
+                               Vector2(cutRatio * 200.0f, 15.0f), cutColor);
+            }
+        } else {
+            // 無制限
+            DEBUG_RECT_FILL(cutPos + Vector2(100.0f, 0.0f), Vector2(200.0f, 15.0f), cutColor);
+        }
+    }
+
+    // ウェーブ表示（画面上部中央）
+    {
+        int currentWave = WaveManager::Get().GetCurrentWave();
+        int totalWaves = WaveManager::Get().GetTotalWaves();
+
+        // ウェーブ進捗バー
+        Vector2 wavePos = camera_->ScreenToWorld(Vector2(screenWidth_ * 0.5f - 100.0f, 30.0f));
+        Color waveBgColor(0.2f, 0.2f, 0.4f, 0.8f);
+        Color waveColor(0.5f, 0.5f, 1.0f, 0.9f);
+
+        DEBUG_RECT_FILL(wavePos + Vector2(100.0f, 0.0f), Vector2(200.0f, 20.0f), waveBgColor);
+        if (totalWaves > 0) {
+            float waveRatio = static_cast<float>(currentWave) / static_cast<float>(totalWaves);
+            if (waveRatio > 0.0f) {
+                DEBUG_RECT_FILL(wavePos + Vector2(waveRatio * 100.0f, 0.0f),
+                               Vector2(waveRatio * 200.0f, 20.0f), waveColor);
+            }
+        }
+
+        // ウェーブ区切りマーカー
+        Color markerColor(1.0f, 1.0f, 1.0f, 0.6f);
+        if (totalWaves > 1) {
+            for (int w = 1; w < totalWaves; ++w) {
+                float markerX = static_cast<float>(w) / static_cast<float>(totalWaves) * 200.0f;
+                DEBUG_RECT_FILL(wavePos + Vector2(markerX, 0.0f), Vector2(2.0f, 20.0f), markerColor);
+            }
+        }
+    }
 
     // 勝敗表示
     if (!GameStateManager::Get().IsPlaying()) {
@@ -943,11 +1201,11 @@ void TestScene::LogAIStatus()
     const char* stateNames[] = { "Wander", "Seek", "Flee" };
 
     LOG_INFO("=== AI Status ===");
-    for (size_t i = 0; i < groupAIs_.size() && i < enemyGroups_.size(); ++i) {
-        GroupAI* ai = groupAIs_[i].get();
-        Group* group = enemyGroups_[i].get();
-
+    for (const auto& group : GroupManager::Get().GetAllGroups()) {
         if (!group || group->IsDefeated()) continue;
+
+        GroupAI* ai = group->GetAI();
+        if (!ai) continue;
 
         std::string status = group->GetId();
         status += " [" + std::string(stateNames[static_cast<int>(ai->GetState())]) + "]";
@@ -964,7 +1222,7 @@ void TestScene::LogAIStatus()
         }
 
         // 硬直中か
-        if (StaggerSystem::Get().IsStaggered(group)) {
+        if (StaggerSystem::Get().IsStaggered(group.get())) {
             status += " [STAGGER]";
         }
 

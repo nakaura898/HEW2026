@@ -132,11 +132,9 @@ void RangedAttackBehavior::ShootArrow()
 
     if (pendingTarget_ && pendingTarget_->IsAlive()) {
         ArrowManager::Get().Shoot(owner_, pendingTarget_, startPos, damage);
-        LOG_INFO("[RangedAttack] " + owner_->GetId() + " shoots arrow at " + pendingTarget_->GetId());
         arrowShot_ = true;
     } else if (pendingTargetPlayer_ && pendingTargetPlayer_->IsAlive()) {
         ArrowManager::Get().ShootAtPlayer(owner_, pendingTargetPlayer_, startPos, damage);
-        LOG_INFO("[RangedAttack] " + owner_->GetId() + " shoots arrow at Player");
         arrowShot_ = true;
     }
 }

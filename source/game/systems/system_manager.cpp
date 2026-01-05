@@ -9,11 +9,13 @@
 #include "engine/time/time_manager.h"
 
 // Level 2: 基本システム
+#include "game/systems/group_manager.h"
 #include "game/systems/fe_system.h"
 #include "game/bond/bond_manager.h"
 #include "game/systems/faction_manager.h"
 #include "game/systems/insulation_system.h"
 #include "game/systems/game_state_manager.h"
+#include "game/systems/stage_progress_manager.h"
 
 // Level 3: 関係性システム
 #include "game/relationships/relationship_facade.h"
@@ -29,6 +31,7 @@
 #include "game/systems/bind_system.h"
 #include "game/systems/combat_system.h"
 #include "game/systems/friends_damage_sharing.h"
+#include "game/systems/wave_manager.h"
 
 // Level 6: UI・エンティティ
 #include "game/entities/arrow_manager.h"
@@ -49,11 +52,13 @@ void SystemManager::CreateAll()
     TimeManager::Create();
 
     // Level 2: 基本システム
+    GroupManager::Create();
     FESystem::Create();
     BondManager::Create();
     FactionManager::Create();
     InsulationSystem::Create();
     GameStateManager::Create();
+    StageProgressManager::Create();
 
     // Level 3: 関係性システム（BondManager等に依存）
     RelationshipFacade::Create();
@@ -69,6 +74,7 @@ void SystemManager::CreateAll()
     BindSystem::Create();
     CombatSystem::Create();
     FriendsDamageSharing::Create();
+    WaveManager::Create();
 
     // Level 6: UI・エンティティ
     ArrowManager::Create();
@@ -92,6 +98,7 @@ void SystemManager::DestroyAll()
     ArrowManager::Destroy();
 
     // Level 5: 高レベルシステム
+    WaveManager::Destroy();
     FriendsDamageSharing::Destroy();
     CombatSystem::Destroy();
     BindSystem::Destroy();
@@ -107,11 +114,13 @@ void SystemManager::DestroyAll()
     RelationshipFacade::Destroy();
 
     // Level 2: 基本システム
+    StageProgressManager::Destroy();
     GameStateManager::Destroy();
     InsulationSystem::Destroy();
     FactionManager::Destroy();
     BondManager::Destroy();
     FESystem::Destroy();
+    GroupManager::Destroy();
 
     // Level 1: 基盤システム（最後に破棄）
     TimeManager::Destroy();

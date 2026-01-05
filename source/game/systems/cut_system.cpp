@@ -149,6 +149,13 @@ bool CutSystem::CutBond(Bond* bond)
         return false;
     }
 
+    // 回数制限チェック
+    if (!CanCutWithLimit()) {
+        LOG_WARN("[CutSystem] Cut limit reached (" + std::to_string(currentCutCount_) +
+                 "/" + std::to_string(maxCutCount_) + ")");
+        return false;
+    }
+
     // FEチェック・消費
     if (!FESystem::Get().CanConsume(cutCost_)) {
         LOG_WARN("[CutSystem] Not enough FE to cut");
@@ -172,9 +179,13 @@ bool CutSystem::CutBond(Bond* bond)
     // 縁を削除
     bool removed = BondManager::Get().RemoveBond(bond);
     if (removed) {
+        // 使用回数インクリメント
+        currentCutCount_++;
 
         LOG_INFO("[CutSystem] Bond cut between " +
-                 BondableHelper::GetId(a) + " and " + BondableHelper::GetId(b));
+                 BondableHelper::GetId(a) + " and " + BondableHelper::GetId(b) +
+                 " (cut " + std::to_string(currentCutCount_) + "/" +
+                 (maxCutCount_ < 0 ? "unlimited" : std::to_string(maxCutCount_)) + ")");
 
         // 硬直を付与（グループのみ）
         float staggerDuration = StaggerSystem::Get().GetDefaultDuration();

@@ -9,7 +9,7 @@
 #include "engine/component/sprite_renderer.h"
 #include "engine/component/collider2d.h"
 #include "engine/math/math_types.h"
-#include "dx11/gpu/texture.h"
+#include "engine/texture/texture_types.h"
 #include <memory>
 #include <string>
 

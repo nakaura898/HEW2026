@@ -95,6 +95,34 @@ public:
     void SetPendingBondType(BondType type) { pendingBondType_ = type; }
 
     //------------------------------------------------------------------------
+    // 回数制限
+    //------------------------------------------------------------------------
+
+    //! @brief 結ぶ回数上限を設定（-1で無制限）
+    void SetMaxBindCount(int count) { maxBindCount_ = count; }
+
+    //! @brief 結ぶ回数上限を取得
+    [[nodiscard]] int GetMaxBindCount() const { return maxBindCount_; }
+
+    //! @brief 残り回数を取得（-1なら無制限）
+    [[nodiscard]] int GetRemainingBinds() const {
+        if (maxBindCount_ < 0) return -1;
+        return maxBindCount_ - currentBindCount_;
+    }
+
+    //! @brief 現在の使用回数を取得
+    [[nodiscard]] int GetCurrentBindCount() const { return currentBindCount_; }
+
+    //! @brief 回数をリセット
+    void ResetBindCount() { currentBindCount_ = 0; }
+
+    //! @brief 回数制限を考慮して結べるか判定
+    [[nodiscard]] bool CanBindWithLimit() const {
+        if (maxBindCount_ < 0) return true;  // 無制限
+        return currentBindCount_ < maxBindCount_;
+    }
+
+    //------------------------------------------------------------------------
     // コールバック
     //------------------------------------------------------------------------
 
@@ -121,6 +149,8 @@ private:
     std::optional<BondableEntity> markedEntity_;        //!< マーク済みエンティティ
     float bindCost_ = 20.0f;                            //!< 縁を結ぶFEコスト
     BondType pendingBondType_ = BondType::Basic;        //!< 次に作成する縁のタイプ
+    int maxBindCount_ = -1;                             //!< 結ぶ回数上限（-1=無制限）
+    int currentBindCount_ = 0;                          //!< 現在の使用回数
 
     // コールバック
     std::function<void(bool)> onModeChanged_;

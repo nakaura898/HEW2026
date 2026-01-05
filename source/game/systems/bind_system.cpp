@@ -9,6 +9,7 @@
 #include "insulation_system.h"
 #include "game/bond/bond_manager.h"
 #include "game/relationships/relationship_facade.h"
+#include "game/entities/group.h"
 #include "engine/event/event_bus.h"
 #include "game/systems/event/game_events.h"
 #include "common/logging/logging.h"
@@ -128,6 +129,13 @@ bool BindSystem::MarkEntity(BondableEntity entity)
         return false;
     }
 
+    // 回数制限チェック
+    if (!CanBindWithLimit()) {
+        LOG_WARN("[BindSystem] Bind limit reached (" + std::to_string(currentBindCount_) +
+                 "/" + std::to_string(maxBindCount_) + ")");
+        return false;
+    }
+
     // FEチェック・消費
     if (!FESystem::Get().CanConsume(bindCost_)) {
         LOG_WARN("[BindSystem] Not enough FE to bind");
@@ -153,8 +161,29 @@ bool BindSystem::MarkEntity(BondableEntity entity)
         return false;
     }
 
+    // 使用回数インクリメント
+    currentBindCount_++;
+
     LOG_INFO("[BindSystem] Bond created between " +
-             BondableHelper::GetId(first) + " and " + BondableHelper::GetId(entity));
+             BondableHelper::GetId(first) + " and " + BondableHelper::GetId(entity) +
+             " (bind " + std::to_string(currentBindCount_) + "/" +
+             (maxBindCount_ < 0 ? "unlimited" : std::to_string(maxBindCount_)) + ")");
+
+    // プレイヤーと縁を結んだグループを味方化
+    Group* groupToConvert = nullptr;
+    if (BondableHelper::IsPlayer(first)) {
+        groupToConvert = BondableHelper::AsGroup(entity);
+    } else if (BondableHelper::IsPlayer(entity)) {
+        groupToConvert = BondableHelper::AsGroup(first);
+    }
+
+    if (groupToConvert && groupToConvert->IsEnemy()) {
+        groupToConvert->SetFaction(GroupFaction::Ally);
+        LOG_INFO("[BindSystem] Group " + groupToConvert->GetId() + " became ally");
+
+        // EventBus通知
+        EventBus::Get().Publish(GroupBecameAllyEvent{ groupToConvert });
+    }
 
     // EventBus通知
     EventBus::Get().Publish(BondCreatedEvent{ first, entity, bond });

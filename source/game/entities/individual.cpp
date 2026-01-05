@@ -8,7 +8,9 @@
 #include "game/ai/group_ai.h"
 #include "game/systems/bind_system.h"
 #include "game/systems/friends_damage_sharing.h"
+#include "game/systems/event/game_events.h"
 #include "engine/time/time_manager.h"
+#include "engine/event/event_bus.h"
 #include "game/systems/relationship_context.h"
 #include "game/systems/game_constants.h"
 #include "game/relationships/relationship_facade.h"
@@ -201,7 +203,15 @@ void Individual::AttackPlayer(Player* target)
 //----------------------------------------------------------------------------
 void Individual::TakeDamage(float damage)
 {
-    if (!IsAlive()) return;
+    if (!IsAlive()) {
+        LOG_WARN("[Individual] BUG: TakeDamage called on dead individual: " + id_);
+        return;
+    }
+
+    if (damage < 0.0f) {
+        LOG_WARN("[Individual] BUG: Negative damage: " + std::to_string(damage) + " to " + id_);
+        return;
+    }
 
     // フレンズ縁による分配ダメージを受信中でなければ、分配処理を試みる
     if (!isReceivingSharedDamage_) {
@@ -222,7 +232,9 @@ void Individual::TakeDamage(float damage)
     if (hp_ <= 0.0f) {
         action_ = IndividualAction::Death;
         LOG_INFO("[Individual] " + id_ + " died");
-        // TODO: OnIndividualDiedイベント発行
+
+        // 死亡イベント発行
+        EventBus::Get().Publish(IndividualDiedEvent{ this });
     }
 }
 

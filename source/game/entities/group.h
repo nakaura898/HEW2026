@@ -16,6 +16,15 @@ class SpriteBatch;
 class GroupAI;
 
 //----------------------------------------------------------------------------
+//! @brief グループの所属陣営
+//----------------------------------------------------------------------------
+enum class GroupFaction
+{
+    Enemy,  //!< 敵（プレイヤーを攻撃する）
+    Ally    //!< 味方（プレイヤー側として戦う）
+};
+
+//----------------------------------------------------------------------------
 //! @brief Groupクラス
 //! @details Individualのコンテナ。縁の接続単位。AI制御の単位。
 //----------------------------------------------------------------------------
@@ -151,6 +160,22 @@ public:
     void SetAI(GroupAI* ai) { ai_ = ai; }
 
     //------------------------------------------------------------------------
+    // 陣営
+    //------------------------------------------------------------------------
+
+    //! @brief 陣営を取得
+    [[nodiscard]] GroupFaction GetFaction() const { return faction_; }
+
+    //! @brief 陣営を設定
+    void SetFaction(GroupFaction faction) { faction_ = faction; }
+
+    //! @brief 味方かどうか判定
+    [[nodiscard]] bool IsAlly() const { return faction_ == GroupFaction::Ally; }
+
+    //! @brief 敵かどうか判定
+    [[nodiscard]] bool IsEnemy() const { return faction_ == GroupFaction::Enemy; }
+
+    //------------------------------------------------------------------------
     // 状態リセット
     //------------------------------------------------------------------------
 
@@ -190,6 +215,9 @@ private:
 
     // 状態
     bool isDefeated_ = false;
+
+    // 陣営
+    GroupFaction faction_ = GroupFaction::Enemy;
 
     // 陣形
     Formation formation_;

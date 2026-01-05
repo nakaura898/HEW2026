@@ -247,8 +247,6 @@ void LoveBondSystem::SyncClusterWanderTarget(const std::vector<Group*>& cluster)
         }
     }
 
-    LOG_INFO("[LoveBondSystem] Synced wander target for cluster at (" +
-             std::to_string(clusterCenter.x) + ", " + std::to_string(clusterCenter.y) + ")");
 }
 
 //----------------------------------------------------------------------------

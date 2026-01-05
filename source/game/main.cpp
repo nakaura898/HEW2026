@@ -22,8 +22,8 @@ int WINAPI WinMain(
     // アプリケーション設定
     ApplicationDesc desc;
     desc.window.title = L"HEW2026 Game";
-    desc.window.width = 1280;
-    desc.window.height = 720;
+    desc.window.width = 1920;
+    desc.window.height = 1080;
     desc.enableDebugLayer = true;
     desc.vsync = VSyncMode::On;
 
