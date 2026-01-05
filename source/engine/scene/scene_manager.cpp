@@ -3,6 +3,7 @@
 //! @brief  シーンマネージャー実装
 //----------------------------------------------------------------------------
 #include "scene_manager.h"
+#include "engine/texture/texture_manager.h"
 #include <chrono>
 
 //----------------------------------------------------------------------------
@@ -23,6 +24,11 @@ void SceneManager::ApplyPendingChange(std::unique_ptr<Scene>& current)
                 // 現在のシーンを終了
                 if (current) {
                     current->OnExit();
+                    // テクスチャスコープ終了 → 自動GC
+                    TextureManager::ScopeId scopeId = current->GetTextureScopeId();
+                    if (scopeId != TextureManager::kGlobalScope) {
+                        TextureManager::Get().EndScope(scopeId);
+                    }
                 }
 
                 // ロード完了コールバック（メインスレッド）
@@ -34,6 +40,9 @@ void SceneManager::ApplyPendingChange(std::unique_ptr<Scene>& current)
                 loadProgress_.store(0.0f);
 
                 if (current) {
+                    // テクスチャスコープ開始
+                    TextureManager::ScopeId newScopeId = TextureManager::Get().BeginScope();
+                    current->SetTextureScopeId(newScopeId);
                     current->OnEnter();
                 }
             }
@@ -49,6 +58,11 @@ void SceneManager::ApplyPendingChange(std::unique_ptr<Scene>& current)
     // 現在のシーンを終了
     if (current) {
         current->OnExit();
+        // テクスチャスコープ終了 → 自動GC
+        TextureManager::ScopeId scopeId = current->GetTextureScopeId();
+        if (scopeId != TextureManager::kGlobalScope) {
+            TextureManager::Get().EndScope(scopeId);
+        }
     }
 
     // 新しいシーンに切り替え
@@ -56,6 +70,9 @@ void SceneManager::ApplyPendingChange(std::unique_ptr<Scene>& current)
     pendingFactory_ = nullptr;
 
     if (current) {
+        // テクスチャスコープ開始
+        TextureManager::ScopeId newScopeId = TextureManager::Get().BeginScope();
+        current->SetTextureScopeId(newScopeId);
         current->OnEnter();
     }
 }

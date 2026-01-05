@@ -4,10 +4,14 @@
 //----------------------------------------------------------------------------
 #pragma once
 
+#include "engine/texture/texture_types.h"
+#include "engine/texture/texture_manager.h"
 #include <string>
 #include <cstdint>
 #include <atomic>
 #include <algorithm>
+#include <vector>
+#include <memory>
 
 //----------------------------------------------------------------------------
 //! @brief シーン基底クラス
@@ -84,6 +88,20 @@ public:
 
     //!@}
 
+    //----------------------------------------------------------
+    //! @name テクスチャスコープ管理（内部用）
+    //----------------------------------------------------------
+    //!@{
+
+    //! @brief テクスチャスコープIDを設定（SceneManagerから呼ばれる）
+    void SetTextureScopeId(TextureManager::ScopeId scopeId) noexcept { textureScopeId_ = scopeId; }
+
+    //! @brief テクスチャスコープIDを取得
+    [[nodiscard]] TextureManager::ScopeId GetTextureScopeId() const noexcept { return textureScopeId_; }
+
+    //!@}
+
 private:
     std::atomic<float> loadProgress_{ 0.0f };  //!< ロード進捗（0.0〜1.0）
+    TextureManager::ScopeId textureScopeId_ = TextureManager::kGlobalScope;  //!< テクスチャスコープID
 };

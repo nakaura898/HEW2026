@@ -1,8 +1,4 @@
 reviews:
-  path_filters:
-    - 'source/game/systems/*.cpp'
-    - 'source/game/systems/*.h'
-    - 'source/game/entities/individual.cpp'
-    - 'source/game/entities/player.cpp'
-    - 'source/game/scenes/test_scene.cpp'
-    - 'source/game/scenes/test_scene.h'
+  path_instructions:
+    - path: "source/engine/**"
+      instructions: "エンジン層のコード。パフォーマンスとメモリ管理に注意。"
