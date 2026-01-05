@@ -422,37 +422,12 @@ TextureHandle TextureManager::LoadInScope(const std::string& path, bool sRGB, Sc
     mutraDesc.cpuAccess = 0;
     mutraDesc.dimension = TextureDimension::Tex2D;
 
-    // テクスチャ作成（ローカル関数を使用）
-    ID3D11Device* device = GetD3D11Device();
-    if (!device) return TextureHandle::Invalid();
-
-    ComPtr<ID3D11Texture2D> texture;
-    HRESULT hr = device->CreateTexture2D(&desc, texData.subresources.data(), &texture);
-    if (FAILED(hr)) {
-        LOG_ERROR("[TextureManager] Texture2D作成失敗: " + path);
+    // テクスチャ作成（ヘルパー関数を使用）
+    TexturePtr texturePtr = CreateTextureWithViews(desc, texData.subresources.data(), mutraDesc);
+    if (!texturePtr) {
+        LOG_ERROR("[TextureManager] テクスチャ作成失敗: " + path);
         return TextureHandle::Invalid();
     }
-
-    // SRV作成
-    ComPtr<ID3D11ShaderResourceView> srv;
-    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Format = TextureDesc::GetSrvFormat(desc.Format);
-    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MostDetailedMip = 0;
-    srvDesc.Texture2D.MipLevels = desc.MipLevels ? desc.MipLevels : static_cast<UINT>(-1);
-
-    hr = device->CreateShaderResourceView(texture.Get(), &srvDesc, &srv);
-    if (FAILED(hr)) {
-        LOG_ERROR("[TextureManager] SRV作成失敗: " + path);
-        return TextureHandle::Invalid();
-    }
-
-    auto texturePtr = std::make_shared<Texture>(
-        std::move(texture), std::move(srv),
-        ComPtr<ID3D11RenderTargetView>(nullptr),
-        ComPtr<ID3D11DepthStencilView>(nullptr),
-        ComPtr<ID3D11UnorderedAccessView>(nullptr),
-        mutraDesc);
 
     // スロットに割り当て
     TextureHandle handle = AllocateSlot(std::move(texturePtr));
