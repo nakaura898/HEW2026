@@ -46,6 +46,18 @@ objdir_base = "build/obj/" .. outputdir
 -- ビルド時間短縮のため、ソースからのビルドは行わない
 
 --============================================================================
+-- 外部ライブラリパス設定
+--============================================================================
+-- tinygltf: ヘッダーオンリー（glTFローダー）
+-- Assimp 6.0.2: 動的ライブラリ（vcpkgでビルド済み）
+tinygltf_include = "packages/tinygltf"
+assimp_include = "external/assimp/include"
+assimp_lib_debug = "external/assimp/lib/Debug"
+assimp_lib_release = "external/assimp/lib/Release"
+assimp_bin_debug = "external/assimp/bin/Debug"
+assimp_bin_release = "external/assimp/bin/Release"
+
+--============================================================================
 -- 共通ユーティリティ
 --============================================================================
 project "common"
@@ -137,19 +149,37 @@ project "engine"
         "source",
         "source/engine",
         "external/DirectXTex/DirectXTex",
-        "external/DirectXTK/Inc"
+        "external/DirectXTK/Inc",
+        -- NuGetパッケージ
+        tinygltf_include,
+        assimp_include
     }
 
     -- ビルド済み外部ライブラリのパス
-    libdirs {
-        "external/lib/%{cfg.buildcfg}"
-    }
+    filter "configurations:Debug"
+        libdirs {
+            "external/lib/Debug",
+            assimp_lib_debug
+        }
+    filter "configurations:Release"
+        libdirs {
+            "external/lib/Release",
+            assimp_lib_release
+        }
+    filter {}
 
     links {
         "dx11",
         "DirectXTex",
         "DirectXTK"
     }
+
+    -- Assimp 6.0.2 動的リンク（Debug/Releaseで異なるlib）
+    filter "configurations:Debug"
+        links { "assimp-vc143-mtd" }
+    filter "configurations:Release"
+        links { "assimp-vc143-mt" }
+    filter {}
 
     defines {
         "_WIN32_WINNT=0x0A00"
@@ -159,6 +189,9 @@ project "engine"
     flags { "FatalWarnings" }
 
     buildoptions { "/utf-8", "/permissive-", "/FS" }
+
+    -- リンカー警告を無視 (stb_imageシンボル重複: tinygltf/Assimpが両方使用)
+    linkoptions { "/ignore:4006" }
 
 --============================================================================
 -- ゲーム実行ファイル
@@ -182,9 +215,17 @@ project "game"
     }
 
     -- ビルド済み外部ライブラリのパス
-    libdirs {
-        "external/lib/%{cfg.buildcfg}"
-    }
+    filter "configurations:Debug"
+        libdirs {
+            "external/lib/Debug",
+            assimp_lib_debug
+        }
+    filter "configurations:Release"
+        libdirs {
+            "external/lib/Release",
+            assimp_lib_release
+        }
+    filter {}
 
     links {
         "engine",
@@ -198,6 +239,13 @@ project "game"
         "xinput"
     }
 
+    -- Assimp 6.0.2 動的リンク（Debug/Releaseで異なるlib）
+    filter "configurations:Debug"
+        links { "assimp-vc143-mtd" }
+    filter "configurations:Release"
+        links { "assimp-vc143-mt" }
+    filter {}
+
     defines {
         "_WIN32_WINNT=0x0A00"
     }
@@ -207,6 +255,17 @@ project "game"
 
     warnings "Extra"
     buildoptions { "/utf-8", "/permissive-", "/FS" }
+
+    -- Assimp DLLをビルド出力ディレクトリにコピー
+    filter "configurations:Debug"
+        postbuildcommands {
+            '{COPY} "%{wks.location}/../' .. assimp_bin_debug .. '/assimp-vc143-mtd.dll" "%{cfg.targetdir}"'
+        }
+    filter "configurations:Release"
+        postbuildcommands {
+            '{COPY} "%{wks.location}/../' .. assimp_bin_release .. '/assimp-vc143-mt.dll" "%{cfg.targetdir}"'
+        }
+    filter {}
 
     -- リンカー警告を無視 (外部ライブラリPDB不足)
     linkoptions { "/ignore:4099" }

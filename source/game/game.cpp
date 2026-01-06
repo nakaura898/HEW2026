@@ -22,10 +22,14 @@
 #include "engine/platform/renderer.h"
 #include "engine/graphics2d/render_state_manager.h"
 #include "engine/c_systems/sprite_batch.h"
+#include "engine/c_systems/mesh_batch.h"
 #include "engine/debug/debug_draw.h"
 #include "engine/debug/circle_renderer.h"
 #include "engine/core/job_system.h"
 #include "engine/core/service_locator.h"
+#include "engine/mesh/mesh_manager.h"
+#include "engine/material/material_manager.h"
+#include "engine/lighting/lighting_manager.h"
 
 // シェーダーコンパイラ（グローバルインスタンス）
 static std::unique_ptr<D3DShaderCompiler> g_shaderCompiler;
@@ -45,7 +49,11 @@ bool Game::Initialize()
     ShaderManager::Create();
     RenderStateManager::Create();
     SpriteBatch::Create();
+    MeshBatch::Create();
     CollisionManager::Create();
+    MeshManager::Create();
+    MaterialManager::Create();
+    LightingManager::Create();
     SceneManager::Create();
 #ifdef _DEBUG
     DebugDraw::Create();
@@ -69,6 +77,7 @@ bool Game::Initialize()
     fsManager.Mount("shaders", std::make_unique<HostFileSystem>(assetsRoot + L"shader/"));
     fsManager.Mount("textures", std::make_unique<HostFileSystem>(assetsRoot + L"texture/"));
     fsManager.Mount("stages", std::make_unique<HostFileSystem>(assetsRoot + L"stages/"));
+    fsManager.Mount("models", std::make_unique<HostFileSystem>(assetsRoot + L"models/"));
 
     // 4. TextureManager初期化（Application層でCreate済み）
     auto* textureFs = fsManager.GetFileSystem("textures");
@@ -92,6 +101,22 @@ bool Game::Initialize()
         LOG_ERROR("[Game] SpriteBatchの初期化に失敗");
         return false;
     }
+
+    // 7.5. MeshBatch初期化
+    if (!MeshBatch::Get().Initialize()) {
+        LOG_ERROR("[Game] MeshBatchの初期化に失敗");
+        return false;
+    }
+
+    // 8. MeshManager初期化
+    auto* modelsFs = fsManager.GetFileSystem("models");
+    MeshManager::Get().Initialize(modelsFs);
+
+    // 9. MaterialManager初期化
+    MaterialManager::Get().Initialize();
+
+    // 10. LightingManager初期化
+    LightingManager::Get().Initialize();
 
     LOG_INFO("[Game] サブシステム初期化完了");
 
@@ -128,9 +153,13 @@ void Game::Shutdown() noexcept
     CircleRenderer::Get().Shutdown();
     DebugDraw::Get().Shutdown();
 #endif
+    LightingManager::Get().Shutdown();
+    MeshBatch::Get().Shutdown();
     SpriteBatch::Get().Shutdown();
     RenderStateManager::Get().Shutdown();
     ShaderManager::Get().Shutdown();
+    MaterialManager::Get().Shutdown();  // TextureManagerより先に解放（テクスチャを参照）
+    MeshManager::Get().Shutdown();
     Renderer::Get().Shutdown();  // TextureManagerより先に解放（colorBuffer_/depthBuffer_がTexturePtr）
     TextureManager::Get().Shutdown();
     FileSystemManager::Get().UnmountAll();
@@ -147,7 +176,11 @@ void Game::Shutdown() noexcept
     DebugDraw::Destroy();
 #endif
     SceneManager::Destroy();
+    LightingManager::Destroy();
+    MaterialManager::Destroy();
+    MeshManager::Destroy();
     CollisionManager::Destroy();
+    MeshBatch::Destroy();
     SpriteBatch::Destroy();
     RenderStateManager::Destroy();
     ShaderManager::Destroy();
