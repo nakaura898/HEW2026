@@ -163,11 +163,14 @@ Vector2 Camera3D::WorldToScreen(const Vector3& worldPos,
     Vector4 v4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
     Vector4 result = Vector4::Transform(v4, viewProj);
 
-    // 透視除算: w成分で割ってNDC座標を取得
-    if (result.w != 0.0f) {
-        result.x /= result.w;
-        result.y /= result.w;
+    // カメラ後方または位置にある点はスクリーン外として処理
+    if (result.w <= 0.0f) {
+        return Vector2(-1.0f, -1.0f);  // 画面外を示すセンチネル値
     }
+
+    // 透視除算: w成分で割ってNDC座標を取得
+    result.x /= result.w;
+    result.y /= result.w;
 
     // NDC座標をスクリーン座標に変換
     float screenX = (result.x + 1.0f) * kHalf * screenWidth;

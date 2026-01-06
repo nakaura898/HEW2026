@@ -157,7 +157,13 @@ private:
     uint8_t initLayer_ = CollisionConstants3D::kDefaultLayer;
     uint8_t initMask_ = CollisionConstants3D::kDefaultMask;
     bool initTrigger_ = false;
+    bool initEnabled_ = true;
     bool syncWithTransform_ = true;
+
+    // コールバックのキャッシュ（OnAttach前に設定された場合用）
+    CollisionCallback3D initOnCollision_;
+    CollisionCallback3D initOnEnter_;
+    CollisionCallback3D initOnExit_;
 
     void* userData_ = nullptr;
 };

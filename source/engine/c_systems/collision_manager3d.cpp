@@ -746,10 +746,15 @@ std::optional<RaycastHit3D> CollisionManager3D::Raycast(
                 Vector3 center = aabb.GetCenter();
                 Vector3 toHit = closest.point - center;
                 Vector3 halfSize = aabb.GetSize() * 0.5f;
-                if (std::abs(toHit.x / halfSize.x) > std::abs(toHit.y / halfSize.y) &&
-                    std::abs(toHit.x / halfSize.x) > std::abs(toHit.z / halfSize.z)) {
+                // ゼロ除算防止（縮退AABBに対応）
+                constexpr float kEpsilon = 0.0001f;
+                float hx = halfSize.x > kEpsilon ? halfSize.x : kEpsilon;
+                float hy = halfSize.y > kEpsilon ? halfSize.y : kEpsilon;
+                float hz = halfSize.z > kEpsilon ? halfSize.z : kEpsilon;
+                if (std::abs(toHit.x / hx) > std::abs(toHit.y / hy) &&
+                    std::abs(toHit.x / hx) > std::abs(toHit.z / hz)) {
                     closest.normal = Vector3(toHit.x > 0 ? 1.0f : -1.0f, 0, 0);
-                } else if (std::abs(toHit.y / halfSize.y) > std::abs(toHit.z / halfSize.z)) {
+                } else if (std::abs(toHit.y / hy) > std::abs(toHit.z / hz)) {
                     closest.normal = Vector3(0, toHit.y > 0 ? 1.0f : -1.0f, 0);
                 } else {
                     closest.normal = Vector3(0, 0, toHit.z > 0 ? 1.0f : -1.0f);

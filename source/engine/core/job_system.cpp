@@ -130,6 +130,7 @@ public:
         std::vector<JobCounterPtr> dependencies;
         CancelTokenPtr cancelToken;
         bool mainThreadOnly = false;
+        bool countedInFrame = false;  // フレームカウンターにカウントされているか
 #ifdef _DEBUG
         std::string name;
 #endif
@@ -240,6 +241,7 @@ public:
             std::unique_lock<std::mutex> lock(frameMutex_);
             if (frameCounter_) {
                 frameCounter_->Increment();
+                job.countedInFrame = true;
             }
         }
 
@@ -360,11 +362,11 @@ public:
             uint32_t jobBegin = begin + i * granularity;
             uint32_t jobEnd = std::min(jobBegin + granularity, end);
 
-            Submit([func, jobBegin, jobEnd, counter] {
+            Submit([func, jobBegin, jobEnd] {
                 for (uint32_t j = jobBegin; j < jobEnd; ++j) {
                     func(j);
                 }
-                counter->SetResult(JobResult::Success);
+                // 結果はExecuteJobInternalで設定される
             }, counter, JobPriority::Normal);
         }
 
@@ -391,9 +393,9 @@ public:
             uint32_t jobBegin = begin + i * granularity;
             uint32_t jobEnd = std::min(jobBegin + granularity, end);
 
-            Submit([func, jobBegin, jobEnd, counter] {
+            Submit([func, jobBegin, jobEnd] {
                 func(jobBegin, jobEnd);
-                counter->SetResult(JobResult::Success);
+                // 結果はExecuteJobInternalで設定される
             }, counter, JobPriority::Normal);
         }
 
@@ -576,8 +578,8 @@ private:
             job.counter->Decrement();
         }
 
-        // フレームカウンターをデクリメント
-        {
+        // フレームカウンターをデクリメント（カウントされたジョブのみ）
+        if (job.countedInFrame) {
             std::unique_lock<std::mutex> lock(frameMutex_);
             if (frameCounter_) {
                 frameCounter_->Decrement();
@@ -683,9 +685,10 @@ private:
         return false;
     }
 
-    //! @brief グローバルまたはローカルにジョブがあるか
+    //! @brief グローバルまたはローカルにジョブがあるか（スレッドセーフ）
     [[nodiscard]] bool HasPendingJobs() const noexcept
     {
+        std::unique_lock<std::mutex> lock(globalMutex_);
         return HasPendingJobsLocked() || HasLocalJobs();
     }
 

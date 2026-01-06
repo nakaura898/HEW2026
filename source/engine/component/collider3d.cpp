@@ -42,6 +42,12 @@ void Collider3D::OnAttach()
     manager.SetLayer(handle_, initLayer_);
     manager.SetMask(handle_, initMask_);
     manager.SetTrigger(handle_, initTrigger_);
+    manager.SetEnabled(handle_, initEnabled_);
+
+    // キャッシュされたコールバックを適用
+    if (initOnCollision_) manager.SetOnCollision(handle_, initOnCollision_);
+    if (initOnEnter_) manager.SetOnCollisionEnter(handle_, initOnEnter_);
+    if (initOnExit_) manager.SetOnCollisionExit(handle_, initOnExit_);
 
     // 初期位置を設定
     if (Transform* transform = GetOwner()->GetComponent<Transform>()) {
@@ -216,6 +222,7 @@ bool Collider3D::IsTrigger() const
 //----------------------------------------------------------------------------
 void Collider3D::SetColliderEnabled(bool enabled)
 {
+    initEnabled_ = enabled;  // 常にキャッシュ
     if (handle_.IsValid()) {
         CollisionManager3D::Get().SetEnabled(handle_, enabled);
     }
@@ -227,7 +234,7 @@ bool Collider3D::IsColliderEnabled() const
     if (handle_.IsValid()) {
         return CollisionManager3D::Get().IsEnabled(handle_);
     }
-    return true;
+    return initEnabled_;  // キャッシュされた値を返す
 }
 
 //----------------------------------------------------------------------------
@@ -251,6 +258,7 @@ BoundingSphere3D Collider3D::GetBoundingSphere() const
 //----------------------------------------------------------------------------
 void Collider3D::SetOnCollision(CollisionCallback3D callback)
 {
+    initOnCollision_ = callback;  // 常にキャッシュ
     if (handle_.IsValid()) {
         CollisionManager3D::Get().SetOnCollision(handle_, std::move(callback));
     }
@@ -259,6 +267,7 @@ void Collider3D::SetOnCollision(CollisionCallback3D callback)
 //----------------------------------------------------------------------------
 void Collider3D::SetOnCollisionEnter(CollisionCallback3D callback)
 {
+    initOnEnter_ = callback;  // 常にキャッシュ
     if (handle_.IsValid()) {
         CollisionManager3D::Get().SetOnCollisionEnter(handle_, std::move(callback));
     }
@@ -267,6 +276,7 @@ void Collider3D::SetOnCollisionEnter(CollisionCallback3D callback)
 //----------------------------------------------------------------------------
 void Collider3D::SetOnCollisionExit(CollisionCallback3D callback)
 {
+    initOnExit_ = callback;  // 常にキャッシュ
     if (handle_.IsValid()) {
         CollisionManager3D::Get().SetOnCollisionExit(handle_, std::move(callback));
     }
