@@ -637,27 +637,13 @@ void JobSystem::Shutdown()
 }
 
 //----------------------------------------------------------------------------
-// 基本ジョブ投入
+// ジョブ投入
 //----------------------------------------------------------------------------
 
 void JobSystem::Submit(JobFunction job, JobPriority priority)
 {
     impl_->Submit(std::move(job), priority);
 }
-
-void JobSystem::Submit(JobFunction job, JobCounterPtr counter, JobPriority priority)
-{
-    impl_->Submit(std::move(job), std::move(counter), priority);
-}
-
-JobCounterPtr JobSystem::SubmitAndGetCounter(JobFunction job, JobPriority priority)
-{
-    return impl_->SubmitAndGetCounter(std::move(job), priority);
-}
-
-//----------------------------------------------------------------------------
-// 高度なジョブ投入
-//----------------------------------------------------------------------------
 
 JobHandle JobSystem::SubmitJob(JobDesc desc)
 {

@@ -104,11 +104,13 @@ public:
         if (counter_) counter_->Wait();
     }
 
-    //! @brief 内部カウンター取得（依存関係設定用）
-    [[nodiscard]] JobCounterPtr GetCounter() const noexcept { return counter_; }
-
 private:
     friend class JobSystem;
+    friend class JobDesc;
+
+    //! @brief 内部カウンター取得（内部使用のみ）
+    [[nodiscard]] JobCounterPtr GetCounter() const noexcept { return counter_; }
+
     explicit JobHandle(JobCounterPtr counter) : counter_(std::move(counter)) {}
     JobCounterPtr counter_;
 };
@@ -241,22 +243,16 @@ public:
     [[nodiscard]] static bool IsCreated() noexcept { return instance_ != nullptr; }
 
     //------------------------------------------------------------------------
-    //! @name 基本ジョブ投入（後方互換）
+    //! @name ジョブ投入
     //------------------------------------------------------------------------
     //!@{
 
+    //! @brief 単純なジョブを投入（Fire-and-forget）
+    //! @param job 実行する関数
+    //! @param priority 優先度
     void Submit(JobFunction job, JobPriority priority = JobPriority::Normal);
-    void Submit(JobFunction job, JobCounterPtr counter, JobPriority priority = JobPriority::Normal);
-    [[nodiscard]] JobCounterPtr SubmitAndGetCounter(JobFunction job, JobPriority priority = JobPriority::Normal);
 
-    //!@}
-
-    //------------------------------------------------------------------------
-    //! @name 高度なジョブ投入
-    //------------------------------------------------------------------------
-    //!@{
-
-    //! @brief ジョブ記述子でジョブを投入
+    //! @brief ジョブを投入しハンドルを取得
     //! @param desc ジョブ記述子
     //! @return ジョブハンドル（依存関係設定や待機に使用）
     [[nodiscard]] JobHandle SubmitJob(JobDesc desc);
