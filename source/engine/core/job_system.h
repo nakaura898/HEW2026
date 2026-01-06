@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cassert>
 #include <vector>
+#include <string>
 #include <string_view>
 
 //! @brief ジョブ優先度
@@ -19,6 +20,14 @@ enum class JobPriority : uint8_t {
     Normal = 1,  //!< 通常
     Low = 2,     //!< 低優先度（バックグラウンド処理）
     Count = 3
+};
+
+//! @brief ジョブ実行結果
+enum class JobResult : uint8_t {
+    Pending = 0,    //!< 未完了（実行中または待機中）
+    Success = 1,    //!< 正常完了
+    Cancelled = 2,  //!< キャンセルされた
+    Exception = 3   //!< 例外が発生した
 };
 
 //============================================================================
@@ -62,11 +71,18 @@ public:
     JobCounter(const JobCounter&) = delete;
     JobCounter& operator=(const JobCounter&) = delete;
 
+    void Increment() noexcept;
     void Decrement() noexcept;
     void Wait() const noexcept;
     [[nodiscard]] bool IsComplete() const noexcept;
     [[nodiscard]] uint32_t GetCount() const noexcept;
     void Reset(uint32_t count) noexcept;
+
+    //! @brief 結果を設定
+    void SetResult(JobResult result) noexcept;
+
+    //! @brief 結果を取得
+    [[nodiscard]] JobResult GetResult() const noexcept;
 
 private:
     class Impl;
@@ -104,6 +120,23 @@ public:
         if (counter_) counter_->Wait();
     }
 
+    //! @brief ジョブの実行結果を取得
+    [[nodiscard]] JobResult GetResult() const noexcept {
+        return counter_ ? counter_->GetResult() : JobResult::Pending;
+    }
+
+    //! @brief エラーが発生したか
+    [[nodiscard]] bool HasError() const noexcept {
+        if (!counter_) return false;
+        JobResult result = counter_->GetResult();
+        return result == JobResult::Cancelled || result == JobResult::Exception;
+    }
+
+    //! @brief 成功したか
+    [[nodiscard]] bool IsSuccess() const noexcept {
+        return counter_ && counter_->GetResult() == JobResult::Success;
+    }
+
 private:
     friend class JobSystem;
     friend class JobDesc;
@@ -125,6 +158,67 @@ class JobDesc
 public:
     JobDesc() = default;
     explicit JobDesc(JobFunction func) : function_(std::move(func)) {}
+
+    //------------------------------------------------------------------------
+    //! @name ファクトリ関数
+    //------------------------------------------------------------------------
+    //!@{
+
+    //! @brief メインスレッドジョブを作成
+    //! @code
+    //!   JobSystem::Get().SubmitJob(JobDesc::MainThread([]{ UploadToGPU(); }));
+    //! @endcode
+    [[nodiscard]] static JobDesc MainThread(JobFunction func) {
+        return JobDesc(std::move(func)).SetMainThreadOnly();
+    }
+
+    //! @brief 高優先度ジョブを作成
+    [[nodiscard]] static JobDesc HighPriority(JobFunction func) {
+        return JobDesc(std::move(func)).SetPriority(JobPriority::High);
+    }
+
+    //! @brief 低優先度ジョブを作成（バックグラウンド処理用）
+    [[nodiscard]] static JobDesc LowPriority(JobFunction func) {
+        return JobDesc(std::move(func)).SetPriority(JobPriority::Low);
+    }
+
+    //! @brief 依存関係付きジョブを作成
+    //! @code
+    //!   auto load = JobSystem::Get().SubmitJob(JobDesc([]{ Load(); }));
+    //!   auto process = JobSystem::Get().SubmitJob(JobDesc::After(load, []{ Process(); }));
+    //! @endcode
+    [[nodiscard]] static JobDesc After(const JobHandle& dependency, JobFunction func) {
+        return JobDesc(std::move(func)).AddDependency(dependency);
+    }
+
+    //! @brief 複数依存関係付きジョブを作成
+    [[nodiscard]] static JobDesc AfterAll(const std::vector<JobHandle>& dependencies, JobFunction func) {
+        return JobDesc(std::move(func)).AddDependencies(dependencies);
+    }
+
+    //! @brief キャンセル可能ジョブを作成（トークン自動生成）
+    //! @param func キャンセル対応関数
+    //! @param outToken 生成されたトークンを受け取るポインタ（省略可）
+    //! @code
+    //!   CancelTokenPtr token;
+    //!   auto handle = JobSystem::Get().SubmitJob(
+    //!       JobDesc::Cancellable([](const CancelToken& ct) {
+    //!           while (!ct.IsCancelled()) { DoWork(); }
+    //!       }, &token));
+    //!   token->Cancel();  // キャンセル
+    //! @endcode
+    [[nodiscard]] static JobDesc Cancellable(CancellableJobFunction func, CancelTokenPtr* outToken = nullptr) {
+        auto token = std::make_shared<CancelToken>();
+        if (outToken) *outToken = token;
+        return JobDesc().SetCancellableFunction(std::move(func)).SetCancelToken(std::move(token));
+    }
+
+    //!@}
+
+    //------------------------------------------------------------------------
+    //! @name ビルダーメソッド
+    //------------------------------------------------------------------------
+    //!@{
 
     //! @brief ジョブ関数を設定
     //! @note SetCancellableFunctionと排他。両方設定不可
@@ -185,6 +279,8 @@ public:
         return *this;
     }
 
+    //!@}
+
 private:
     friend class JobSystem;
 
@@ -195,12 +291,91 @@ private:
     CancelTokenPtr cancelToken_;
     bool mainThreadOnly_ = false;
 #ifdef _DEBUG
-    std::string_view name_;
+    std::string name_;
 #endif
 };
 
 //============================================================================
-//! @brief ジョブシステム（シングルトン）
+//! @brief キャンセルトークンを作成するヘルパー関数
+//! @code
+//!   auto token = MakeCancelToken();
+//!   JobSystem::Get().SubmitJob(
+//!       JobDesc().SetCancellableFunction([](const CancelToken& ct) {
+//!           while (!ct.IsCancelled()) { DoWork(); }
+//!       }).SetCancelToken(token));
+//!   token->Cancel();
+//! @endcode
+//============================================================================
+[[nodiscard]] inline CancelTokenPtr MakeCancelToken() {
+    return std::make_shared<CancelToken>();
+}
+
+//============================================================================
+//! @brief ジョブシステムインターフェース
+//!
+//! テスト用モックや異なる実装への差し替えを可能にする。
+//============================================================================
+class IJobSystem
+{
+public:
+    virtual ~IJobSystem() = default;
+
+    //------------------------------------------------------------------------
+    //! @name ジョブ投入
+    //------------------------------------------------------------------------
+    //!@{
+    virtual void Submit(JobFunction job, JobPriority priority = JobPriority::Normal) = 0;
+    [[nodiscard]] virtual JobHandle SubmitJob(JobDesc desc) = 0;
+    [[nodiscard]] virtual std::vector<JobHandle> SubmitJobs(std::vector<JobDesc> descs) = 0;
+    //!@}
+
+    //------------------------------------------------------------------------
+    //! @name メインスレッドジョブ
+    //------------------------------------------------------------------------
+    //!@{
+    virtual uint32_t ProcessMainThreadJobs(uint32_t maxJobs = 0) = 0;
+    [[nodiscard]] virtual bool IsMainThread() const noexcept = 0;
+    //!@}
+
+    //------------------------------------------------------------------------
+    //! @name フレーム同期
+    //------------------------------------------------------------------------
+    //!@{
+    virtual void BeginFrame() = 0;
+    virtual void EndFrame() = 0;
+    virtual void WaitAll() = 0;
+    //!@}
+
+    //------------------------------------------------------------------------
+    //! @name 並列ループ
+    //------------------------------------------------------------------------
+    //!@{
+    [[nodiscard]] virtual JobHandle ParallelFor(uint32_t begin, uint32_t end,
+                                                const std::function<void(uint32_t)>& func,
+                                                uint32_t granularity = 0) = 0;
+    [[nodiscard]] virtual JobHandle ParallelForRange(uint32_t begin, uint32_t end,
+                                                     const std::function<void(uint32_t, uint32_t)>& func,
+                                                     uint32_t granularity = 0) = 0;
+    //!@}
+
+    //------------------------------------------------------------------------
+    //! @name 状態取得
+    //------------------------------------------------------------------------
+    //!@{
+    [[nodiscard]] virtual uint32_t GetWorkerCount() const noexcept = 0;
+    [[nodiscard]] virtual bool IsWorkerThread() const noexcept = 0;
+    [[nodiscard]] virtual uint32_t GetPendingJobCount() const noexcept = 0;
+    [[nodiscard]] virtual uint32_t GetMainThreadJobCount() const noexcept = 0;
+    //!@}
+
+protected:
+    IJobSystem() = default;
+    IJobSystem(const IJobSystem&) = delete;
+    IJobSystem& operator=(const IJobSystem&) = delete;
+};
+
+//============================================================================
+//! @brief ジョブシステム実装（シングルトン）
 //!
 //! ワーカースレッドプールを管理し、ジョブを並列実行する。
 //!
@@ -209,23 +384,29 @@ private:
 //!   // 単純なジョブ
 //!   JobSystem::Get().Submit([]{ DoWork(); });
 //!
-//!   // 依存関係付きジョブ
-//!   auto job1 = JobSystem::Get().SubmitJob(JobDesc([]{ LoadMesh(); }));
-//!   auto job2 = JobSystem::Get().SubmitJob(
-//!       JobDesc([]{ ProcessMesh(); }).AddDependency(job1));
-//!   job2.Wait();
+//!   // 依存関係付きジョブ（ファクトリ関数使用）
+//!   auto load = JobSystem::Get().SubmitJob(JobDesc([]{ LoadMesh(); }));
+//!   auto process = JobSystem::Get().SubmitJob(JobDesc::After(load, []{ ProcessMesh(); }));
+//!   process.Wait();
 //!
-//!   // メインスレッドジョブ（レンダリング）
-//!   JobSystem::Get().SubmitJob(
-//!       JobDesc([]{ UploadToGPU(); }).SetMainThreadOnly());
+//!   // メインスレッドジョブ（ファクトリ関数使用）
+//!   JobSystem::Get().SubmitJob(JobDesc::MainThread([]{ UploadToGPU(); }));
 //!
-//!   // キャンセル可能ジョブ
-//!   auto token = std::make_shared<CancelToken>();
-//!   JobSystem::Get().SubmitJob(
-//!       JobDesc().SetCancellableFunction([](const CancelToken& ct) {
+//!   // 高優先度/低優先度ジョブ
+//!   JobSystem::Get().SubmitJob(JobDesc::HighPriority([]{ CriticalWork(); }));
+//!   JobSystem::Get().SubmitJob(JobDesc::LowPriority([]{ BackgroundWork(); }));
+//!
+//!   // キャンセル可能ジョブ（ファクトリ関数使用）
+//!   CancelTokenPtr token;
+//!   auto handle = JobSystem::Get().SubmitJob(
+//!       JobDesc::Cancellable([](const CancelToken& ct) {
 //!           while (!ct.IsCancelled()) { DoWork(); }
-//!       }).SetCancelToken(token));
+//!       }, &token));
 //!   token->Cancel();  // キャンセル要求
+//!
+//!   // 結果チェック
+//!   handle.Wait();
+//!   if (handle.HasError()) { /* エラー処理 */ }
 //!
 //!   // ゲームループ統合
 //!   void GameLoop() {
@@ -235,10 +416,17 @@ private:
 //!   }
 //! @endcode
 //============================================================================
-class JobSystem final : private NonCopyableNonMovable
+class JobSystem final : public IJobSystem
 {
 public:
-    static JobSystem& Get() noexcept {
+    //! @brief インターフェース経由でアクセス（推奨）
+    static IJobSystem& Get() noexcept {
+        assert(instance_ && "JobSystem::Create() must be called first");
+        return *instance_;
+    }
+
+    //! @brief 具象クラスでアクセス（プロファイリング等）
+    static JobSystem& GetConcrete() noexcept {
         assert(instance_ && "JobSystem::Create() must be called first");
         return *instance_;
     }
@@ -248,87 +436,34 @@ public:
     [[nodiscard]] static bool IsCreated() noexcept { return instance_ != nullptr; }
 
     //------------------------------------------------------------------------
-    //! @name ジョブ投入
+    // IJobSystem 実装
     //------------------------------------------------------------------------
-    //!@{
 
-    //! @brief 単純なジョブを投入（Fire-and-forget）
-    //! @param job 実行する関数
-    //! @param priority 優先度
-    void Submit(JobFunction job, JobPriority priority = JobPriority::Normal);
+    void Submit(JobFunction job, JobPriority priority = JobPriority::Normal) override;
+    [[nodiscard]] JobHandle SubmitJob(JobDesc desc) override;
+    [[nodiscard]] std::vector<JobHandle> SubmitJobs(std::vector<JobDesc> descs) override;
 
-    //! @brief ジョブを投入しハンドルを取得
-    //! @param desc ジョブ記述子
-    //! @return ジョブハンドル（依存関係設定や待機に使用）
-    [[nodiscard]] JobHandle SubmitJob(JobDesc desc);
+    uint32_t ProcessMainThreadJobs(uint32_t maxJobs = 0) override;
+    [[nodiscard]] bool IsMainThread() const noexcept override;
 
-    //! @brief 複数ジョブを一括投入
-    //! @param descs ジョブ記述子の配列
-    //! @return ジョブハンドルの配列
-    [[nodiscard]] std::vector<JobHandle> SubmitJobs(std::vector<JobDesc> descs);
+    void BeginFrame() override;
+    void EndFrame() override;
+    void WaitAll() override;
 
-    //!@}
+    [[nodiscard]] JobHandle ParallelFor(uint32_t begin, uint32_t end,
+                                        const std::function<void(uint32_t)>& func,
+                                        uint32_t granularity = 0) override;
+    [[nodiscard]] JobHandle ParallelForRange(uint32_t begin, uint32_t end,
+                                             const std::function<void(uint32_t, uint32_t)>& func,
+                                             uint32_t granularity = 0) override;
 
-    //------------------------------------------------------------------------
-    //! @name メインスレッドジョブ
-    //------------------------------------------------------------------------
-    //!@{
-
-    //! @brief メインスレッドジョブを処理（メインスレッドから呼び出し）
-    //! @param maxJobs 処理する最大ジョブ数（0で全て）
-    //! @return 処理したジョブ数
-    uint32_t ProcessMainThreadJobs(uint32_t maxJobs = 0);
-
-    //! @brief 現在のスレッドがメインスレッドか
-    [[nodiscard]] bool IsMainThread() const noexcept;
-
-    //!@}
+    [[nodiscard]] uint32_t GetWorkerCount() const noexcept override;
+    [[nodiscard]] bool IsWorkerThread() const noexcept override;
+    [[nodiscard]] uint32_t GetPendingJobCount() const noexcept override;
+    [[nodiscard]] uint32_t GetMainThreadJobCount() const noexcept override;
 
     //------------------------------------------------------------------------
-    //! @name フレーム同期
-    //------------------------------------------------------------------------
-    //!@{
-
-    //! @brief フレーム開始（フレームカウンターをリセット）
-    void BeginFrame();
-
-    //! @brief フレーム終了（High優先度ジョブの完了を待機）
-    void EndFrame();
-
-    //! @brief 全ジョブの完了を待機（シーン遷移時など）
-    void WaitAll();
-
-    //!@}
-
-    //------------------------------------------------------------------------
-    //! @name 並列ループ
-    //------------------------------------------------------------------------
-    //!@{
-
-    void ParallelFor(uint32_t begin, uint32_t end,
-                     const std::function<void(uint32_t)>& func,
-                     uint32_t granularity = 0);
-
-    void ParallelForRange(uint32_t begin, uint32_t end,
-                          const std::function<void(uint32_t, uint32_t)>& func,
-                          uint32_t granularity = 0);
-
-    //!@}
-
-    //------------------------------------------------------------------------
-    //! @name 状態取得
-    //------------------------------------------------------------------------
-    //!@{
-
-    [[nodiscard]] uint32_t GetWorkerCount() const noexcept;
-    [[nodiscard]] bool IsWorkerThread() const noexcept;
-    [[nodiscard]] uint32_t GetPendingJobCount() const noexcept;
-    [[nodiscard]] uint32_t GetMainThreadJobCount() const noexcept;
-
-    //!@}
-
-    //------------------------------------------------------------------------
-    //! @name プロファイリング（デバッグビルドのみ）
+    //! @name プロファイリング（デバッグビルドのみ、具象クラス専用）
     //------------------------------------------------------------------------
     //!@{
 
@@ -350,7 +485,7 @@ public:
 
     //!@}
 
-    ~JobSystem();
+    ~JobSystem() override;
 
 private:
     JobSystem() = default;
