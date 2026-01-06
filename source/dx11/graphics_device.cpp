@@ -57,20 +57,13 @@ void GraphicsDevice::Shutdown() noexcept
     // GraphicsContextは既にApplication::Shutdown()で解放済み
     // ここでは冗長な呼び出しは行わない
 
-#ifdef _DEBUG
-    // デバッグビルド時、解放前にライブオブジェクトをレポート
-    if (device_) {
-        ComPtr<ID3D11Debug> debug;
-        if (SUCCEEDED(device_.As(&debug))) {
-            LOG_INFO("[GraphicsDevice] ライブオブジェクトレポート:");
-            // D3D11_RLDO_SUMMARY: サマリーを表示
-            // D3D11_RLDO_DETAIL: 詳細を表示
-            debug->ReportLiveDeviceObjects(D3D11_RLDO_DETAIL);
-        }
-    }
-#endif
-
     device_.Reset();
+
+#ifdef _DEBUG
+    // Note: デバイス解放後はライブオブジェクトレポートは不可
+    // リソースリークの検出はDXGI Debug Layer経由で行う
+    LOG_INFO("[GraphicsDevice] デバイス解放完了");
+#endif
 }
 
 //----------------------------------------------------------------------------

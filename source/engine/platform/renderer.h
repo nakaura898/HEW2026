@@ -113,11 +113,12 @@ private:
 
     static inline std::unique_ptr<Renderer> instance_ = nullptr;
 
-    bool CreateRenderTargets(uint32_t width, uint32_t height);
+    bool CreateRenderTargets(uint32_t colorWidth, uint32_t colorHeight,
+                             uint32_t depthWidth, uint32_t depthHeight);
 
     std::unique_ptr<SwapChain> swapChain_;
     TexturePtr colorBuffer_;   //!< 固定解像度カラーバッファ
-    TexturePtr depthBuffer_;   //!< 固定解像度深度バッファ
+    TexturePtr depthBuffer_;   //!< バックバッファサイズ深度バッファ
 
     uint32_t renderWidth_ = 0;   //!< レンダリング解像度幅
     uint32_t renderHeight_ = 0;  //!< レンダリング解像度高さ

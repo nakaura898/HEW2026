@@ -112,6 +112,13 @@ void Game::Shutdown() noexcept
         currentScene_.reset();
     }
 
+    // パイプラインからすべてのステートをアンバインド（リソース解放前に必須）
+    auto* d3dCtx = GraphicsContext::Get().GetContext();
+    if (d3dCtx) {
+        d3dCtx->ClearState();
+        d3dCtx->Flush();
+    }
+
     // 逆順でシャットダウン
 #ifdef _DEBUG
     CircleRenderer::Get().Shutdown();
