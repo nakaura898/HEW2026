@@ -114,7 +114,31 @@ public:
     using Ptr = std::unique_ptr<ViewWrapper>;
 
     //----------------------------------------------------------
-    //! @name   生成（汎用）
+    //! @name   直接生成（ComPtr返却、ラッパー不要時に使用）
+    //----------------------------------------------------------
+    //!@{
+
+    //! Texture2DからComPtrを直接生成（効率的）
+    [[nodiscard]] static ComPtr<ViewType> CreateViewFromTexture2D(
+        ID3D11Texture2D* texture,
+        const DescType* desc = nullptr)
+    {
+        return CreateViewDirect(texture, desc, "CreateViewFromTexture2D");
+    }
+
+    //! バッファからComPtrを直接生成（効率的、DSV非対応）
+    template<typename T = ViewType>
+    [[nodiscard]] static std::enable_if_t<ViewTraits<T>::SupportsBuffer, ComPtr<ViewType>>
+    CreateViewFromBuffer(
+        ID3D11Buffer* buffer,
+        const DescType* desc = nullptr)
+    {
+        return CreateViewDirect(buffer, desc, "CreateViewFromBuffer");
+    }
+
+    //!@}
+    //----------------------------------------------------------
+    //! @name   生成（汎用、ラッパー返却）
     //----------------------------------------------------------
     //!@{
 
@@ -246,7 +270,35 @@ public:
 private:
     ViewWrapper() = default;
 
-    //! リソースからビュー作成の共通実装
+    //! ComPtrを直接返す共通実装（ラッパー生成なし）
+    template<typename ResourceType>
+    [[nodiscard]] static ComPtr<ViewType> CreateViewDirect(
+        ResourceType* resource,
+        const DescType* desc,
+        const char* methodName)
+    {
+        if (!resource) {
+            LOG_ERROR(std::string("ViewWrapper<") + Traits::Name + ">::" + methodName + " - resource is null");
+            return nullptr;
+        }
+
+        auto* device = GetD3D11Device();
+        if (!device) {
+            LOG_ERROR(std::string("ViewWrapper<") + Traits::Name + ">::" + methodName + " - device is null");
+            return nullptr;
+        }
+
+        ComPtr<ViewType> view;
+        HRESULT hr = Traits::Create(device, resource, desc, view.GetAddressOf());
+        if (FAILED(hr)) {
+            LOG_ERROR(std::string("ViewWrapper<") + Traits::Name + ">::" + methodName + " failed");
+            return nullptr;
+        }
+
+        return view;
+    }
+
+    //! リソースからビュー作成の共通実装（ラッパー返却）
     template<typename ResourceType>
     [[nodiscard]] static Ptr CreateFromResourceImpl(
         ResourceType* resource,

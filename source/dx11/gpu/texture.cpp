@@ -5,10 +5,7 @@
 #include "texture.h"
 #include "dx11/gpu_common.h"
 #include "dx11/graphics_device.h"
-#include "dx11/view/shader_resource_view.h"
-#include "dx11/view/render_target_view.h"
-#include "dx11/view/depth_stencil_view.h"
-#include "dx11/view/unordered_access_view.h"
+#include "dx11/view/view_wrapper.h"  // 統合ビューラッパー
 #include "common/logging/logging.h"
 #include <string>
 
@@ -51,10 +48,9 @@ std::shared_ptr<Texture> Texture::Create2D(
     HRESULT hr = device->CreateTexture2D(&d3dDesc, pInitData, texture.GetAddressOf());
     RETURN_NULL_IF_FAILED(hr, "[Texture] 2Dテクスチャ作成失敗");
 
-    // SRV作成
-    auto srvWrapper = ShaderResourceView::CreateFromTexture2D(texture.Get());
-    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] SRV作成失敗");
-    ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
+    // SRV作成（直接ComPtr生成）
+    ComPtr<ID3D11ShaderResourceView> srv = ShaderResourceView::CreateViewFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(srv.Get(), "[Texture] SRV作成失敗");
 
     return std::make_shared<Texture>(
         std::move(texture), std::move(srv), nullptr, nullptr, nullptr, desc);
@@ -86,15 +82,13 @@ std::shared_ptr<Texture> Texture::CreateRenderTarget(
     HRESULT hr = device->CreateTexture2D(&d3dDesc, nullptr, texture.GetAddressOf());
     RETURN_NULL_IF_FAILED(hr, "[Texture] レンダーターゲット作成失敗");
 
-    // SRV作成
-    auto srvWrapper = ShaderResourceView::CreateFromTexture2D(texture.Get());
-    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] SRV作成失敗");
-    ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
+    // SRV作成（直接ComPtr生成）
+    ComPtr<ID3D11ShaderResourceView> srv = ShaderResourceView::CreateViewFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(srv.Get(), "[Texture] SRV作成失敗");
 
-    // RTV作成
-    auto rtvWrapper = RenderTargetView::CreateFromTexture2D(texture.Get());
-    RETURN_NULL_IF_NULL(rtvWrapper, "[Texture] RTV作成失敗");
-    ComPtr<ID3D11RenderTargetView> rtv = rtvWrapper->Detach();
+    // RTV作成（直接ComPtr生成）
+    ComPtr<ID3D11RenderTargetView> rtv = RenderTargetView::CreateViewFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(rtv.Get(), "[Texture] RTV作成失敗");
 
     return std::make_shared<Texture>(
         std::move(texture), std::move(srv), std::move(rtv), nullptr, nullptr, desc);
@@ -216,15 +210,13 @@ std::shared_ptr<Texture> Texture::CreateUav(
     HRESULT hr = device->CreateTexture2D(&d3dDesc, nullptr, texture.GetAddressOf());
     RETURN_NULL_IF_FAILED(hr, "[Texture] UAVテクスチャ作成失敗");
 
-    // SRV作成
-    auto srvWrapper = ShaderResourceView::CreateFromTexture2D(texture.Get());
-    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] SRV作成失敗");
-    ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
+    // SRV作成（直接ComPtr生成）
+    ComPtr<ID3D11ShaderResourceView> srv = ShaderResourceView::CreateViewFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(srv.Get(), "[Texture] SRV作成失敗");
 
-    // UAV作成
-    auto uavWrapper = UnorderedAccessView::CreateFromTexture2D(texture.Get());
-    RETURN_NULL_IF_NULL(uavWrapper, "[Texture] UAV作成失敗");
-    ComPtr<ID3D11UnorderedAccessView> uav = uavWrapper->Detach();
+    // UAV作成（直接ComPtr生成）
+    ComPtr<ID3D11UnorderedAccessView> uav = UnorderedAccessView::CreateViewFromTexture2D(texture.Get());
+    RETURN_NULL_IF_NULL(uav.Get(), "[Texture] UAV作成失敗");
 
     return std::make_shared<Texture>(
         std::move(texture), std::move(srv), nullptr, nullptr, std::move(uav), desc);
