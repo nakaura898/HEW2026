@@ -161,9 +161,15 @@ void Game::Shutdown() noexcept
 //----------------------------------------------------------------------------
 void Game::Update()
 {
+    // フレーム開始（ジョブカウンターリセット）
+    JobSystem::Get().BeginFrame();
+
     if (currentScene_) {
         currentScene_->Update();
     }
+
+    // メインスレッドジョブを処理
+    JobSystem::Get().ProcessMainThreadJobs();
 }
 
 //----------------------------------------------------------------------------
@@ -177,5 +183,8 @@ void Game::Render()
 //----------------------------------------------------------------------------
 void Game::EndFrame()
 {
+    // フレーム内ジョブの完了を待機
+    JobSystem::Get().EndFrame();
+
     SceneManager::Get().ApplyPendingChange(currentScene_);
 }
