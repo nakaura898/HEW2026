@@ -16,10 +16,12 @@
 
 #include <thread>
 #include <mutex>
+#include <shared_mutex>
 #include <condition_variable>
 #include <vector>
 #include <deque>
 #include <algorithm>
+#include <chrono>
 
 // マクロ干渉回避用
 #undef max
@@ -41,7 +43,6 @@ public:
         if (count_ > 0) {
             --count_;
             if (count_ == 0) {
-                // 待機中のスレッドに通知
                 cv_.notify_all();
             }
         }
@@ -98,13 +99,20 @@ void JobCounter::Reset(uint32_t count) noexcept { impl_->Reset(count); }
 class JobSystem::Impl
 {
 public:
-    //! @brief ジョブデータ
-    struct Job {
+    //! @brief 内部ジョブデータ
+    struct InternalJob {
         JobFunction function;
+        CancellableJobFunction cancellableFunction;
         JobCounterPtr counter;
+        std::vector<JobCounterPtr> dependencies;
+        CancelTokenPtr cancelToken;
+        bool mainThreadOnly = false;
+#ifdef _DEBUG
+        std::string_view name;
+#endif
     };
 
-    Impl() = default;
+    Impl() : mainThreadId_(std::this_thread::get_id()) {}
     ~Impl() { Shutdown(); }
 
     void Initialize(uint32_t numWorkers)
@@ -117,6 +125,9 @@ public:
         }
 
         running_ = true;
+
+        // Work-Stealing用のローカルキューを各ワーカーに割り当て
+        localQueues_.resize(numWorkers);
         workers_.reserve(numWorkers);
 
         for (uint32_t i = 0; i < numWorkers; ++i) {
@@ -130,28 +141,32 @@ public:
     {
         if (!running_) return;
 
-        // シャットダウンを通知
         {
-            std::unique_lock<std::mutex> lock(mutex_);
+            std::unique_lock<std::mutex> lock(globalMutex_);
             running_ = false;
         }
-        condition_.notify_all();
+        globalCondition_.notify_all();
 
-        // 全ワーカーの終了を待機
         for (auto& worker : workers_) {
             if (worker.joinable()) {
                 worker.join();
             }
         }
         workers_.clear();
+        localQueues_.clear();
 
         // 残っているジョブをクリア
         for (int i = 0; i < static_cast<int>(JobPriority::Count); ++i) {
-            queues_[i].clear();
+            globalQueues_[i].clear();
         }
+        mainThreadQueue_.clear();
 
         LOG_INFO("[JobSystem] シャットダウン完了");
     }
+
+    //------------------------------------------------------------------------
+    // 基本ジョブ投入
+    //------------------------------------------------------------------------
 
     void Submit(JobFunction job, JobPriority priority)
     {
@@ -160,12 +175,10 @@ public:
 
     void Submit(JobFunction job, JobCounterPtr counter, JobPriority priority)
     {
-        {
-            std::unique_lock<std::mutex> lock(mutex_);
-            queues_[static_cast<int>(priority)].push_back({std::move(job), std::move(counter)});
-            ++pendingJobs_;
-        }
-        condition_.notify_one();
+        InternalJob internalJob;
+        internalJob.function = std::move(job);
+        internalJob.counter = std::move(counter);
+        EnqueueJob(std::move(internalJob), priority, false);
     }
 
     JobCounterPtr SubmitAndGetCounter(JobFunction job, JobPriority priority)
@@ -175,6 +188,130 @@ public:
         return counter;
     }
 
+    //------------------------------------------------------------------------
+    // 高度なジョブ投入
+    //------------------------------------------------------------------------
+
+    JobHandle SubmitJob(JobDesc desc)
+    {
+        auto counter = std::make_shared<JobCounter>(1);
+
+        InternalJob job;
+        job.function = std::move(desc.function_);
+        job.cancellableFunction = std::move(desc.cancellableFunction_);
+        job.counter = counter;
+        job.dependencies = std::move(desc.dependencies_);
+        job.cancelToken = std::move(desc.cancelToken_);
+        job.mainThreadOnly = desc.mainThreadOnly_;
+#ifdef _DEBUG
+        job.name = desc.name_;
+#endif
+
+        // フレームカウンターに追加（High優先度のみ）
+        if (desc.priority_ == JobPriority::High) {
+            std::unique_lock<std::mutex> lock(frameMutex_);
+            if (frameCounter_) {
+                frameCounter_->Reset(frameCounter_->GetCount() + 1);
+            }
+        }
+
+        EnqueueJob(std::move(job), desc.priority_, desc.mainThreadOnly_);
+        return JobHandle(counter);
+    }
+
+    std::vector<JobHandle> SubmitJobs(std::vector<JobDesc> descs)
+    {
+        std::vector<JobHandle> handles;
+        handles.reserve(descs.size());
+        for (auto& desc : descs) {
+            handles.push_back(SubmitJob(std::move(desc)));
+        }
+        return handles;
+    }
+
+    //------------------------------------------------------------------------
+    // メインスレッドジョブ
+    //------------------------------------------------------------------------
+
+    uint32_t ProcessMainThreadJobs(uint32_t maxJobs)
+    {
+        if (std::this_thread::get_id() != mainThreadId_) {
+            return 0;
+        }
+
+        uint32_t processed = 0;
+        while (maxJobs == 0 || processed < maxJobs) {
+            InternalJob job;
+            {
+                std::unique_lock<std::mutex> lock(mainThreadMutex_);
+                if (mainThreadQueue_.empty()) break;
+                job = std::move(mainThreadQueue_.front());
+                mainThreadQueue_.pop_front();
+            }
+
+            ExecuteJob(job);
+            ++processed;
+        }
+        return processed;
+    }
+
+    bool IsMainThread() const noexcept
+    {
+        return std::this_thread::get_id() == mainThreadId_;
+    }
+
+    uint32_t GetMainThreadJobCount() const noexcept
+    {
+        std::unique_lock<std::mutex> lock(mainThreadMutex_);
+        return static_cast<uint32_t>(mainThreadQueue_.size());
+    }
+
+    //------------------------------------------------------------------------
+    // フレーム同期
+    //------------------------------------------------------------------------
+
+    void BeginFrame()
+    {
+        std::unique_lock<std::mutex> lock(frameMutex_);
+        frameCounter_ = std::make_shared<JobCounter>(0);
+    }
+
+    void EndFrame()
+    {
+        // メインスレッドジョブを処理
+        ProcessMainThreadJobs(0);
+
+        // フレームカウンターが完了するまで待機
+        JobCounterPtr counter;
+        {
+            std::unique_lock<std::mutex> lock(frameMutex_);
+            counter = frameCounter_;
+        }
+        if (counter) {
+            counter->Wait();
+        }
+    }
+
+    void WaitAll()
+    {
+        // 全キューが空になるまで待機
+        while (true) {
+            ProcessMainThreadJobs(0);
+
+            std::unique_lock<std::mutex> lock(globalMutex_);
+            if (!HasPendingJobs() && mainThreadQueue_.empty()) {
+                break;
+            }
+            // 少し待ってから再チェック
+            lock.unlock();
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+    }
+
+    //------------------------------------------------------------------------
+    // 並列ループ
+    //------------------------------------------------------------------------
+
     void ParallelFor(uint32_t begin, uint32_t end,
                      const std::function<void(uint32_t)>& func,
                      uint32_t granularity)
@@ -183,17 +320,14 @@ public:
 
         uint32_t count = end - begin;
 
-        // 粒度を自動計算（ワーカー数の2倍程度に分割）
         if (granularity == 0) {
             uint32_t numJobs = std::max(1u, static_cast<uint32_t>(workers_.size()) * 2);
             granularity = std::max(1u, count / numJobs);
         }
 
-        // ジョブ数を計算
         uint32_t numJobs = (count + granularity - 1) / granularity;
         auto counter = std::make_shared<JobCounter>(numJobs);
 
-        // 各範囲をジョブとして投入
         for (uint32_t i = 0; i < numJobs; ++i) {
             uint32_t jobBegin = begin + i * granularity;
             uint32_t jobEnd = std::min(jobBegin + granularity, end);
@@ -205,7 +339,6 @@ public:
             }, counter, JobPriority::Normal);
         }
 
-        // 全ジョブの完了を待機
         counter->Wait();
     }
 
@@ -217,17 +350,14 @@ public:
 
         uint32_t count = end - begin;
 
-        // 粒度を自動計算
         if (granularity == 0) {
             uint32_t numJobs = std::max(1u, static_cast<uint32_t>(workers_.size()) * 2);
             granularity = std::max(1u, count / numJobs);
         }
 
-        // ジョブ数を計算
         uint32_t numJobs = (count + granularity - 1) / granularity;
         auto counter = std::make_shared<JobCounter>(numJobs);
 
-        // 各範囲をジョブとして投入
         for (uint32_t i = 0; i < numJobs; ++i) {
             uint32_t jobBegin = begin + i * granularity;
             uint32_t jobEnd = std::min(jobBegin + granularity, end);
@@ -237,9 +367,12 @@ public:
             }, counter, JobPriority::Normal);
         }
 
-        // 全ジョブの完了を待機
         counter->Wait();
     }
+
+    //------------------------------------------------------------------------
+    // 状態取得
+    //------------------------------------------------------------------------
 
     [[nodiscard]] uint32_t GetWorkerCount() const noexcept
     {
@@ -262,24 +395,111 @@ public:
         return pendingJobs_.load(std::memory_order_acquire);
     }
 
+    //------------------------------------------------------------------------
+    // プロファイリング
+    //------------------------------------------------------------------------
+
+#ifdef _DEBUG
+    void SetProfileCallback(JobSystem::ProfileCallback callback)
+    {
+        std::unique_lock<std::mutex> lock(profileMutex_);
+        profileCallback_ = std::move(callback);
+    }
+
+    JobSystem::Stats GetStats() const noexcept
+    {
+        return stats_;
+    }
+#endif
+
 private:
+    void EnqueueJob(InternalJob job, JobPriority priority, bool mainThread)
+    {
+        if (mainThread) {
+            std::unique_lock<std::mutex> lock(mainThreadMutex_);
+            mainThreadQueue_.push_back(std::move(job));
+        } else {
+            std::unique_lock<std::mutex> lock(globalMutex_);
+            globalQueues_[static_cast<int>(priority)].push_back(std::move(job));
+            ++pendingJobs_;
+        }
+        globalCondition_.notify_one();
+    }
+
+    void ExecuteJob(InternalJob& job)
+    {
+        // 依存関係をチェック
+        for (const auto& dep : job.dependencies) {
+            if (dep) dep->Wait();
+        }
+
+        // キャンセルチェック
+        if (job.cancelToken && job.cancelToken->IsCancelled()) {
+            if (job.counter) job.counter->Decrement();
+            return;
+        }
+
+#ifdef _DEBUG
+        auto startTime = std::chrono::high_resolution_clock::now();
+#endif
+
+        // ジョブ実行
+        if (job.cancellableFunction && job.cancelToken) {
+            job.cancellableFunction(*job.cancelToken);
+        } else if (job.function) {
+            job.function();
+        }
+
+#ifdef _DEBUG
+        auto endTime = std::chrono::high_resolution_clock::now();
+        float durationMs = std::chrono::duration<float, std::milli>(endTime - startTime).count();
+
+        // 統計更新
+        ++stats_.totalJobsExecuted;
+        stats_.averageJobDurationMs =
+            (stats_.averageJobDurationMs * (stats_.totalJobsExecuted - 1) + durationMs)
+            / stats_.totalJobsExecuted;
+
+        // プロファイルコールバック
+        if (profileCallback_ && !job.name.empty()) {
+            std::unique_lock<std::mutex> lock(profileMutex_);
+            if (profileCallback_) {
+                profileCallback_(job.name, durationMs);
+            }
+        }
+#endif
+
+        // カウンターをデクリメント
+        if (job.counter) {
+            job.counter->Decrement();
+        }
+
+        // フレームカウンターをデクリメント
+        {
+            std::unique_lock<std::mutex> lock(frameMutex_);
+            if (frameCounter_) {
+                frameCounter_->Decrement();
+            }
+        }
+    }
+
     void WorkerThread(uint32_t workerId)
     {
-        // スレッド名を設定（デバッグ用）
-        #if defined(_WIN32) && defined(_DEBUG)
-            std::wstring name = L"JobWorker_" + std::to_wstring(workerId);
-            SetThreadDescription(GetCurrentThread(), name.c_str());
-        #else
-            (void)workerId;
-        #endif
+#if defined(_WIN32) && defined(_DEBUG)
+        std::wstring name = L"JobWorker_" + std::to_wstring(workerId);
+        SetThreadDescription(GetCurrentThread(), name.c_str());
+#else
+        (void)workerId;
+#endif
 
         while (true) {
-            Job job;
-            {
-                std::unique_lock<std::mutex> lock(mutex_);
+            InternalJob job;
+            bool gotJob = false;
 
-                // ジョブが来るか、シャットダウンされるまで待機
-                condition_.wait(lock, [this] {
+            {
+                std::unique_lock<std::mutex> lock(globalMutex_);
+
+                globalCondition_.wait(lock, [this] {
                     return !running_ || HasPendingJobs();
                 });
 
@@ -287,22 +507,19 @@ private:
                     return;
                 }
 
-                // 優先度順にジョブを取得
-                if (!TryPopJob(job)) {
-                    continue;
+                gotJob = TryPopJob(job);
+                if (gotJob) {
+                    --pendingJobs_;
                 }
-
-                --pendingJobs_;
             }
 
-            // ジョブを実行
-            if (job.function) {
-                job.function();
+            // Work-Stealing: 自分のキューが空なら他から盗む
+            if (!gotJob) {
+                gotJob = TryStealJob(job, workerId);
             }
 
-            // カウンターをデクリメント
-            if (job.counter) {
-                job.counter->Decrement();
+            if (gotJob) {
+                ExecuteJob(job);
             }
         }
     }
@@ -310,32 +527,77 @@ private:
     [[nodiscard]] bool HasPendingJobs() const noexcept
     {
         for (int i = 0; i < static_cast<int>(JobPriority::Count); ++i) {
-            if (!queues_[i].empty()) {
+            if (!globalQueues_[i].empty()) {
                 return true;
             }
         }
         return false;
     }
 
-    bool TryPopJob(Job& outJob)
+    bool TryPopJob(InternalJob& outJob)
     {
-        // 優先度順（High → Normal → Low）でジョブを取得
         for (int i = 0; i < static_cast<int>(JobPriority::Count); ++i) {
-            if (!queues_[i].empty()) {
-                outJob = std::move(queues_[i].front());
-                queues_[i].pop_front();
+            if (!globalQueues_[i].empty()) {
+                outJob = std::move(globalQueues_[i].front());
+                globalQueues_[i].pop_front();
                 return true;
             }
         }
         return false;
     }
 
+    bool TryStealJob(InternalJob& outJob, uint32_t thiefId)
+    {
+        // 他のワーカーのローカルキューから盗む
+        for (size_t i = 0; i < localQueues_.size(); ++i) {
+            if (i == thiefId) continue;
+
+            std::unique_lock<std::mutex> lock(localQueueMutexes_[i], std::try_to_lock);
+            if (!lock.owns_lock()) continue;
+
+            if (!localQueues_[i].empty()) {
+                outJob = std::move(localQueues_[i].back());
+                localQueues_[i].pop_back();
+#ifdef _DEBUG
+                ++stats_.totalJobsStolen;
+#endif
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // スレッド管理
     std::vector<std::thread> workers_;
-    std::deque<Job> queues_[static_cast<int>(JobPriority::Count)];
-    std::mutex mutex_;
-    std::condition_variable condition_;
+    std::thread::id mainThreadId_;
+
+    // グローバルキュー（優先度別）
+    std::deque<InternalJob> globalQueues_[static_cast<int>(JobPriority::Count)];
+    mutable std::mutex globalMutex_;
+    std::condition_variable globalCondition_;
+
+    // ローカルキュー（Work-Stealing用）
+    std::vector<std::deque<InternalJob>> localQueues_;
+    std::mutex localQueueMutexes_[32];  // 最大32ワーカー
+
+    // メインスレッドキュー
+    std::deque<InternalJob> mainThreadQueue_;
+    mutable std::mutex mainThreadMutex_;
+
+    // フレーム同期
+    JobCounterPtr frameCounter_;
+    std::mutex frameMutex_;
+
+    // 状態
     std::atomic<uint32_t> pendingJobs_{0};
     bool running_ = false;
+
+#ifdef _DEBUG
+    // プロファイリング
+    JobSystem::ProfileCallback profileCallback_;
+    std::mutex profileMutex_;
+    mutable JobSystem::Stats stats_;
+#endif
 };
 
 //----------------------------------------------------------------------------
@@ -375,7 +637,7 @@ void JobSystem::Shutdown()
 }
 
 //----------------------------------------------------------------------------
-// ジョブ投入
+// 基本ジョブ投入
 //----------------------------------------------------------------------------
 
 void JobSystem::Submit(JobFunction job, JobPriority priority)
@@ -391,6 +653,58 @@ void JobSystem::Submit(JobFunction job, JobCounterPtr counter, JobPriority prior
 JobCounterPtr JobSystem::SubmitAndGetCounter(JobFunction job, JobPriority priority)
 {
     return impl_->SubmitAndGetCounter(std::move(job), priority);
+}
+
+//----------------------------------------------------------------------------
+// 高度なジョブ投入
+//----------------------------------------------------------------------------
+
+JobHandle JobSystem::SubmitJob(JobDesc desc)
+{
+    return impl_->SubmitJob(std::move(desc));
+}
+
+std::vector<JobHandle> JobSystem::SubmitJobs(std::vector<JobDesc> descs)
+{
+    return impl_->SubmitJobs(std::move(descs));
+}
+
+//----------------------------------------------------------------------------
+// メインスレッドジョブ
+//----------------------------------------------------------------------------
+
+uint32_t JobSystem::ProcessMainThreadJobs(uint32_t maxJobs)
+{
+    return impl_->ProcessMainThreadJobs(maxJobs);
+}
+
+bool JobSystem::IsMainThread() const noexcept
+{
+    return impl_ ? impl_->IsMainThread() : false;
+}
+
+uint32_t JobSystem::GetMainThreadJobCount() const noexcept
+{
+    return impl_ ? impl_->GetMainThreadJobCount() : 0;
+}
+
+//----------------------------------------------------------------------------
+// フレーム同期
+//----------------------------------------------------------------------------
+
+void JobSystem::BeginFrame()
+{
+    impl_->BeginFrame();
+}
+
+void JobSystem::EndFrame()
+{
+    impl_->EndFrame();
+}
+
+void JobSystem::WaitAll()
+{
+    impl_->WaitAll();
 }
 
 //----------------------------------------------------------------------------
@@ -429,3 +743,19 @@ uint32_t JobSystem::GetPendingJobCount() const noexcept
 {
     return impl_ ? impl_->GetPendingJobCount() : 0;
 }
+
+//----------------------------------------------------------------------------
+// プロファイリング
+//----------------------------------------------------------------------------
+
+#ifdef _DEBUG
+void JobSystem::SetProfileCallback(ProfileCallback callback)
+{
+    impl_->SetProfileCallback(std::move(callback));
+}
+
+JobSystem::Stats JobSystem::GetStats() const noexcept
+{
+    return impl_ ? impl_->GetStats() : Stats{};
+}
+#endif

@@ -10,6 +10,8 @@
 #include <memory>
 #include <cstdint>
 #include <cassert>
+#include <vector>
+#include <string_view>
 
 //! @brief ジョブ優先度
 enum class JobPriority : uint8_t {
@@ -20,49 +22,50 @@ enum class JobPriority : uint8_t {
 };
 
 //============================================================================
+//! @brief キャンセルトークン
+//!
+//! ジョブのキャンセル要求を伝達する。
+//! シーン遷移やロード中断時に使用。
+//============================================================================
+class CancelToken
+{
+public:
+    CancelToken() = default;
+
+    //! @brief キャンセル要求
+    void Cancel() noexcept { cancelled_.store(true, std::memory_order_release); }
+
+    //! @brief キャンセルされたか
+    [[nodiscard]] bool IsCancelled() const noexcept {
+        return cancelled_.load(std::memory_order_acquire);
+    }
+
+    //! @brief リセット（再利用時）
+    void Reset() noexcept { cancelled_.store(false, std::memory_order_release); }
+
+private:
+    std::atomic<bool> cancelled_{false};
+};
+
+using CancelTokenPtr = std::shared_ptr<CancelToken>;
+
+//============================================================================
 //! @brief ジョブカウンター（依存関係管理用）
-//!
-//! 複数のジョブが完了するまで待機するために使用。
-//! カウンターが0になると待機中のスレッドに通知。
-//!
-//! @note 使用例:
-//! @code
-//!   auto counter = std::make_shared<JobCounter>(3);
-//!   JobSystem::Get().Submit([]{ Work1(); }, counter);
-//!   JobSystem::Get().Submit([]{ Work2(); }, counter);
-//!   JobSystem::Get().Submit([]{ Work3(); }, counter);
-//!   counter->Wait();  // 3つ全て完了まで待機
-//! @endcode
 //============================================================================
 class JobCounter
 {
 public:
     JobCounter();
-
-    //! @brief 初期カウント指定コンストラクタ
-    //! @param initialCount 初期カウント値
     explicit JobCounter(uint32_t initialCount);
-
     ~JobCounter();
 
-    // コピー禁止（mutex/condition_variableはコピー不可）
     JobCounter(const JobCounter&) = delete;
     JobCounter& operator=(const JobCounter&) = delete;
 
-    //! @brief カウントをデクリメント（ジョブ完了時に呼び出し）
     void Decrement() noexcept;
-
-    //! @brief カウントが0になるまで待機
     void Wait() const noexcept;
-
-    //! @brief カウントが0かどうか
     [[nodiscard]] bool IsComplete() const noexcept;
-
-    //! @brief 現在のカウント
     [[nodiscard]] uint32_t GetCount() const noexcept;
-
-    //! @brief カウントをリセット
-    //! @param count 新しいカウント値
     void Reset(uint32_t count) noexcept;
 
 private:
@@ -75,6 +78,120 @@ using JobCounterPtr = std::shared_ptr<JobCounter>;
 //! @brief ジョブ関数型
 using JobFunction = std::function<void()>;
 
+//! @brief キャンセル対応ジョブ関数型
+using CancellableJobFunction = std::function<void(const CancelToken&)>;
+
+//============================================================================
+//! @brief ジョブハンドル
+//!
+//! 投入したジョブを追跡し、依存関係の設定やキャンセルに使用。
+//============================================================================
+class JobHandle
+{
+public:
+    JobHandle() = default;
+
+    //! @brief 有効なハンドルか
+    [[nodiscard]] bool IsValid() const noexcept { return counter_ != nullptr; }
+
+    //! @brief ジョブが完了したか
+    [[nodiscard]] bool IsComplete() const noexcept {
+        return counter_ && counter_->IsComplete();
+    }
+
+    //! @brief ジョブの完了を待機
+    void Wait() const noexcept {
+        if (counter_) counter_->Wait();
+    }
+
+    //! @brief 内部カウンター取得（依存関係設定用）
+    [[nodiscard]] JobCounterPtr GetCounter() const noexcept { return counter_; }
+
+private:
+    friend class JobSystem;
+    explicit JobHandle(JobCounterPtr counter) : counter_(std::move(counter)) {}
+    JobCounterPtr counter_;
+};
+
+//============================================================================
+//! @brief ジョブ記述子
+//!
+//! ジョブの詳細設定を行うビルダーパターン。
+//============================================================================
+class JobDesc
+{
+public:
+    JobDesc() = default;
+    explicit JobDesc(JobFunction func) : function_(std::move(func)) {}
+
+    //! @brief ジョブ関数を設定
+    JobDesc& SetFunction(JobFunction func) {
+        function_ = std::move(func);
+        return *this;
+    }
+
+    //! @brief キャンセル対応ジョブ関数を設定
+    JobDesc& SetCancellableFunction(CancellableJobFunction func) {
+        cancellableFunction_ = std::move(func);
+        return *this;
+    }
+
+    //! @brief 優先度を設定
+    JobDesc& SetPriority(JobPriority priority) {
+        priority_ = priority;
+        return *this;
+    }
+
+    //! @brief 依存ジョブを追加（このジョブより先に完了する必要がある）
+    JobDesc& AddDependency(const JobHandle& dependency) {
+        if (dependency.IsValid()) {
+            dependencies_.push_back(dependency.GetCounter());
+        }
+        return *this;
+    }
+
+    //! @brief 複数の依存ジョブを追加
+    JobDesc& AddDependencies(const std::vector<JobHandle>& deps) {
+        for (const auto& dep : deps) {
+            AddDependency(dep);
+        }
+        return *this;
+    }
+
+    //! @brief メインスレッドで実行（レンダリング関連）
+    JobDesc& SetMainThreadOnly(bool mainThread = true) {
+        mainThreadOnly_ = mainThread;
+        return *this;
+    }
+
+    //! @brief キャンセルトークンを設定
+    JobDesc& SetCancelToken(CancelTokenPtr token) {
+        cancelToken_ = std::move(token);
+        return *this;
+    }
+
+    //! @brief デバッグ名を設定（プロファイリング用）
+    JobDesc& SetName([[maybe_unused]] std::string_view name) {
+#ifdef _DEBUG
+        name_ = name;
+#endif
+        return *this;
+    }
+
+private:
+    friend class JobSystem;
+
+    JobFunction function_;
+    CancellableJobFunction cancellableFunction_;
+    JobPriority priority_ = JobPriority::Normal;
+    std::vector<JobCounterPtr> dependencies_;
+    CancelTokenPtr cancelToken_;
+    bool mainThreadOnly_ = false;
+#ifdef _DEBUG
+    std::string_view name_;
+#endif
+};
+
 //============================================================================
 //! @brief ジョブシステム（シングルトン）
 //!
@@ -82,66 +199,103 @@ using JobFunction = std::function<void()>;
 //!
 //! @note 使用例:
 //! @code
-//!   // 単発ジョブ（Fire-and-forget）
+//!   // 単純なジョブ
 //!   JobSystem::Get().Submit([]{ DoWork(); });
 //!
-//!   // 待機可能ジョブ
-//!   auto counter = JobSystem::Get().SubmitAndGetCounter([]{ DoWork(); });
-//!   counter->Wait();
+//!   // 依存関係付きジョブ
+//!   auto job1 = JobSystem::Get().SubmitJob(JobDesc([]{ LoadMesh(); }));
+//!   auto job2 = JobSystem::Get().SubmitJob(
+//!       JobDesc([]{ ProcessMesh(); }).AddDependency(job1));
+//!   job2.Wait();
 //!
-//!   // 複数ジョブを待機
-//!   auto counter = std::make_shared<JobCounter>(3);
-//!   JobSystem::Get().Submit([]{ Work1(); }, counter);
-//!   JobSystem::Get().Submit([]{ Work2(); }, counter);
-//!   JobSystem::Get().Submit([]{ Work3(); }, counter);
-//!   counter->Wait();  // 3つ全て完了まで待機
+//!   // メインスレッドジョブ（レンダリング）
+//!   JobSystem::Get().SubmitJob(
+//!       JobDesc([]{ UploadToGPU(); }).SetMainThreadOnly());
 //!
-//!   // 並列forループ
-//!   JobSystem::Get().ParallelFor(0, 1000, [](uint32_t i) {
-//!       ProcessItem(i);
-//!   });
+//!   // キャンセル可能ジョブ
+//!   auto token = std::make_shared<CancelToken>();
+//!   JobSystem::Get().SubmitJob(
+//!       JobDesc().SetCancellableFunction([](const CancelToken& ct) {
+//!           while (!ct.IsCancelled()) { DoWork(); }
+//!       }).SetCancelToken(token));
+//!   token->Cancel();  // キャンセル要求
+//!
+//!   // ゲームループ統合
+//!   void GameLoop() {
+//!       JobSystem::Get().BeginFrame();
+//!       // ジョブ投入...
+//!       JobSystem::Get().EndFrame();  // フレーム内ジョブ完了待機
+//!   }
 //! @endcode
 //============================================================================
 class JobSystem final : private NonCopyableNonMovable
 {
 public:
-    //! @brief シングルトン取得
     static JobSystem& Get() noexcept {
         assert(instance_ && "JobSystem::Create() must be called first");
         return *instance_;
     }
 
-    //! @brief インスタンス生成
-    //! @param numWorkers ワーカースレッド数（0でCPUコア数-1）
     static void Create(uint32_t numWorkers = 0);
-
-    //! @brief インスタンス破棄
     static void Destroy();
-
-    //! @brief インスタンスが存在するか
     [[nodiscard]] static bool IsCreated() noexcept { return instance_ != nullptr; }
 
     //------------------------------------------------------------------------
-    //! @name ジョブ投入
+    //! @name 基本ジョブ投入（後方互換）
     //------------------------------------------------------------------------
     //!@{
 
-    //! @brief ジョブを投入（Fire-and-forget）
-    //! @param job 実行する関数
-    //! @param priority 優先度
     void Submit(JobFunction job, JobPriority priority = JobPriority::Normal);
-
-    //! @brief ジョブを投入（カウンター付き）
-    //! @param job 実行する関数
-    //! @param counter 完了時にデクリメントするカウンター
-    //! @param priority 優先度
     void Submit(JobFunction job, JobCounterPtr counter, JobPriority priority = JobPriority::Normal);
-
-    //! @brief ジョブを投入し、完了カウンターを取得
-    //! @param job 実行する関数
-    //! @param priority 優先度
-    //! @return 完了待機用カウンター
     [[nodiscard]] JobCounterPtr SubmitAndGetCounter(JobFunction job, JobPriority priority = JobPriority::Normal);
+
+    //!@}
+
+    //------------------------------------------------------------------------
+    //! @name 高度なジョブ投入
+    //------------------------------------------------------------------------
+    //!@{
+
+    //! @brief ジョブ記述子でジョブを投入
+    //! @param desc ジョブ記述子
+    //! @return ジョブハンドル（依存関係設定や待機に使用）
+    [[nodiscard]] JobHandle SubmitJob(JobDesc desc);
+
+    //! @brief 複数ジョブを一括投入
+    //! @param descs ジョブ記述子の配列
+    //! @return ジョブハンドルの配列
+    [[nodiscard]] std::vector<JobHandle> SubmitJobs(std::vector<JobDesc> descs);
+
+    //!@}
+
+    //------------------------------------------------------------------------
+    //! @name メインスレッドジョブ
+    //------------------------------------------------------------------------
+    //!@{
+
+    //! @brief メインスレッドジョブを処理（メインスレッドから呼び出し）
+    //! @param maxJobs 処理する最大ジョブ数（0で全て）
+    //! @return 処理したジョブ数
+    uint32_t ProcessMainThreadJobs(uint32_t maxJobs = 0);
+
+    //! @brief 現在のスレッドがメインスレッドか
+    [[nodiscard]] bool IsMainThread() const noexcept;
+
+    //!@}
+
+    //------------------------------------------------------------------------
+    //! @name フレーム同期
+    //------------------------------------------------------------------------
+    //!@{
+
+    //! @brief フレーム開始（フレームカウンターをリセット）
+    void BeginFrame();
+
+    //! @brief フレーム終了（High優先度ジョブの完了を待機）
+    void EndFrame();
+
+    //! @brief 全ジョブの完了を待機（シーン遷移時など）
+    void WaitAll();
 
     //!@}
 
@@ -150,20 +304,10 @@ public:
     //------------------------------------------------------------------------
     //!@{
 
-    //! @brief 並列forループ
-    //! @param begin 開始インデックス
-    //! @param end 終了インデックス（含まない）
-    //! @param func 各インデックスで実行する関数
-    //! @param granularity 1ジョブあたりの処理数（0で自動）
     void ParallelFor(uint32_t begin, uint32_t end,
                      const std::function<void(uint32_t)>& func,
                      uint32_t granularity = 0);
 
-    //! @brief 並列forループ（範囲版）
-    //! @param begin 開始インデックス
-    //! @param end 終了インデックス（含まない）
-    //! @param func 範囲を受け取る関数 (begin, end)
-    //! @param granularity 1ジョブあたりの処理数（0で自動）
     void ParallelForRange(uint32_t begin, uint32_t end,
                           const std::function<void(uint32_t, uint32_t)>& func,
                           uint32_t granularity = 0);
@@ -175,18 +319,36 @@ public:
     //------------------------------------------------------------------------
     //!@{
 
-    //! @brief ワーカースレッド数を取得
     [[nodiscard]] uint32_t GetWorkerCount() const noexcept;
-
-    //! @brief 現在のスレッドがワーカースレッドかどうか
     [[nodiscard]] bool IsWorkerThread() const noexcept;
-
-    //! @brief 保留中のジョブ数を取得
     [[nodiscard]] uint32_t GetPendingJobCount() const noexcept;
+    [[nodiscard]] uint32_t GetMainThreadJobCount() const noexcept;
 
     //!@}
 
-    //! @brief デストラクタ
+    //------------------------------------------------------------------------
+    //! @name プロファイリング（デバッグビルドのみ）
+    //------------------------------------------------------------------------
+    //!@{
+
+#ifdef _DEBUG
+    //! @brief プロファイリングコールバック型
+    using ProfileCallback = std::function<void(std::string_view jobName, float durationMs)>;
+
+    //! @brief プロファイリングコールバックを設定
+    void SetProfileCallback(ProfileCallback callback);
+
+    //! @brief 統計情報取得
+    struct Stats {
+        uint64_t totalJobsExecuted = 0;
+        uint64_t totalJobsStolen = 0;  // Work-Stealing統計
+        float averageJobDurationMs = 0.0f;
+    };
+    [[nodiscard]] Stats GetStats() const noexcept;
+#endif
+
+    //!@}
+
     ~JobSystem();
 
 private:
