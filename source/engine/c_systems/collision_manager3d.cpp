@@ -118,6 +118,12 @@ uint16_t CollisionManager3D::AllocateIndex()
         return index;
     }
 
+    // オーバーフローチェック
+    if (colliders_.size() >= UINT16_MAX) {
+        assert(false && "Collider index overflow: too many colliders");
+        return CollisionConstants3D::kInvalidIndex;
+    }
+
     // 新しいスロットを追加
     uint16_t index = static_cast<uint16_t>(colliders_.size());
     posX_.push_back(0); posY_.push_back(0); posZ_.push_back(0);

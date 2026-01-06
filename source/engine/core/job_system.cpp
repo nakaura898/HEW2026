@@ -82,6 +82,13 @@ public:
     void SetResult(JobResult result) noexcept
     {
         std::unique_lock<std::mutex> lock(mutex_);
+        // エラー状態（Exception/Cancelled）は上書きしない
+        // Pending → Success/Exception/Cancelled は許可
+        // Success → Exception/Cancelled は許可（エラーへの遷移）
+        // Exception/Cancelled → 他への遷移は不許可
+        if (result_ == JobResult::Exception || result_ == JobResult::Cancelled) {
+            return;  // エラー状態を保持
+        }
         result_ = result;
     }
 
@@ -329,7 +336,8 @@ public:
             ProcessMainThreadJobs(0);
 
             std::unique_lock<std::mutex> lock(globalMutex_);
-            if (!HasPendingJobs() && mainThreadQueue_.empty()) {
+            // ロック保持中なのでHasPendingJobsLocked()を直接使用（デッドロック回避）
+            if (!HasPendingJobsLocked() && !HasLocalJobs() && mainThreadQueue_.empty()) {
                 break;
             }
             // 少し待ってから再チェック
@@ -654,6 +662,9 @@ private:
             // 3. Work-Stealing: 他のワーカーから盗む
             if (!gotJob) {
                 gotJob = TryStealJob(job, workerId);
+                if (gotJob) {
+                    --pendingJobs_;
+                }
             }
 
             if (gotJob) {

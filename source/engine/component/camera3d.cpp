@@ -11,6 +11,7 @@ namespace {
     constexpr float kMaxFOV = 179.0f;
     constexpr float kMinNear = 0.001f;
     constexpr float kHalf = 0.5f;
+    constexpr float kEpsilonSq = 1e-8f;  // LookAt用のゼロ判定閾値（二乗）
 }
 
 //----------------------------------------------------------------------------
@@ -123,7 +124,7 @@ void Camera3D::LookAt(const Vector3& target, const Vector3& up)
 
     // ゼロベクトルガード: target == position の場合は何もしない
     float lengthSq = forward.x * forward.x + forward.y * forward.y + forward.z * forward.z;
-    if (lengthSq < 1e-8f) return;
+    if (lengthSq < kEpsilonSq) return;
 
     forward.Normalize();
 
@@ -137,6 +138,11 @@ Vector3 Camera3D::ScreenToWorld(const Vector2& screenPos,
                                 float screenWidth, float screenHeight,
                                 float depth) const
 {
+    // スクリーンサイズの検証（ゼロ除算防止）
+    if (screenWidth <= 0.0f || screenHeight <= 0.0f) {
+        return Vector3::Zero;
+    }
+
     Matrix view = BuildViewMatrix();
     Matrix projection = BuildProjectionMatrix();
     Matrix viewProj = view * projection;
