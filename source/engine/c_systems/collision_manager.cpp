@@ -119,6 +119,8 @@ void CollisionManager::Clear()
     previousPairs_.clear();
     currentPairs_.clear();
     testedPairs_.clear();
+    eventQueue_.clear();
+    processingEvents_ = false;
 }
 
 uint16_t CollisionManager::AllocateIndex()
@@ -352,37 +354,29 @@ void CollisionManager::FixedUpdate()
         currentPairs_.end()
     );
 
-    // Enter/Stay/Exit判定（マージ比較）
+    // Enter/Stay/Exit判定（マージ比較）- イベントをキューに追加
     size_t prevIdx = 0, currIdx = 0;
     size_t prevSize = previousPairs_.size();
     size_t currSize = currentPairs_.size();
 
     while (prevIdx < prevSize || currIdx < currSize) {
         if (prevIdx >= prevSize) {
-            // Enter
+            // Enter + Stay
             uint32_t key = currentPairs_[currIdx++];
             uint16_t a = GetFirstIndex(key);
             uint16_t b = GetSecondIndex(key);
-            Collider2D* colA = colliders_[a];
-            Collider2D* colB = colliders_[b];
-            if (colA && colB) {
-                if (onEnter_[a]) onEnter_[a](colA, colB);
-                if (onEnter_[b]) onEnter_[b](colB, colA);
-                if (onCollision_[a]) onCollision_[a](colA, colB);
-                if (onCollision_[b]) onCollision_[b](colB, colA);
-            }
+            eventQueue_.push_back({CollisionEventType::Enter, a, b,
+                                   generations_[a], generations_[b]});
+            eventQueue_.push_back({CollisionEventType::Stay, a, b,
+                                   generations_[a], generations_[b]});
         }
         else if (currIdx >= currSize) {
             // Exit
             uint32_t key = previousPairs_[prevIdx++];
             uint16_t a = GetFirstIndex(key);
             uint16_t b = GetSecondIndex(key);
-            Collider2D* colA = colliders_[a];
-            Collider2D* colB = colliders_[b];
-            if (colA && colB) {
-                if (onExit_[a]) onExit_[a](colA, colB);
-                if (onExit_[b]) onExit_[b](colB, colA);
-            }
+            eventQueue_.push_back({CollisionEventType::Exit, a, b,
+                                   generations_[a], generations_[b]});
         }
         else {
             uint32_t prevKey = previousPairs_[prevIdx];
@@ -392,43 +386,77 @@ void CollisionManager::FixedUpdate()
                 // Exit
                 uint16_t a = GetFirstIndex(prevKey);
                 uint16_t b = GetSecondIndex(prevKey);
-                Collider2D* colA = colliders_[a];
-                Collider2D* colB = colliders_[b];
-                if (colA && colB) {
-                    if (onExit_[a]) onExit_[a](colA, colB);
-                    if (onExit_[b]) onExit_[b](colB, colA);
-                }
+                eventQueue_.push_back({CollisionEventType::Exit, a, b,
+                                       generations_[a], generations_[b]});
                 ++prevIdx;
             }
             else if (prevKey > currKey) {
-                // Enter
+                // Enter + Stay
                 uint16_t a = GetFirstIndex(currKey);
                 uint16_t b = GetSecondIndex(currKey);
-                Collider2D* colA = colliders_[a];
-                Collider2D* colB = colliders_[b];
-                if (colA && colB) {
-                    if (onEnter_[a]) onEnter_[a](colA, colB);
-                    if (onEnter_[b]) onEnter_[b](colB, colA);
-                    if (onCollision_[a]) onCollision_[a](colA, colB);
-                    if (onCollision_[b]) onCollision_[b](colB, colA);
-                }
+                eventQueue_.push_back({CollisionEventType::Enter, a, b,
+                                       generations_[a], generations_[b]});
+                eventQueue_.push_back({CollisionEventType::Stay, a, b,
+                                       generations_[a], generations_[b]});
                 ++currIdx;
             }
             else {
                 // Stay
                 uint16_t a = GetFirstIndex(currKey);
                 uint16_t b = GetSecondIndex(currKey);
-                Collider2D* colA = colliders_[a];
-                Collider2D* colB = colliders_[b];
-                if (colA && colB) {
-                    if (onCollision_[a]) onCollision_[a](colA, colB);
-                    if (onCollision_[b]) onCollision_[b](colB, colA);
-                }
+                eventQueue_.push_back({CollisionEventType::Stay, a, b,
+                                       generations_[a], generations_[b]});
                 ++prevIdx;
                 ++currIdx;
             }
         }
     }
+
+    // 衝突検出完了後にイベントを処理
+    ProcessEventQueue();
+}
+
+//----------------------------------------------------------------------------
+// イベントキュー処理
+//----------------------------------------------------------------------------
+
+void CollisionManager::ProcessEventQueue()
+{
+    // 再入防止（コールバック内でUpdate()が呼ばれた場合を防ぐ）
+    if (processingEvents_) return;
+    processingEvents_ = true;
+
+    for (const CollisionEvent& evt : eventQueue_) {
+        // 世代チェック（コールバック中に削除された場合をスキップ）
+        if (evt.indexA >= generations_.size() ||
+            evt.indexB >= generations_.size() ||
+            generations_[evt.indexA] != evt.generationA ||
+            generations_[evt.indexB] != evt.generationB) {
+            continue;
+        }
+
+        Collider2D* colA = colliders_[evt.indexA];
+        Collider2D* colB = colliders_[evt.indexB];
+        if (!colA || !colB) continue;
+
+        switch (evt.type) {
+        case CollisionEventType::Enter:
+            if (onEnter_[evt.indexA]) onEnter_[evt.indexA](colA, colB);
+            if (onEnter_[evt.indexB]) onEnter_[evt.indexB](colB, colA);
+            break;
+        case CollisionEventType::Stay:
+            if (onCollision_[evt.indexA]) onCollision_[evt.indexA](colA, colB);
+            if (onCollision_[evt.indexB]) onCollision_[evt.indexB](colB, colA);
+            break;
+        case CollisionEventType::Exit:
+            if (onExit_[evt.indexA]) onExit_[evt.indexA](colA, colB);
+            if (onExit_[evt.indexB]) onExit_[evt.indexB](colB, colA);
+            break;
+        }
+    }
+
+    eventQueue_.clear();
+    processingEvents_ = false;
 }
 
 //----------------------------------------------------------------------------
