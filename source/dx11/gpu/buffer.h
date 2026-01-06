@@ -5,7 +5,7 @@
 #pragma once
 
 #include "dx11/gpu_common.h"
-#include "dx11/view/view_wrapper.h"
+#include "dx11/view/view.h"
 #include "gpu_resource.h"
 
 //===========================================================================

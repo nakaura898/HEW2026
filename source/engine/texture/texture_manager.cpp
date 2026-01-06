@@ -12,10 +12,7 @@
 #include "dx11/gpu/format.h"
 #include "common/utility/hash.h"
 #include <DirectXTex.h>
-#include "dx11/view/shader_resource_view.h"
-#include "dx11/view/render_target_view.h"
-#include "dx11/view/depth_stencil_view.h"
-#include "dx11/view/unordered_access_view.h"
+#include "dx11/view/view.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -66,10 +63,8 @@ namespace
                 srvDesc.Texture2D.MipLevels = desc.MipLevels ? desc.MipLevels : static_cast<UINT>(-1);
             }
 
-            auto srvWrapper = ShaderResourceView::Create(texture.Get(), srvDesc);
-            if (srvWrapper && srvWrapper->IsValid()) {
-                srv = srvWrapper->Detach();
-            } else {
+            srv = View<SRV>::Create(texture.Get(), &srvDesc);
+            if (!srv) {
                 LOG_ERROR("[TextureManager] SRV作成失敗");
             }
         }
@@ -765,10 +760,8 @@ TexturePtr TextureManager::CreateDepthStencil(
     dsvDesc.Format = format;
     dsvDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
     dsvDesc.Texture2D.MipSlice = 0;
-    auto dsvWrapper = DepthStencilView::Create(texture.Get(), dsvDesc);
-    if (dsvWrapper && dsvWrapper->IsValid()) {
-        dsv = dsvWrapper->Detach();
-    } else {
+    dsv = View<DSV>::Create(texture.Get(), &dsvDesc);
+    if (!dsv) {
         LOG_ERROR("[TextureManager] DSV作成失敗");
     }
 
@@ -779,10 +772,8 @@ TexturePtr TextureManager::CreateDepthStencil(
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MostDetailedMip = 0;
     srvDesc.Texture2D.MipLevels = 1;
-    auto srvWrapper = ShaderResourceView::Create(texture.Get(), srvDesc);
-    if (srvWrapper && srvWrapper->IsValid()) {
-        srv = srvWrapper->Detach();
-    } else {
+    srv = View<SRV>::Create(texture.Get(), &srvDesc);
+    if (!srv) {
         LOG_ERROR("[TextureManager] SRV作成失敗");
     }
 

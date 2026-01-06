@@ -5,8 +5,7 @@
 #include "buffer.h"
 #include "dx11/gpu_common.h"
 #include "dx11/graphics_device.h"
-#include "dx11/view/shader_resource_view.h"
-#include "dx11/view/unordered_access_view.h"
+#include "dx11/view/view.h"
 #include "common/logging/logging.h"
 
 //----------------------------------------------------------------------------
@@ -86,7 +85,7 @@ std::shared_ptr<Buffer> Buffer::Create(
         srvDesc.Buffer.FirstElement = 0;
         srvDesc.Buffer.NumElements = desc.stride > 0 ? desc.size / desc.stride : desc.size;
 
-        srv = ShaderResourceView::Create(buffer.Get(), srvDesc);
+        srv = ShaderResourceView::CreateFromBuffer(buffer.Get(), &srvDesc);
     }
 
     // UAV作成
@@ -98,7 +97,7 @@ std::shared_ptr<Buffer> Buffer::Create(
         uavDesc.Buffer.FirstElement = 0;
         uavDesc.Buffer.NumElements = desc.stride > 0 ? desc.size / desc.stride : desc.size;
 
-        uav = UnorderedAccessView::Create(buffer.Get(), uavDesc);
+        uav = UnorderedAccessView::CreateFromBuffer(buffer.Get(), &uavDesc);
     }
 
     return std::make_shared<Buffer>(
@@ -145,7 +144,7 @@ std::shared_ptr<Buffer> Buffer::CreateStructured(
         srvDesc.Buffer.FirstElement = 0;
         srvDesc.Buffer.NumElements = elementCount;
 
-        srv = ShaderResourceView::Create(buffer.Get(), srvDesc);
+        srv = ShaderResourceView::CreateFromBuffer(buffer.Get(), &srvDesc);
     }
 
     // UAV作成
@@ -157,7 +156,7 @@ std::shared_ptr<Buffer> Buffer::CreateStructured(
         uavDesc.Buffer.FirstElement = 0;
         uavDesc.Buffer.NumElements = elementCount;
 
-        uav = UnorderedAccessView::Create(buffer.Get(), uavDesc);
+        uav = UnorderedAccessView::CreateFromBuffer(buffer.Get(), &uavDesc);
     }
 
     return std::make_shared<Buffer>(

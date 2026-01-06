@@ -5,7 +5,7 @@
 #include "texture.h"
 #include "dx11/gpu_common.h"
 #include "dx11/graphics_device.h"
-#include "dx11/view/view_wrapper.h"  // 統合ビューラッパー
+#include "dx11/view/view.h"
 #include "common/logging/logging.h"
 #include <string>
 
@@ -162,9 +162,8 @@ std::shared_ptr<Texture> Texture::CreateDepthStencil(
     dsvDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
     dsvDesc.Texture2D.MipSlice = 0;
 
-    auto dsvWrapper = DepthStencilView::Create(texture.Get(), dsvDesc);
-    RETURN_NULL_IF_NULL(dsvWrapper, "[Texture] DSV作成失敗");
-    ComPtr<ID3D11DepthStencilView> dsv = dsvWrapper->Detach();
+    ComPtr<ID3D11DepthStencilView> dsv = View<DSV>::Create(texture.Get(), &dsvDesc);
+    RETURN_NULL_IF_NULL(dsv.Get(), "[Texture] DSV作成失敗");
 
     // SRV作成（オプション）
     ComPtr<ID3D11ShaderResourceView> srv;
@@ -175,9 +174,8 @@ std::shared_ptr<Texture> Texture::CreateDepthStencil(
         srvDesc.Texture2D.MipLevels = 1;
         srvDesc.Texture2D.MostDetailedMip = 0;
 
-        auto srvWrapper = ShaderResourceView::Create(texture.Get(), srvDesc);
-        RETURN_NULL_IF_NULL(srvWrapper, "[Texture] 深度SRV作成失敗");
-        srv = srvWrapper->Detach();
+        srv = View<SRV>::Create(texture.Get(), &srvDesc);
+        RETURN_NULL_IF_NULL(srv.Get(), "[Texture] 深度SRV作成失敗");
     }
 
     return std::make_shared<Texture>(
@@ -255,9 +253,8 @@ std::shared_ptr<Texture> Texture::CreateCube(
     srvDesc.TextureCube.MipLevels = 1;
     srvDesc.TextureCube.MostDetailedMip = 0;
 
-    auto srvWrapper = ShaderResourceView::Create(texture.Get(), srvDesc);
-    RETURN_NULL_IF_NULL(srvWrapper, "[Texture] キューブマップSRV作成失敗");
-    ComPtr<ID3D11ShaderResourceView> srv = srvWrapper->Detach();
+    ComPtr<ID3D11ShaderResourceView> srv = View<SRV>::Create(texture.Get(), &srvDesc);
+    RETURN_NULL_IF_NULL(srv.Get(), "[Texture] キューブマップSRV作成失敗");
 
     return std::make_shared<Texture>(
         std::move(texture), std::move(srv), nullptr, nullptr, nullptr, desc);
