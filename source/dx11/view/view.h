@@ -100,6 +100,12 @@ template<> struct ViewTraits<UAV> {
 //! View<SRV> srv = View<SRV>::Create(texture);
 //! View<DSV> dsv = View<DSV>::Create(texture, &dsvDesc);
 //! @endcode
+//!
+//! @note スレッドセーフ性:
+//!       - Create系メソッドはID3D11Device5を使用するため、
+//!         デバイスがマルチスレッド対応の場合は複数スレッドから呼び出し可能。
+//!       - 生成されたビューの使用（Get/Bind等）は通常シングルスレッド専用の
+//!         immediate contextで行うため、同一ビューへの同時アクセスは避けること。
 //============================================================================
 template<typename Tag>
 class View final : private NonCopyable
