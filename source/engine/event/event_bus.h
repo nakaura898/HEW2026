@@ -37,6 +37,7 @@ public:
 //! @brief 型付きイベントハンドラ
 //! @details shared_mutexを使用して読み取り並行性を向上
 //!          優先度付きコールバックをサポート
+//!          shared_ptr<vector>でInvoke時のコピーを最小化
 //----------------------------------------------------------------------------
 template<typename TEvent>
 class EventHandler : public IEventHandler
@@ -55,10 +56,18 @@ public:
         }
     };
 
+    using CallbackList = std::vector<CallbackEntry>;
+    using CallbackListPtr = std::shared_ptr<const CallbackList>;
+
+    EventHandler() : snapshot_(std::make_shared<CallbackList>()) {}
+
     void Add(uint32_t id, CallbackType callback, EventPriority priority = EventPriority::Normal) {
         std::unique_lock<std::shared_mutex> lock(mutex_);
         callbacks_.push_back({id, std::move(callback), priority});
-        sorted_ = false;
+        // 即座にソート（Invoke時の遅延ソートを廃止）
+        std::stable_sort(callbacks_.begin(), callbacks_.end());
+        // 新しいスナップショットを作成（既存のInvokeには影響しない）
+        snapshot_ = std::make_shared<CallbackList>(callbacks_);
     }
 
     void Remove(uint32_t id) {
@@ -67,21 +76,19 @@ public:
             std::remove_if(callbacks_.begin(), callbacks_.end(),
                 [id](const CallbackEntry& e) { return e.id == id; }),
             callbacks_.end());
+        // 新しいスナップショットを作成
+        snapshot_ = std::make_shared<CallbackList>(callbacks_);
     }
 
     void Invoke(const TEvent& event) {
-        std::vector<CallbackEntry> callbacksCopy;
+        // shared_ptrのコピーのみ（ベクタのコピーなし）
+        CallbackListPtr localSnapshot;
         {
-            std::unique_lock<std::shared_mutex> lock(mutex_);
-            // 必要に応じてソート
-            if (!sorted_) {
-                std::stable_sort(callbacks_.begin(), callbacks_.end());
-                sorted_ = true;
-            }
-            callbacksCopy = callbacks_;
+            std::shared_lock<std::shared_mutex> lock(mutex_);
+            localSnapshot = snapshot_;
         }
         // ロック解放後にコールバック実行（再入可能）
-        for (auto& entry : callbacksCopy) {
+        for (const auto& entry : *localSnapshot) {
             entry.callback(event);
         }
     }
@@ -92,9 +99,9 @@ public:
     }
 
 private:
-    std::vector<CallbackEntry> callbacks_;
+    CallbackList callbacks_;         //!< マスターリスト（Add/Remove用）
+    CallbackListPtr snapshot_;       //!< Invoke用スナップショット（shared_ptrで共有）
     mutable std::shared_mutex mutex_;
-    mutable bool sorted_ = true;
 };
 
 //----------------------------------------------------------------------------
