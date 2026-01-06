@@ -3,7 +3,7 @@
 //! @brief  スプライトバッチ描画システム実装
 //----------------------------------------------------------------------------
 #include "sprite_batch.h"
-#include "engine/component/transform2d.h"
+#include "engine/component/transform.h"
 #include "engine/component/camera2d.h"
 #include "engine/component/animator.h"
 #include "engine/graphics2d/render_state_manager.h"
@@ -336,7 +336,7 @@ void SpriteBatch::Draw(
     spriteQueue_.push_back(info);
 }
 
-void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform2D& transform) {
+void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform& transform) {
     if (!isBegun_ || !renderer.GetTexture()) {
         return;
     }
@@ -352,7 +352,7 @@ void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform2D& transf
         );
     }
 
-    // Transform2Dからパラメータ取得
+    // Transformからパラメータ取得
     Vector2 position = transform.GetPosition();
     float rotation = transform.GetRotation();
     Vector2 scale = transform.GetScale();
@@ -366,7 +366,7 @@ void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform2D& transf
          renderer.GetSortingLayer(), renderer.GetOrderInLayer());
 }
 
-void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform2D& transform, const Animator& animator) {
+void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform& transform, const Animator& animator) {
     if (!isBegun_ || !renderer.GetTexture()) {
         return;
     }
@@ -381,7 +381,7 @@ void SpriteBatch::Draw(const SpriteRenderer& renderer, const Transform2D& transf
     float frameWidth = static_cast<float>(texture->Width()) * std::abs(uvSize.x);
     float frameHeight = static_cast<float>(texture->Height()) * std::abs(uvSize.y);
 
-    // Transform2Dからパラメータ取得
+    // Transformからパラメータ取得
     Vector2 position = transform.GetPosition();
     float rotation = transform.GetRotation();
     Vector2 scale = transform.GetScale();
@@ -502,6 +502,8 @@ void SpriteBatch::SortSprites() {
     }
 
     // インデックスをソート（SpriteInfo自体は移動しない）
+    // ソートキー: 1) sortingLayer, 2) orderInLayer, 3) textureポインタ
+    // 同一深度のスプライトをテクスチャでグループ化し、描画状態変更を削減
     std::stable_sort(sortIndices_.begin(), sortIndices_.end(),
         [this](uint32_t a, uint32_t b) {
             const SpriteInfo& sa = spriteQueue_[a];
@@ -509,7 +511,11 @@ void SpriteBatch::SortSprites() {
             if (sa.sortingLayer != sb.sortingLayer) {
                 return sa.sortingLayer < sb.sortingLayer;
             }
-            return sa.orderInLayer < sb.orderInLayer;
+            if (sa.orderInLayer != sb.orderInLayer) {
+                return sa.orderInLayer < sb.orderInLayer;
+            }
+            // 同一深度ならテクスチャでグループ化
+            return sa.texture < sb.texture;
         });
 }
 

@@ -11,7 +11,18 @@
 #include <memory>
 #include <cstdint>
 #include <mutex>
+#include <shared_mutex>
 #include <cassert>
+#include <algorithm>
+
+//----------------------------------------------------------------------------
+//! @brief イベント優先度
+//----------------------------------------------------------------------------
+enum class EventPriority : uint8_t {
+    High = 0,    //!< 高優先度（システム処理など）
+    Normal = 1,  //!< 通常
+    Low = 2      //!< 低優先度（UI更新など）
+};
 
 //----------------------------------------------------------------------------
 //! @brief イベントハンドラの基底クラス
@@ -24,6 +35,9 @@ public:
 
 //----------------------------------------------------------------------------
 //! @brief 型付きイベントハンドラ
+//! @details shared_mutexを使用して読み取り並行性を向上
+//!          優先度付きコールバックをサポート
+//!          shared_ptr<vector>でInvoke時のコピーを最小化
 //----------------------------------------------------------------------------
 template<typename TEvent>
 class EventHandler : public IEventHandler
@@ -31,36 +45,63 @@ class EventHandler : public IEventHandler
 public:
     using CallbackType = std::function<void(const TEvent&)>;
 
-    void Add(uint32_t id, CallbackType callback) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        callbacks_[id] = std::move(callback);
+    //! @brief コールバックエントリ（優先度付き）
+    struct CallbackEntry {
+        uint32_t id;
+        CallbackType callback;
+        EventPriority priority;
+
+        bool operator<(const CallbackEntry& other) const noexcept {
+            return priority < other.priority;  // 優先度昇順（High=0が先）
+        }
+    };
+
+    using CallbackList = std::vector<CallbackEntry>;
+    using CallbackListPtr = std::shared_ptr<const CallbackList>;
+
+    EventHandler() : snapshot_(std::make_shared<CallbackList>()) {}
+
+    void Add(uint32_t id, CallbackType callback, EventPriority priority = EventPriority::Normal) {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        callbacks_.push_back({id, std::move(callback), priority});
+        // 即座にソート（Invoke時の遅延ソートを廃止）
+        std::stable_sort(callbacks_.begin(), callbacks_.end());
+        // 新しいスナップショットを作成（既存のInvokeには影響しない）
+        snapshot_ = std::make_shared<CallbackList>(callbacks_);
     }
 
     void Remove(uint32_t id) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        callbacks_.erase(id);
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        callbacks_.erase(
+            std::remove_if(callbacks_.begin(), callbacks_.end(),
+                [id](const CallbackEntry& e) { return e.id == id; }),
+            callbacks_.end());
+        // 新しいスナップショットを作成
+        snapshot_ = std::make_shared<CallbackList>(callbacks_);
     }
 
     void Invoke(const TEvent& event) {
-        // コールバック中の変更に備えてコピー（mutex保護下）
-        std::unordered_map<uint32_t, CallbackType> callbacksCopy;
+        // shared_ptrのコピーのみ（ベクタのコピーなし）
+        CallbackListPtr localSnapshot;
         {
-            std::lock_guard<std::mutex> lock(mutex_);
-            callbacksCopy = callbacks_;
+            std::shared_lock<std::shared_mutex> lock(mutex_);
+            localSnapshot = snapshot_;
         }
-        for (auto& [id, callback] : callbacksCopy) {
-            callback(event);
+        // ロック解放後にコールバック実行（再入可能）
+        for (const auto& entry : *localSnapshot) {
+            entry.callback(event);
         }
     }
 
     [[nodiscard]] bool IsEmpty() const {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         return callbacks_.empty();
     }
 
 private:
-    std::unordered_map<uint32_t, CallbackType> callbacks_;
-    mutable std::mutex mutex_;
+    CallbackList callbacks_;         //!< マスターリスト（Add/Remove用）
+    CallbackListPtr snapshot_;       //!< Invoke用スナップショット（shared_ptrで共有）
+    mutable std::shared_mutex mutex_;
 };
 
 //----------------------------------------------------------------------------
@@ -98,12 +139,14 @@ public:
     //! @brief イベントを購読
     //! @tparam TEvent イベント型
     //! @param callback コールバック関数
+    //! @param priority 優先度（デフォルト: Normal）
     //! @return 購読ID（解除時に使用）
     template<typename TEvent>
-    uint32_t Subscribe(std::function<void(const TEvent&)> callback) {
-        std::lock_guard<std::mutex> lock(mutex_);
+    uint32_t Subscribe(std::function<void(const TEvent&)> callback,
+                       EventPriority priority = EventPriority::Normal) {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
         uint32_t id = nextSubscriptionId_++;
-        GetOrCreateHandlerLocked<TEvent>()->Add(id, std::move(callback));
+        GetOrCreateHandlerLocked<TEvent>()->Add(id, std::move(callback), priority);
         return id;
     }
 
@@ -112,7 +155,7 @@ public:
     //! @param subscriptionId 購読ID
     template<typename TEvent>
     void Unsubscribe(uint32_t subscriptionId) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         auto* handler = GetHandlerLocked<TEvent>();
         if (handler) {
             handler->Remove(subscriptionId);
@@ -130,7 +173,7 @@ public:
     void Publish(const TEvent& event) {
         EventHandler<TEvent>* handler = nullptr;
         {
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::shared_lock<std::shared_mutex> lock(mutex_);
             handler = GetHandlerLocked<TEvent>();
         }
         if (handler) {
@@ -153,7 +196,7 @@ public:
 
     //! @brief 全購読をクリア
     void Clear() {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::unique_lock<std::shared_mutex> lock(mutex_);
         handlers_.clear();
     }
 
@@ -191,6 +234,6 @@ private:
     static inline std::once_flag initFlag_;
 
     std::unordered_map<std::type_index, std::unique_ptr<IEventHandler>> handlers_;
-    mutable std::mutex mutex_;
+    mutable std::shared_mutex mutex_;
     uint32_t nextSubscriptionId_ = 1;
 };

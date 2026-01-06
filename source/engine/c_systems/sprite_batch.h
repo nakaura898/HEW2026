@@ -16,7 +16,7 @@
 #include <cassert>
 
 // 前方宣言
-class Transform2D;
+class Transform;
 class Camera2D;
 class BlendState;
 class SamplerState;
@@ -135,7 +135,7 @@ public:
     //------------------------------------------------------------------------
     //! @brief SpriteRendererコンポーネントから描画
     //------------------------------------------------------------------------
-    void Draw(const SpriteRenderer& renderer, const Transform2D& transform);
+    void Draw(const SpriteRenderer& renderer, const Transform& transform);
 
     //------------------------------------------------------------------------
     //! @brief SpriteRenderer + Animatorコンポーネントから描画
@@ -143,7 +143,7 @@ public:
     //! @param transform トランスフォーム
     //! @param animator アニメーター（UV座標を提供）
     //------------------------------------------------------------------------
-    void Draw(const SpriteRenderer& renderer, const Transform2D& transform, const class Animator& animator);
+    void Draw(const SpriteRenderer& renderer, const Transform& transform, const class Animator& animator);
 
     //------------------------------------------------------------------------
     //! @brief バッチ描画終了（実際の描画を実行）

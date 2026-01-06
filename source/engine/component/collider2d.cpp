@@ -4,7 +4,7 @@
 //----------------------------------------------------------------------------
 
 #include "collider2d.h"
-#include "transform2d.h"
+#include "transform.h"
 #include "game_object.h"
 
 Collider2D::Collider2D(const Vector2& size, const Vector2& offset)
@@ -33,10 +33,10 @@ void Collider2D::OnDetach()
 
 void Collider2D::Update([[maybe_unused]] float deltaTime)
 {
-    // Transform2Dと自動同期
+    // Transformと自動同期
     if (syncWithTransform_) {
         if (GameObject* owner = GetOwner()) {
-            if (Transform2D* transform = owner->GetComponent<Transform2D>()) {
+            if (Transform* transform = owner->GetComponent<Transform>()) {
                 Vector2 pos = transform->GetWorldPosition();
                 CollisionManager::Get().SetPosition(handle_, pos.x, pos.y);
             }

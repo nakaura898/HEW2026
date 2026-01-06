@@ -5,10 +5,9 @@
 #pragma once
 
 #include "scene.h"
+#include "engine/core/job_system.h"
 #include <memory>
-#include <future>
 #include <atomic>
-#include <functional>
 #include <cassert>
 
 //----------------------------------------------------------------------------
@@ -81,13 +80,18 @@ public:
         loadingScene_ = std::make_unique<T>();
         loadProgress_.store(0.0f);
 
-        // バックグラウンドでロード開始
-        loadFuture_ = std::async(std::launch::async, [this]() {
-            if (loadingScene_) {
-                loadingScene_->OnLoadAsync();
-                loadingScene_->SetLoadProgress(1.0f);
-            }
-        });
+        // ロード中のシーンをキャプチャ用にローカル変数で保持
+        Scene* scenePtr = loadingScene_.get();
+
+        // バックグラウンドでロード開始（低優先度）
+        loadHandle_ = JobSystem::Get().SubmitJob(
+            JobDesc::LowPriority([scenePtr]() {
+                if (scenePtr) {
+                    scenePtr->OnLoadAsync();
+                    scenePtr->SetLoadProgress(1.0f);
+                }
+            }).SetName("SceneAsyncLoad")
+        );
     }
 
     //! @brief 非同期ロード中かどうか
@@ -123,7 +127,7 @@ private:
 
     //! 非同期ロード関連
     std::unique_ptr<Scene> loadingScene_;       //!< ロード中のシーン
-    std::future<void> loadFuture_;              //!< ロードタスク
+    JobHandle loadHandle_;                      //!< ロードジョブハンドル
     std::atomic<float> loadProgress_{ 0.0f };   //!< ロード進捗
     bool asyncPending_ = false;                 //!< 非同期切り替え予約フラグ
 };

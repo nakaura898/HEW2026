@@ -330,4 +330,7 @@ private:
     // 固定タイムステップ
     static constexpr float kFixedDeltaTime = 1.0f / 60.0f;  //!< 60Hz
     float accumulator_ = 0.0f;
+
+    // クエリ用バッファ（再利用でアロケーション削減）
+    mutable std::vector<uint16_t> queryBuffer_;
 };

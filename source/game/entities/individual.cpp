@@ -66,8 +66,8 @@ void Individual::Initialize(const Vector2& position)
     // GameObject作成
     gameObject_ = std::make_unique<GameObject>(id_);
 
-    // Transform2D
-    transform_ = gameObject_->AddComponent<Transform2D>();
+    // Transform
+    transform_ = gameObject_->AddComponent<Transform>();
     transform_->SetPosition(position);
 
     // SpriteRenderer

@@ -4,7 +4,7 @@
 //----------------------------------------------------------------------------
 #include "ui_button_component.h"
 #include "engine/component/game_object.h"
-#include "engine/component/transform2d.h"
+#include "engine/component/transform.h"
 #include "engine/input/input_manager.h"
 #include "engine/input/key.h"
 
@@ -69,7 +69,7 @@ Vector2 UIButtonComponent::GetPosition() const
         return Vector2::Zero;
     }
 
-    Transform2D* transform = owner->GetComponent<Transform2D>();
+    Transform* transform = owner->GetComponent<Transform>();
     if (!transform) {
         return Vector2::Zero;
     }

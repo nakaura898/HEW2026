@@ -36,7 +36,7 @@ void Player::Initialize(const Vector2& position)
     gameObject_ = std::make_unique<GameObject>("Player");
 
     // Transform
-    transform_ = gameObject_->AddComponent<Transform2D>();
+    transform_ = gameObject_->AddComponent<Transform>();
     transform_->SetPosition(position);
     transform_->SetScale(0.3f);
 

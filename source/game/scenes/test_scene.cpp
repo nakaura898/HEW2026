@@ -65,7 +65,7 @@ void TestScene::OnEnter()
     // Wave 1 = 最下部: Y = (kTotalAreas - 1) * kAreaHeight + kAreaHeight/2 = 2700
     float initialCameraY = (kTotalAreas - 1) * kAreaHeight + kAreaHeight * 0.5f;
     cameraObj_ = std::make_unique<GameObject>("MainCamera");
-    cameraObj_->AddComponent<Transform2D>(Vector2(kMapWidth * 0.5f, initialCameraY));
+    cameraObj_->AddComponent<Transform>(Vector2(kMapWidth * 0.5f, initialCameraY));
     camera_ = cameraObj_->AddComponent<Camera2D>(screenWidth_, screenHeight_);
 
     // UI用白テクスチャ作成
@@ -412,7 +412,7 @@ void TestScene::Update()
         waveManager.UpdateTransition(dt);
 
         // カメラをスムーズにスクロール（イージング）
-        if (Transform2D* camTr = cameraObj_->GetComponent<Transform2D>()) {
+        if (Transform* camTr = cameraObj_->GetComponent<Transform>()) {
             float t = waveManager.GetTransitionProgress();
             // イーズアウト（減速）
             float easedT = 1.0f - (1.0f - t) * (1.0f - t);
@@ -441,7 +441,7 @@ void TestScene::Update()
 
             // プレイヤーを移動
             if (player_ && player_->GetTransform()) {
-                Transform2D* playerTr = player_->GetTransform();
+                Transform* playerTr = player_->GetTransform();
                 playerTr->SetPosition(playerTr->GetPosition().x, transitionPlayerStartY_ + deltaY);
             }
 
@@ -469,7 +469,7 @@ void TestScene::Update()
         player_->Update(rawDt, *camera_);
 
         // プレイヤーを現在エリア内にクランプ
-        if (Transform2D* playerTr = player_->GetTransform()) {
+        if (Transform* playerTr = player_->GetTransform()) {
             Vector2 playerPos = playerTr->GetPosition();
 
             // 現在ウェーブのエリア範囲

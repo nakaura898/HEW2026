@@ -8,7 +8,7 @@
 #include "engine/input/key.h"
 #include "engine/c_systems/sprite_batch.h"
 #include "engine/debug/debug_draw.h"
-#include "engine/component/transform2d.h"
+#include "engine/component/transform.h"
 #include "engine/component/ui_button_component.h"
 #include "common/logging/logging.h"
 
@@ -21,12 +21,12 @@ void Title_Scene::OnEnter()
 
 	//画面中央
 	cameraObj_ = std::make_unique<GameObject>("Camera");
-	cameraObj_->AddComponent<Transform2D>(Vector2(640.0f, 360.0f));
+	cameraObj_->AddComponent<Transform>(Vector2(640.0f, 360.0f));
 	camera_ = cameraObj_->AddComponent<Camera2D>(1280.0f, 720.0f);
 
 	// スタートボタン（GameObjectベース）
 	startButtonObj_ = std::make_unique<GameObject>("StartButton");
-	startButtonObj_->AddComponent<Transform2D>(Vector2(640.0f, 400.0f));
+	startButtonObj_->AddComponent<Transform>(Vector2(640.0f, 400.0f));
 	startButton_ = startButtonObj_->AddComponent<UIButtonComponent>();
 	startButton_->SetSize(Vector2(200.0f, 100.0f));
 	startButton_->SetOnClick([]() {
@@ -92,8 +92,8 @@ void Title_Scene::Render()
 	batch.Begin();
 	batch.SetCamera(*camera_);
 
-	// ボタン描画（Transform2Dから位置取得）
-	Transform2D* buttonTransform = startButtonObj_->GetComponent<Transform2D>();
+	// ボタン描画（Transformから位置取得）
+	Transform* buttonTransform = startButtonObj_->GetComponent<Transform>();
 	if (buttonTransform && startButton_) {
 		DEBUG_RECT_FILL(
 			buttonTransform->GetPosition(),

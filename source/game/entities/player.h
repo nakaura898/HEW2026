@@ -5,7 +5,7 @@
 #pragma once
 
 #include "engine/component/game_object.h"
-#include "engine/component/transform2d.h"
+#include "engine/component/transform.h"
 #include "engine/component/sprite_renderer.h"
 #include "engine/component/animator.h"
 #include "engine/component/collider2d.h"
@@ -116,8 +116,8 @@ public:
     // アクセサ
     //------------------------------------------------------------------------
 
-    //! @brief Transform2D取得
-    [[nodiscard]] Transform2D* GetTransform() const { return transform_; }
+    //! @brief Transform取得
+    [[nodiscard]] Transform* GetTransform() const { return transform_; }
 
     //! @brief Collider2D取得
     [[nodiscard]] Collider2D* GetCollider() const { return collider_; }
@@ -143,7 +143,7 @@ private:
 
     // GameObject & コンポーネント
     std::unique_ptr<GameObject> gameObject_;
-    Transform2D* transform_ = nullptr;
+    Transform* transform_ = nullptr;
     SpriteRenderer* sprite_ = nullptr;
     Animator* animator_ = nullptr;
     Collider2D* collider_ = nullptr;

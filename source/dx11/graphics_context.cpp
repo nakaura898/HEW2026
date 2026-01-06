@@ -210,6 +210,12 @@ void GraphicsContext::SetRenderTarget(Texture* renderTarget, Texture* depthStenc
     auto* ctx = context_.Get();
     if (!ctx) return;
 
+    // RTV/DSVサイズ不一致を検出（D3D11エラーの原因）
+    assert((!renderTarget || !depthStencil ||
+            (renderTarget->Width() == depthStencil->Width() &&
+             renderTarget->Height() == depthStencil->Height()))
+           && "RTV/DSV size mismatch! RenderTarget and DepthStencil must have the same dimensions.");
+
     ID3D11RenderTargetView* rtv = renderTarget ? renderTarget->Rtv() : nullptr;
     ID3D11DepthStencilView* dsv = depthStencil ? depthStencil->Dsv() : nullptr;
     ctx->OMSetRenderTargets(renderTarget ? 1 : 0, &rtv, dsv);
@@ -219,6 +225,17 @@ void GraphicsContext::SetRenderTargets(uint32_t count, Texture* const* renderTar
 {
     auto* ctx = context_.Get();
     if (!ctx) return;
+
+    // RTV/DSVサイズ不一致を検出
+    if (depthStencil && renderTargets) {
+        for (uint32_t i = 0; i < count; ++i) {
+            if (renderTargets[i]) {
+                assert((renderTargets[i]->Width() == depthStencil->Width() &&
+                        renderTargets[i]->Height() == depthStencil->Height())
+                       && "RTV/DSV size mismatch!");
+            }
+        }
+    }
 
     ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
     for (uint32_t i = 0; i < count && i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i) {

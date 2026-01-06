@@ -37,7 +37,7 @@ void Arrow::Initialize(const Vector2& startPos, const Vector2& targetPos)
 {
     // GameObject作成
     gameObject_ = std::make_unique<GameObject>("Arrow");
-    transform_ = gameObject_->AddComponent<Transform2D>(startPos);
+    transform_ = gameObject_->AddComponent<Transform>(startPos);
     sprite_ = gameObject_->AddComponent<SpriteRenderer>();
 
     // コライダー設定（矢のサイズに合わせた小さなAABB）

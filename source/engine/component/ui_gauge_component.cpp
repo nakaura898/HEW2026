@@ -4,7 +4,7 @@
 //----------------------------------------------------------------------------
 #include "ui_gauge_component.h"
 #include "engine/component/game_object.h"
-#include "engine/component/transform2d.h"
+#include "engine/component/transform.h"
 #include "engine/debug/debug_draw.h"
 #include <algorithm>
 
@@ -63,7 +63,7 @@ Vector2 UIGaugeComponent::GetPosition() const
         return Vector2::Zero;
     }
 
-    Transform2D* transform = owner->GetComponent<Transform2D>();
+    Transform* transform = owner->GetComponent<Transform>();
     if (!transform) {
         return Vector2::Zero;
     }

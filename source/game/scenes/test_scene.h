@@ -6,7 +6,7 @@
 
 #include "engine/scene/scene.h"
 #include "engine/component/game_object.h"
-#include "engine/component/transform2d.h"
+#include "engine/component/transform.h"
 #include "engine/component/sprite_renderer.h"
 #include "engine/component/camera2d.h"
 #include "engine/component/collider2d.h"

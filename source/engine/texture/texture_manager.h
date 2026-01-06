@@ -329,3 +329,58 @@ private:
     ScopeId nextScopeId_ = 1;                                 //!< 次のスコープID
     std::unordered_map<ScopeId, ScopeData> scopes_;           //!< スコープデータ
 };
+
+//============================================================================
+//! @brief テクスチャスコープガード（RAII）
+//!
+//! スコープを自動的に開始・終了するRAIIクラス。
+//! EndScope()の呼び忘れによるリークを防止。
+//!
+//! @note 使用例:
+//! @code
+//!   {
+//!       TextureScopeGuard guard;  // BeginScope()
+//!       // テクスチャをロード
+//!       auto tex = TextureManager::Get().Load("...");
+//!   }  // EndScope() が自動呼び出し
+//! @endcode
+//============================================================================
+class TextureScopeGuard final
+{
+public:
+    //! @brief コンストラクタ（スコープ開始）
+    TextureScopeGuard() : scope_(TextureManager::Get().BeginScope()) {}
+
+    //! @brief デストラクタ（スコープ終了）
+    ~TextureScopeGuard() {
+        if (scope_ != TextureManager::kGlobalScope) {
+            TextureManager::Get().EndScope(scope_);
+        }
+    }
+
+    // コピー禁止
+    TextureScopeGuard(const TextureScopeGuard&) = delete;
+    TextureScopeGuard& operator=(const TextureScopeGuard&) = delete;
+
+    // ムーブ対応
+    TextureScopeGuard(TextureScopeGuard&& other) noexcept
+        : scope_(other.scope_) {
+        other.scope_ = TextureManager::kGlobalScope;  // 無効化
+    }
+    TextureScopeGuard& operator=(TextureScopeGuard&& other) noexcept {
+        if (this != &other) {
+            if (scope_ != TextureManager::kGlobalScope) {
+                TextureManager::Get().EndScope(scope_);
+            }
+            scope_ = other.scope_;
+            other.scope_ = TextureManager::kGlobalScope;
+        }
+        return *this;
+    }
+
+    //! @brief スコープIDを取得
+    [[nodiscard]] TextureManager::ScopeId GetId() const noexcept { return scope_; }
+
+private:
+    TextureManager::ScopeId scope_;
+};

@@ -12,7 +12,7 @@
 //----------------------------------------------------------------------------
 //! @brief UIボタンコンポーネント
 //! @details GameObjectにアタッチして使用するボタンUI
-//!          Transform2Dから位置を取得し、マウス入力でクリック判定を行う
+//!          Transformから位置を取得し、マウス入力でクリック判定を行う
 //----------------------------------------------------------------------------
 class UIButtonComponent : public Component
 {
@@ -94,7 +94,7 @@ private:
     //! @brief マウスがボタン範囲内か判定
     [[nodiscard]] bool IsMouseOver() const;
 
-    //! @brief ボタンの中心位置を取得（Transform2Dから）
+    //! @brief ボタンの中心位置を取得（Transformから）
     [[nodiscard]] Vector2 GetPosition() const;
 
     Vector2 size_ = Vector2(100.0f, 40.0f);  //!< ボタンサイズ

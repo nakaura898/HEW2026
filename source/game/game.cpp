@@ -24,6 +24,8 @@
 #include "engine/c_systems/sprite_batch.h"
 #include "engine/debug/debug_draw.h"
 #include "engine/debug/circle_renderer.h"
+#include "engine/core/job_system.h"
+#include "engine/core/service_locator.h"
 
 // シェーダーコンパイラ（グローバルインスタンス）
 static std::unique_ptr<D3DShaderCompiler> g_shaderCompiler;
@@ -36,6 +38,8 @@ bool Game::Initialize()
 {
     // 0. エンジンシングルトン生成
     // Note: TextureManager, Renderer は Application層で管理
+    JobSystem::Create();  // 最初に初期化（他システムが使用する可能性あり）
+    Services::Provide(&JobSystem::Get());  // ServiceLocatorに登録
     InputManager::Create();
     FileSystemManager::Create();
     ShaderManager::Create();
@@ -112,6 +116,13 @@ void Game::Shutdown() noexcept
         currentScene_.reset();
     }
 
+    // パイプラインからすべてのステートをアンバインド（リソース解放前に必須）
+    auto* d3dCtx = GraphicsContext::Get().GetContext();
+    if (d3dCtx) {
+        d3dCtx->ClearState();
+        d3dCtx->Flush();
+    }
+
     // 逆順でシャットダウン
 #ifdef _DEBUG
     CircleRenderer::Get().Shutdown();
@@ -142,6 +153,7 @@ void Game::Shutdown() noexcept
     ShaderManager::Destroy();
     FileSystemManager::Destroy();
     InputManager::Destroy();
+    JobSystem::Destroy();  // 最後に破棄（他システムが使用している可能性あり）
 
     LOG_INFO("[Game] シャットダウン完了");
 }
@@ -149,9 +161,15 @@ void Game::Shutdown() noexcept
 //----------------------------------------------------------------------------
 void Game::Update()
 {
+    // フレーム開始（ジョブカウンターリセット）
+    JobSystem::Get().BeginFrame();
+
     if (currentScene_) {
         currentScene_->Update();
     }
+
+    // メインスレッドジョブを処理
+    JobSystem::Get().ProcessMainThreadJobs();
 }
 
 //----------------------------------------------------------------------------
@@ -165,5 +183,8 @@ void Game::Render()
 //----------------------------------------------------------------------------
 void Game::EndFrame()
 {
+    // フレーム内ジョブの完了を待機
+    JobSystem::Get().EndFrame();
+
     SceneManager::Get().ApplyPendingChange(currentScene_);
 }

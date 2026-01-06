@@ -442,8 +442,8 @@ void CollisionManager::QueryAABB(const AABB& aabb, std::vector<Collider2D*>& res
     Cell c0 = ToCell(aabb.minX, aabb.minY);
     Cell c1 = ToCell(aabb.maxX - 0.001f, aabb.maxY - 0.001f);
 
-    // 重複チェック用
-    std::vector<uint16_t> checked;
+    // 重複チェック用バッファ（メンバ変数を再利用でアロケーション削減）
+    queryBuffer_.clear();
 
     for (int cy = c0.y; cy <= c1.y; ++cy) {
         for (int cx = c0.x; cx <= c1.x; ++cx) {
@@ -455,17 +455,17 @@ void CollisionManager::QueryAABB(const AABB& aabb, std::vector<Collider2D*>& res
                 if ((layer_[idx] & layerMask) == 0) continue;
 
                 // 重複チェック（push_back + 後でソート）
-                checked.push_back(idx);
+                queryBuffer_.push_back(idx);
             }
         }
     }
 
     // 重複削除
-    std::sort(checked.begin(), checked.end());
-    checked.erase(std::unique(checked.begin(), checked.end()), checked.end());
+    std::sort(queryBuffer_.begin(), queryBuffer_.end());
+    queryBuffer_.erase(std::unique(queryBuffer_.begin(), queryBuffer_.end()), queryBuffer_.end());
 
     // AABB判定
-    for (uint16_t idx : checked) {
+    for (uint16_t idx : queryBuffer_) {
         float minX = posX_[idx] - halfW_[idx];
         float maxX = posX_[idx] + halfW_[idx];
         float minY = posY_[idx] - halfH_[idx];
@@ -602,8 +602,9 @@ void CollisionManager::RebuildGrid()
 
     size_t count = colliders_.size();
     for (size_t i = 0; i < count; ++i) {
-        if (!colliders_[i]) continue;
+        // ホットデータ(flags_)を先にチェックしてキャッシュ効率向上
         if ((flags_[i] & kFlagEnabled) == 0) continue;
+        if (!colliders_[i]) continue;
 
         float minX = posX_[i] - halfW_[i];
         float maxX = posX_[i] + halfW_[i];

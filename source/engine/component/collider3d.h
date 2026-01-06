@@ -1,30 +1,38 @@
 //----------------------------------------------------------------------------
-//! @file   collider2d.h
-//! @brief  2D当たり判定コンポーネント（AABB）
+//! @file   collider3d.h
+//! @brief  3D当たり判定コンポーネント
 //----------------------------------------------------------------------------
 #pragma once
 
 #include "component.h"
 #include "engine/math/math_types.h"
-#include "engine/c_systems/collision_manager.h"
+#include "engine/c_systems/collision_manager3d.h"
 #include <cstdint>
 
 //============================================================================
-//! @brief 2D当たり判定コンポーネント（AABB）
+//! @brief 3D当たり判定コンポーネント
 //!
-//! GameObjectにアタッチして当たり判定を追加する。
-//! 実データはCollisionManagerが所有し、このクラスはハンドルのみ保持。
+//! GameObjectにアタッチして3D当たり判定を追加する。
+//! AABB、球、カプセル形状をサポート。
+//! 実データはCollisionManager3Dが所有し、このクラスはハンドルのみ保持。
 //============================================================================
-class Collider2D : public Component {
+class Collider3D : public Component {
 public:
-    Collider2D() = default;
+    Collider3D() = default;
 
     //------------------------------------------------------------------------
-    //! @brief コンストラクタ
+    //! @brief AABBコライダー作成
     //! @param size 当たり判定のサイズ
     //! @param offset 中心からのオフセット
     //------------------------------------------------------------------------
-    explicit Collider2D(const Vector2& size, const Vector2& offset = Vector2::Zero);
+    static Collider3D CreateAABB(const Vector3& size, const Vector3& offset = Vector3::Zero);
+
+    //------------------------------------------------------------------------
+    //! @brief 球コライダー作成
+    //! @param radius 半径
+    //! @param offset 中心からのオフセット
+    //------------------------------------------------------------------------
+    static Collider3D CreateSphere(float radius, const Vector3& offset = Vector3::Zero);
 
     //------------------------------------------------------------------------
     // Component オーバーライド
@@ -39,27 +47,31 @@ public:
     //------------------------------------------------------------------------
 
     //! @brief 位置を直接設定（Transformを使わない場合）
-    void SetPosition(float x, float y);
-    void SetPosition(const Vector2& pos);
+    void SetPosition(const Vector3& pos);
+    void SetPosition(float x, float y, float z);
 
     //------------------------------------------------------------------------
-    // サイズとオフセット
+    // サイズ（AABB用）
     //------------------------------------------------------------------------
 
-    void SetSize(float width, float height);
-    void SetSize(const Vector2& size);
-    [[nodiscard]] Vector2 GetSize() const;
-
-    void SetOffset(float x, float y);
-    void SetOffset(const Vector2& offset);
-    [[nodiscard]] Vector2 GetOffset() const;
+    void SetSize(const Vector3& size);
+    void SetSize(float w, float h, float d);
+    [[nodiscard]] Vector3 GetSize() const;
 
     //------------------------------------------------------------------------
-    //! @brief 左上と右下の座標からコライダーを設定
-    //! @param min 左上座標（Transform位置からの相対座標）
-    //! @param max 右下座標（Transform位置からの相対座標）
+    // 半径（球用）
     //------------------------------------------------------------------------
-    void SetBounds(const Vector2& min, const Vector2& max);
+
+    void SetRadius(float radius);
+    [[nodiscard]] float GetRadius() const;
+
+    //------------------------------------------------------------------------
+    // オフセット
+    //------------------------------------------------------------------------
+
+    void SetOffset(const Vector3& offset);
+    void SetOffset(float x, float y, float z);
+    [[nodiscard]] Vector3 GetOffset() const;
 
     //------------------------------------------------------------------------
     // レイヤーとマスク
@@ -88,24 +100,31 @@ public:
     [[nodiscard]] bool IsColliderEnabled() const;
 
     //------------------------------------------------------------------------
-    // AABB取得
+    // 形状取得
     //------------------------------------------------------------------------
 
-    [[nodiscard]] AABB GetAABB() const;
+    [[nodiscard]] ColliderShape3D GetShape() const noexcept { return shape_; }
+
+    //------------------------------------------------------------------------
+    // AABB/球取得
+    //------------------------------------------------------------------------
+
+    [[nodiscard]] AABB3D GetAABB() const;
+    [[nodiscard]] BoundingSphere3D GetBoundingSphere() const;
 
     //------------------------------------------------------------------------
     // 衝突コールバック
     //------------------------------------------------------------------------
 
-    void SetOnCollision(CollisionCallback callback);
-    void SetOnCollisionEnter(CollisionCallback callback);
-    void SetOnCollisionExit(CollisionCallback callback);
+    void SetOnCollision(CollisionCallback3D callback);
+    void SetOnCollisionEnter(CollisionCallback3D callback);
+    void SetOnCollisionExit(CollisionCallback3D callback);
 
     //------------------------------------------------------------------------
     // ハンドル取得（内部使用）
     //------------------------------------------------------------------------
 
-    [[nodiscard]] ColliderHandle GetHandle() const noexcept { return handle_; }
+    [[nodiscard]] Collider3DHandle GetHandle() const noexcept { return handle_; }
 
     //------------------------------------------------------------------------
     // ユーザーデータ
@@ -124,23 +143,27 @@ public:
     // Transform同期設定
     //------------------------------------------------------------------------
 
-    //! @brief Transformとの自動同期を設定
-    //! @param sync trueで自動同期、falseで手動更新モード
     void SetSyncWithTransform(bool sync) noexcept { syncWithTransform_ = sync; }
-
-    //! @brief Transformとの自動同期状態を取得
     [[nodiscard]] bool IsSyncWithTransform() const noexcept { return syncWithTransform_; }
 
 private:
-    ColliderHandle handle_;
+    Collider3DHandle handle_;
+    ColliderShape3D shape_ = ColliderShape3D::AABB;
 
-    // 初期化用の一時保存（OnAttach前に設定された値を保持）
-    Vector2 initSize_ = Vector2::Zero;
-    Vector2 initOffset_ = Vector2::Zero;
-    uint8_t initLayer_ = CollisionConstants::kDefaultLayer;
-    uint8_t initMask_ = CollisionConstants::kDefaultMask;
+    // 初期化用の一時保存
+    Vector3 initSize_ = Vector3::One;
+    float initRadius_ = 0.5f;
+    Vector3 initOffset_ = Vector3::Zero;
+    uint8_t initLayer_ = CollisionConstants3D::kDefaultLayer;
+    uint8_t initMask_ = CollisionConstants3D::kDefaultMask;
     bool initTrigger_ = false;
-    bool syncWithTransform_ = true;  //!< Transformと自動同期するか
+    bool initEnabled_ = true;
+    bool syncWithTransform_ = true;
 
-    void* userData_ = nullptr;  //!< ユーザー定義データ
+    // コールバックのキャッシュ（OnAttach前に設定された場合用）
+    CollisionCallback3D initOnCollision_;
+    CollisionCallback3D initOnEnter_;
+    CollisionCallback3D initOnExit_;
+
+    void* userData_ = nullptr;
 };

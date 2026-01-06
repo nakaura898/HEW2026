@@ -11,7 +11,7 @@
 //----------------------------------------------------------------------------
 //! @brief UIゲージコンポーネント
 //! @details GameObjectにアタッチして使用するゲージUI
-//!          Transform2Dから位置を取得し、値に応じてゲージを描画する
+//!          Transformから位置を取得し、値に応じてゲージを描画する
 //!          HPバー、スタミナバー、進捗表示などに使用可能
 //----------------------------------------------------------------------------
 class UIGaugeComponent : public Component
@@ -101,7 +101,7 @@ public:
     [[nodiscard]] bool IsFull() const { return value_ >= 1.0f; }
 
 private:
-    //! @brief ゲージの中心位置を取得（Transform2Dから）
+    //! @brief ゲージの中心位置を取得（Transformから）
     [[nodiscard]] Vector2 GetPosition() const;
 
     Vector2 size_ = Vector2(100.0f, 10.0f);  //!< ゲージサイズ
