@@ -43,10 +43,10 @@ namespace
         HRESULT hr = device->CreateTexture2D(&desc, initialData, &texture);
         RETURN_NULL_IF_FAILED(hr, "[TextureManager] Texture2D作成失敗");
 
-        ComPtr<ID3D11ShaderResourceView> srv;
-        ComPtr<ID3D11RenderTargetView> rtv;
-        ComPtr<ID3D11DepthStencilView> dsv;
-        ComPtr<ID3D11UnorderedAccessView> uav;
+        View<SRV> srv;
+        View<RTV> rtv;
+        View<DSV> dsv;
+        View<UAV> uav;
 
         // SRV作成（Viewクラスを使用）
         if (desc.BindFlags & D3D11_BIND_SHADER_RESOURCE) {
@@ -64,37 +64,31 @@ namespace
             }
 
             srv = View<SRV>::Create(texture.Get(), &srvDesc);
-            if (!srv) {
+            if (!srv.IsValid()) {
                 LOG_ERROR("[TextureManager] SRV作成失敗");
             }
         }
 
-        // RTV作成（Viewクラスを使用）
+        // RTV作成
         if (desc.BindFlags & D3D11_BIND_RENDER_TARGET) {
-            auto rtvWrapper = RenderTargetView::CreateFromTexture2D(texture.Get(), nullptr);
-            if (rtvWrapper && rtvWrapper->IsValid()) {
-                rtv = rtvWrapper->Detach();
-            } else {
+            rtv = View<RTV>::Create(texture.Get());
+            if (!rtv.IsValid()) {
                 LOG_ERROR("[TextureManager] RTV作成失敗");
             }
         }
 
-        // DSV作成（Viewクラスを使用）
+        // DSV作成
         if (desc.BindFlags & D3D11_BIND_DEPTH_STENCIL) {
-            auto dsvWrapper = DepthStencilView::CreateFromTexture2D(texture.Get(), nullptr);
-            if (dsvWrapper && dsvWrapper->IsValid()) {
-                dsv = dsvWrapper->Detach();
-            } else {
+            dsv = View<DSV>::Create(texture.Get());
+            if (!dsv.IsValid()) {
                 LOG_ERROR("[TextureManager] DSV作成失敗");
             }
         }
 
-        // UAV作成（Viewクラスを使用）
+        // UAV作成
         if (desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS) {
-            auto uavWrapper = UnorderedAccessView::CreateFromTexture2D(texture.Get(), nullptr);
-            if (uavWrapper && uavWrapper->IsValid()) {
-                uav = uavWrapper->Detach();
-            } else {
+            uav = View<UAV>::Create(texture.Get());
+            if (!uav.IsValid()) {
                 LOG_ERROR("[TextureManager] UAV作成失敗");
             }
         }
@@ -755,25 +749,23 @@ TexturePtr TextureManager::CreateDepthStencil(
     RETURN_NULL_IF_FAILED(hr, "[TextureManager] DepthStencil Texture2D作成失敗");
 
     // DSV作成（Viewクラスを使用、元のフォーマットで）
-    ComPtr<ID3D11DepthStencilView> dsv;
     D3D11_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
     dsvDesc.Format = format;
     dsvDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
     dsvDesc.Texture2D.MipSlice = 0;
-    dsv = View<DSV>::Create(texture.Get(), &dsvDesc);
-    if (!dsv) {
+    View<DSV> dsv = View<DSV>::Create(texture.Get(), &dsvDesc);
+    if (!dsv.IsValid()) {
         LOG_ERROR("[TextureManager] DSV作成失敗");
     }
 
     // SRV作成（Viewクラスを使用）
-    ComPtr<ID3D11ShaderResourceView> srv;
     D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Format = TextureDesc::GetSrvFormat(format);
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MostDetailedMip = 0;
     srvDesc.Texture2D.MipLevels = 1;
-    srv = View<SRV>::Create(texture.Get(), &srvDesc);
-    if (!srv) {
+    View<SRV> srv = View<SRV>::Create(texture.Get(), &srvDesc);
+    if (!srv.IsValid()) {
         LOG_ERROR("[TextureManager] SRV作成失敗");
     }
 
@@ -790,8 +782,8 @@ TexturePtr TextureManager::CreateDepthStencil(
     mutraDesc.dimension = TextureDimension::Tex2D;
 
     return std::make_shared<Texture>(
-        std::move(texture), std::move(srv), nullptr,
-        std::move(dsv), nullptr, mutraDesc);
+        std::move(texture), std::move(srv), View<RTV>{},
+        std::move(dsv), View<UAV>{}, mutraDesc);
 }
 
 void TextureManager::ClearCache()
@@ -945,9 +937,8 @@ TexturePtr TextureManager::CompressToBC1(Texture* source)
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MipLevels = 1;
 
-    ComPtr<ID3D11ShaderResourceView> srv;
-    hr = device->CreateShaderResourceView(compressedTexture.Get(), &srvDesc, &srv);
-    if (FAILED(hr)) {
+    View<SRV> srv = View<SRV>::Create(compressedTexture.Get(), &srvDesc);
+    if (!srv.IsValid()) {
         LOG_ERROR("[TextureManager] BC1圧縮: SRVの作成に失敗");
         return nullptr;
     }
@@ -963,10 +954,10 @@ TexturePtr TextureManager::CompressToBC1(Texture* source)
 
     auto result = std::make_shared<Texture>(
         compressedTexture,
-        srv,
-        ComPtr<ID3D11RenderTargetView>(nullptr),
-        ComPtr<ID3D11DepthStencilView>(nullptr),
-        ComPtr<ID3D11UnorderedAccessView>(nullptr),
+        std::move(srv),
+        View<RTV>{},
+        View<DSV>{},
+        View<UAV>{},
         desc);
 
     LOG_INFO("[TextureManager] BC1圧縮完了: " + std::to_string(width) + "x" + std::to_string(height) +
@@ -1082,9 +1073,8 @@ TexturePtr TextureManager::CompressToBC3(Texture* source)
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MipLevels = 1;
 
-    ComPtr<ID3D11ShaderResourceView> srv;
-    hr = device->CreateShaderResourceView(compressedTexture.Get(), &srvDesc, &srv);
-    if (FAILED(hr)) {
+    View<SRV> srv = View<SRV>::Create(compressedTexture.Get(), &srvDesc);
+    if (!srv.IsValid()) {
         LOG_ERROR("[TextureManager] BC3圧縮: SRVの作成に失敗");
         return nullptr;
     }
@@ -1100,10 +1090,10 @@ TexturePtr TextureManager::CompressToBC3(Texture* source)
 
     auto result = std::make_shared<Texture>(
         compressedTexture,
-        srv,
-        ComPtr<ID3D11RenderTargetView>(nullptr),
-        ComPtr<ID3D11DepthStencilView>(nullptr),
-        ComPtr<ID3D11UnorderedAccessView>(nullptr),
+        std::move(srv),
+        View<RTV>{},
+        View<DSV>{},
+        View<UAV>{},
         desc);
 
     LOG_INFO("[TextureManager] BC3圧縮完了: " + std::to_string(width) + "x" + std::to_string(height) +
@@ -1215,9 +1205,8 @@ TexturePtr TextureManager::CompressToBC7(Texture* source)
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MipLevels = 1;
 
-    ComPtr<ID3D11ShaderResourceView> srv;
-    hr = device->CreateShaderResourceView(compressedTexture.Get(), &srvDesc, &srv);
-    if (FAILED(hr)) {
+    View<SRV> srv = View<SRV>::Create(compressedTexture.Get(), &srvDesc);
+    if (!srv.IsValid()) {
         LOG_ERROR("[TextureManager] BC7圧縮: SRVの作成に失敗");
         return nullptr;
     }
@@ -1233,10 +1222,10 @@ TexturePtr TextureManager::CompressToBC7(Texture* source)
 
     auto result = std::make_shared<Texture>(
         compressedTexture,
-        srv,
-        ComPtr<ID3D11RenderTargetView>(nullptr),
-        ComPtr<ID3D11DepthStencilView>(nullptr),
-        ComPtr<ID3D11UnorderedAccessView>(nullptr),
+        std::move(srv),
+        View<RTV>{},
+        View<DSV>{},
+        View<UAV>{},
         desc);
 
     LOG_INFO("[TextureManager] BC7圧縮完了: " + std::to_string(width) + "x" + std::to_string(height) +

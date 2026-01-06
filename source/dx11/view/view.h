@@ -5,14 +5,15 @@
 //! @details タグ型を使った明確なビュー管理。
 //!          View<SRV>, View<RTV>, View<DSV>, View<UAV> の形式で使用。
 //!
-//! @code
-//! // 推奨: View<Tag> + Create()
-//! View<SRV> srv;                                  // 空で宣言
-//! auto ptr = View<SRV>::Create(texture);          // ComPtr取得
-//! srv = View<SRV>(ptr);                           // ラッパーに格納
+//! @warning ビュー型は必ずView<Tag>形式で宣言すること！
+//!          非推奨: ComPtr<ID3D11ShaderResourceView> srv_;
+//!          推奨:   View<SRV> srv_;
 //!
-//! // または直接ComPtrとして使用
-//! ComPtr<ID3D11ShaderResourceView> srv = View<SRV>::Create(texture);
+//! @code
+//! View<SRV> srv = View<SRV>::Create(texture);  // ビュー作成
+//! if (srv) {                                    // 有効性チェック
+//!     context->PSSetShaderResources(0, 1, srv.GetAddressOf());
+//! }
 //! @endcode
 //----------------------------------------------------------------------------
 #pragma once
@@ -20,7 +21,6 @@
 #include "dx11/gpu_common.h"
 #include "dx11/graphics_device.h"
 #include "common/logging/logging.h"
-#include <memory>
 #include <type_traits>
 
 //============================================================================
@@ -37,56 +37,56 @@ struct UAV {};  //!< UnorderedAccessView
 //============================================================================
 //! @brief タグ→D3D11型のマッピング
 //============================================================================
-template<typename Tag> struct ViewTypeMap;
+template<typename Tag> struct ViewTraits;
 
-template<> struct ViewTypeMap<SRV> {
-    using Type = ID3D11ShaderResourceView;
-    using DescType = D3D11_SHADER_RESOURCE_VIEW_DESC;
+template<> struct ViewTraits<SRV> {
+    using ViewType = ID3D11ShaderResourceView;
+    using ViewDesc = D3D11_SHADER_RESOURCE_VIEW_DESC;
     static constexpr const char* Name = "SRV";
     static constexpr bool SupportsBuffer = true;
     static constexpr bool SupportsTexture3D = true;
 
     static HRESULT Create(ID3D11Device5* device, ID3D11Resource* resource,
-                          const DescType* desc, Type** out) {
+                          const ViewDesc* desc, ViewType** out) {
         return device->CreateShaderResourceView(resource, desc, out);
     }
 };
 
-template<> struct ViewTypeMap<RTV> {
-    using Type = ID3D11RenderTargetView;
-    using DescType = D3D11_RENDER_TARGET_VIEW_DESC;
+template<> struct ViewTraits<RTV> {
+    using ViewType = ID3D11RenderTargetView;
+    using ViewDesc = D3D11_RENDER_TARGET_VIEW_DESC;
     static constexpr const char* Name = "RTV";
     static constexpr bool SupportsBuffer = true;
     static constexpr bool SupportsTexture3D = true;
 
     static HRESULT Create(ID3D11Device5* device, ID3D11Resource* resource,
-                          const DescType* desc, Type** out) {
+                          const ViewDesc* desc, ViewType** out) {
         return device->CreateRenderTargetView(resource, desc, out);
     }
 };
 
-template<> struct ViewTypeMap<DSV> {
-    using Type = ID3D11DepthStencilView;
-    using DescType = D3D11_DEPTH_STENCIL_VIEW_DESC;
+template<> struct ViewTraits<DSV> {
+    using ViewType = ID3D11DepthStencilView;
+    using ViewDesc = D3D11_DEPTH_STENCIL_VIEW_DESC;
     static constexpr const char* Name = "DSV";
     static constexpr bool SupportsBuffer = false;
     static constexpr bool SupportsTexture3D = false;
 
     static HRESULT Create(ID3D11Device5* device, ID3D11Resource* resource,
-                          const DescType* desc, Type** out) {
+                          const ViewDesc* desc, ViewType** out) {
         return device->CreateDepthStencilView(resource, desc, out);
     }
 };
 
-template<> struct ViewTypeMap<UAV> {
-    using Type = ID3D11UnorderedAccessView;
-    using DescType = D3D11_UNORDERED_ACCESS_VIEW_DESC;
+template<> struct ViewTraits<UAV> {
+    using ViewType = ID3D11UnorderedAccessView;
+    using ViewDesc = D3D11_UNORDERED_ACCESS_VIEW_DESC;
     static constexpr const char* Name = "UAV";
     static constexpr bool SupportsBuffer = true;
     static constexpr bool SupportsTexture3D = true;
 
     static HRESULT Create(ID3D11Device5* device, ID3D11Resource* resource,
-                          const DescType* desc, Type** out) {
+                          const ViewDesc* desc, ViewType** out) {
         return device->CreateUnorderedAccessView(resource, desc, out);
     }
 };
@@ -96,24 +96,17 @@ template<> struct ViewTypeMap<UAV> {
 //!
 //! @tparam Tag ビュータグ型（SRV, RTV, DSV, UAV）
 //!
-//! @details タグベースの明確なビュー管理。
-//!          View<SRV>, View<RTV>, View<DSV>, View<UAV> の形式で使用。
-//!
 //! @code
-//! View<SRV> srv;                              // 空で宣言
-//! srv = View<SRV>(View<SRV>::Create(tex));    // 後から代入
-//!
-//! // ComPtr直接取得
-//! auto ptr = View<SRV>::Create(texture);
+//! View<SRV> srv = View<SRV>::Create(texture);
+//! View<DSV> dsv = View<DSV>::Create(texture, &dsvDesc);
 //! @endcode
 //============================================================================
 template<typename Tag>
 class View final : private NonCopyable
 {
 public:
-    using Map = ViewTypeMap<Tag>;
-    using D3DType = typename Map::Type;
-    using ViewDesc = typename Map::DescType;
+    using D3DType = typename ViewTraits<Tag>::ViewType;
+    using DescType = typename ViewTraits<Tag>::ViewDesc;
 
     //----------------------------------------------------------
     //! @name   コンストラクタ
@@ -134,52 +127,52 @@ public:
 
     //!@}
     //----------------------------------------------------------
-    //! @name   ファクトリ（ComPtr直接返却）
+    //! @name   ファクトリ
     //----------------------------------------------------------
     //!@{
 
     //! Texture2Dからビュー作成
-    [[nodiscard]] static ComPtr<D3DType> Create(
+    [[nodiscard]] static View Create(
         ID3D11Texture2D* texture,
-        const ViewDesc* desc = nullptr)
+        const DescType* desc = nullptr)
     {
-        return CreateImpl(texture, desc, "Create(Texture2D)");
+        return View(CreateImpl(texture, desc, "Create(Texture2D)"));
     }
 
     //! Texture1Dからビュー作成
-    [[nodiscard]] static ComPtr<D3DType> Create(
+    [[nodiscard]] static View Create(
         ID3D11Texture1D* texture,
-        const ViewDesc* desc = nullptr)
+        const DescType* desc = nullptr)
     {
-        return CreateImpl(texture, desc, "Create(Texture1D)");
+        return View(CreateImpl(texture, desc, "Create(Texture1D)"));
     }
 
     //! Texture3Dからビュー作成（DSV非対応）
     template<typename T = Tag>
-    [[nodiscard]] static std::enable_if_t<ViewTypeMap<T>::SupportsTexture3D, ComPtr<D3DType>>
+    [[nodiscard]] static std::enable_if_t<ViewTraits<T>::SupportsTexture3D, View>
     Create(
         ID3D11Texture3D* texture,
-        const ViewDesc* desc = nullptr)
+        const DescType* desc = nullptr)
     {
-        return CreateImpl(texture, desc, "Create(Texture3D)");
+        return View(CreateImpl(texture, desc, "Create(Texture3D)"));
     }
 
     //! バッファからビュー作成（DSV非対応）
     template<typename T = Tag>
-    [[nodiscard]] static std::enable_if_t<ViewTypeMap<T>::SupportsBuffer, ComPtr<D3DType>>
+    [[nodiscard]] static std::enable_if_t<ViewTraits<T>::SupportsBuffer, View>
     Create(
         ID3D11Buffer* buffer,
-        const ViewDesc* desc = nullptr)
+        const DescType* desc = nullptr)
     {
-        return CreateImpl(buffer, desc, "Create(Buffer)");
+        return View(CreateImpl(buffer, desc, "Create(Buffer)"));
     }
 
     //! 任意のリソース + 記述子からビュー作成
-    [[nodiscard]] static ComPtr<D3DType> Create(
+    [[nodiscard]] static View Create(
         ID3D11Resource* resource,
-        const ViewDesc& desc)
+        const DescType& desc)
     {
-        return CreateImpl(resource, &desc, "Create(Resource)");
+        return View(CreateImpl(resource, &desc, "Create(Resource)"));
     }
 
     //!@}
@@ -203,58 +196,13 @@ public:
     [[nodiscard]] ComPtr<D3DType> Detach() noexcept { return std::move(view_); }
 
     //! 記述子を取得
-    [[nodiscard]] ViewDesc GetDesc() const noexcept
+    [[nodiscard]] DescType GetDesc() const noexcept
     {
-        ViewDesc desc = {};
+        DescType desc = {};
         if (view_) {
             view_->GetDesc(&desc);
         }
         return desc;
-    }
-
-    //!@}
-    //----------------------------------------------------------
-    //! @name   後方互換（非推奨）
-    //----------------------------------------------------------
-    //!@{
-
-    using ViewPtr = std::unique_ptr<View>;  //!< @deprecated ComPtr直接使用を推奨
-
-    //! @deprecated Create()を使用してください
-    [[nodiscard]] static ViewPtr CreateFromTexture2D(
-        ID3D11Texture2D* texture,
-        const ViewDesc* desc = nullptr)
-    {
-        auto view = Create(texture, desc);
-        return view ? ViewPtr(new View(std::move(view))) : nullptr;
-    }
-
-    //! @deprecated Create()を使用してください
-    [[nodiscard]] static ViewPtr CreateFromTexture1D(
-        ID3D11Texture1D* texture,
-        const ViewDesc* desc = nullptr)
-    {
-        auto view = Create(texture, desc);
-        return view ? ViewPtr(new View(std::move(view))) : nullptr;
-    }
-
-    //! @deprecated Create()を使用してください
-    template<typename T = Tag>
-    [[nodiscard]] static std::enable_if_t<ViewTypeMap<T>::SupportsBuffer, ViewPtr>
-    CreateFromBuffer(
-        ID3D11Buffer* buffer,
-        const ViewDesc* desc = nullptr)
-    {
-        auto view = Create(buffer, desc);
-        return view ? ViewPtr(new View(std::move(view))) : nullptr;
-    }
-
-    //! @deprecated Create()を使用してください
-    [[nodiscard]] static ComPtr<D3DType> CreateViewFromTexture2D(
-        ID3D11Texture2D* texture,
-        const ViewDesc* desc = nullptr)
-    {
-        return Create(texture, desc);
     }
 
     //!@}
@@ -264,24 +212,24 @@ private:
     template<typename ResourceType>
     [[nodiscard]] static ComPtr<D3DType> CreateImpl(
         ResourceType* resource,
-        const ViewDesc* desc,
+        const DescType* desc,
         const char* methodName)
     {
         if (!resource) {
-            LOG_ERROR(std::string(Map::Name) + "::" + methodName + " - resource is null");
+            LOG_ERROR(std::string(ViewTraits<Tag>::Name) + "::" + methodName + " - resource is null");
             return nullptr;
         }
 
         auto* device = GetD3D11Device();
         if (!device) {
-            LOG_ERROR(std::string(Map::Name) + "::" + methodName + " - device is null");
+            LOG_ERROR(std::string(ViewTraits<Tag>::Name) + "::" + methodName + " - device is null");
             return nullptr;
         }
 
         ComPtr<D3DType> view;
-        HRESULT hr = Map::Create(device, resource, desc, view.GetAddressOf());
+        HRESULT hr = ViewTraits<Tag>::Create(device, resource, desc, view.GetAddressOf());
         if (FAILED(hr)) {
-            LOG_ERROR(std::string(Map::Name) + "::" + methodName + " failed");
+            LOG_ERROR(std::string(ViewTraits<Tag>::Name) + "::" + methodName + " failed");
             return nullptr;
         }
 
@@ -290,13 +238,3 @@ private:
 
     ComPtr<D3DType> view_;
 };
-
-//============================================================================
-//! @name 後方互換性エイリアス（非推奨）
-//============================================================================
-//!@{
-using ShaderResourceView = View<SRV>;
-using RenderTargetView = View<RTV>;
-using DepthStencilView = View<DSV>;
-using UnorderedAccessView = View<UAV>;
-//!@}

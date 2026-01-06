@@ -5,6 +5,7 @@
 #pragma once
 
 #include "dx11/gpu_common.h"
+#include "dx11/view/view.h"
 #include "gpu_resource.h"
 #include "dx11/gpu/format.h"
 
@@ -228,13 +229,13 @@ public:
 
     //! 1Dテクスチャ用コンストラクタ
     Texture(ComPtr<ID3D11Texture1D> texture,
-            ComPtr<ID3D11ShaderResourceView> srv,
-            ComPtr<ID3D11RenderTargetView> rtv,
-            ComPtr<ID3D11UnorderedAccessView> uav,
+            View<SRV> srv,
+            View<RTV> rtv,
+            View<UAV> uav,
             const TextureDesc& desc)
         : srv_(std::move(srv))
         , rtv_(std::move(rtv))
-        , dsv_(nullptr)
+        , dsv_()
         , uav_(std::move(uav))
         , width_(desc.width)
         , height_(1)
@@ -247,10 +248,10 @@ public:
 
     //! 2Dテクスチャ/キューブマップ用コンストラクタ
     Texture(ComPtr<ID3D11Texture2D> texture,
-            ComPtr<ID3D11ShaderResourceView> srv,
-            ComPtr<ID3D11RenderTargetView> rtv,
-            ComPtr<ID3D11DepthStencilView> dsv,
-            ComPtr<ID3D11UnorderedAccessView> uav,
+            View<SRV> srv,
+            View<RTV> rtv,
+            View<DSV> dsv,
+            View<UAV> uav,
             const TextureDesc& desc)
         : srv_(std::move(srv))
         , rtv_(std::move(rtv))
@@ -267,12 +268,12 @@ public:
 
     //! 3Dテクスチャ用コンストラクタ
     Texture(ComPtr<ID3D11Texture3D> texture,
-            ComPtr<ID3D11ShaderResourceView> srv,
-            ComPtr<ID3D11UnorderedAccessView> uav,
+            View<SRV> srv,
+            View<UAV> uav,
             const TextureDesc& desc)
         : srv_(std::move(srv))
-        , rtv_(nullptr)
-        , dsv_(nullptr)
+        , rtv_()
+        , dsv_()
         , uav_(std::move(uav))
         , width_(desc.width)
         , height_(desc.height)
@@ -319,6 +320,8 @@ public:
     [[nodiscard]] ID3D11ShaderResourceView* const* SrvAddress() const noexcept { return srv_.GetAddressOf(); }
     //! RTVアドレスを取得
     [[nodiscard]] ID3D11RenderTargetView* const* RtvAddress() const noexcept { return rtv_.GetAddressOf(); }
+    //! DSVアドレスを取得
+    [[nodiscard]] ID3D11DepthStencilView* const* DsvAddress() const noexcept { return dsv_.GetAddressOf(); }
     //! UAVアドレスを取得
     [[nodiscard]] ID3D11UnorderedAccessView* const* UavAddress() const noexcept { return uav_.GetAddressOf(); }
 
@@ -344,13 +347,13 @@ public:
     //! キューブマップか判定
     [[nodiscard]] bool IsCube() const noexcept { return dimension_ == TextureDimension::Cube; }
     //! SRVを持つか判定
-    [[nodiscard]] bool HasSrv() const noexcept { return srv_ != nullptr; }
+    [[nodiscard]] bool HasSrv() const noexcept { return srv_.IsValid(); }
     //! RTVを持つか判定
-    [[nodiscard]] bool HasRtv() const noexcept { return rtv_ != nullptr; }
+    [[nodiscard]] bool HasRtv() const noexcept { return rtv_.IsValid(); }
     //! DSVを持つか判定
-    [[nodiscard]] bool HasDsv() const noexcept { return dsv_ != nullptr; }
+    [[nodiscard]] bool HasDsv() const noexcept { return dsv_.IsValid(); }
     //! UAVを持つか判定
-    [[nodiscard]] bool HasUav() const noexcept { return uav_ != nullptr; }
+    [[nodiscard]] bool HasUav() const noexcept { return uav_.IsValid(); }
 
     //! 記述子を再構築して取得
     [[nodiscard]] TextureDesc Desc() const noexcept {
@@ -366,10 +369,10 @@ public:
 
 private:
     ComPtr<ID3D11Resource> resource_;
-    ComPtr<ID3D11ShaderResourceView> srv_;
-    ComPtr<ID3D11RenderTargetView> rtv_;
-    ComPtr<ID3D11DepthStencilView> dsv_;
-    ComPtr<ID3D11UnorderedAccessView> uav_;
+    View<SRV> srv_;
+    View<RTV> rtv_;
+    View<DSV> dsv_;
+    View<UAV> uav_;
     uint32_t width_;
     uint32_t height_;
     uint32_t depth_;

@@ -48,12 +48,12 @@ std::shared_ptr<Texture> Texture::Create2D(
     HRESULT hr = device->CreateTexture2D(&d3dDesc, pInitData, texture.GetAddressOf());
     RETURN_NULL_IF_FAILED(hr, "[Texture] 2Dテクスチャ作成失敗");
 
-    // SRV作成（直接ComPtr生成）
-    ComPtr<ID3D11ShaderResourceView> srv = ShaderResourceView::CreateViewFromTexture2D(texture.Get());
+    // SRV作成
+    View<SRV> srv = View<SRV>::Create(texture.Get());
     RETURN_NULL_IF_NULL(srv.Get(), "[Texture] SRV作成失敗");
 
     return std::make_shared<Texture>(
-        std::move(texture), std::move(srv), nullptr, nullptr, nullptr, desc);
+        std::move(texture), std::move(srv), View<RTV>{}, View<DSV>{}, View<UAV>{}, desc);
 }
 
 //! レンダーターゲットを作成（SRV+RTV付き）
@@ -82,16 +82,16 @@ std::shared_ptr<Texture> Texture::CreateRenderTarget(
     HRESULT hr = device->CreateTexture2D(&d3dDesc, nullptr, texture.GetAddressOf());
     RETURN_NULL_IF_FAILED(hr, "[Texture] レンダーターゲット作成失敗");
 
-    // SRV作成（直接ComPtr生成）
-    ComPtr<ID3D11ShaderResourceView> srv = ShaderResourceView::CreateViewFromTexture2D(texture.Get());
+    // SRV作成
+    View<SRV> srv = View<SRV>::Create(texture.Get());
     RETURN_NULL_IF_NULL(srv.Get(), "[Texture] SRV作成失敗");
 
-    // RTV作成（直接ComPtr生成）
-    ComPtr<ID3D11RenderTargetView> rtv = RenderTargetView::CreateViewFromTexture2D(texture.Get());
+    // RTV作成
+    View<RTV> rtv = View<RTV>::Create(texture.Get());
     RETURN_NULL_IF_NULL(rtv.Get(), "[Texture] RTV作成失敗");
 
     return std::make_shared<Texture>(
-        std::move(texture), std::move(srv), std::move(rtv), nullptr, nullptr, desc);
+        std::move(texture), std::move(srv), std::move(rtv), View<DSV>{}, View<UAV>{}, desc);
 }
 
 //! 深度ステンシルを作成（DSV付き、SRVはオプション）
@@ -162,11 +162,11 @@ std::shared_ptr<Texture> Texture::CreateDepthStencil(
     dsvDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
     dsvDesc.Texture2D.MipSlice = 0;
 
-    ComPtr<ID3D11DepthStencilView> dsv = View<DSV>::Create(texture.Get(), &dsvDesc);
+    View<DSV> dsv = View<DSV>::Create(texture.Get(), &dsvDesc);
     RETURN_NULL_IF_NULL(dsv.Get(), "[Texture] DSV作成失敗");
 
     // SRV作成（オプション）
-    ComPtr<ID3D11ShaderResourceView> srv;
+    View<SRV> srv;
     if (withSrv && srvFormat != DXGI_FORMAT_UNKNOWN) {
         D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = srvFormat;
@@ -179,7 +179,7 @@ std::shared_ptr<Texture> Texture::CreateDepthStencil(
     }
 
     return std::make_shared<Texture>(
-        std::move(texture), std::move(srv), nullptr, std::move(dsv), nullptr, desc);
+        std::move(texture), std::move(srv), View<RTV>{}, std::move(dsv), View<UAV>{}, desc);
 }
 
 //! UAV対応テクスチャを作成（SRV+UAV付き）
@@ -208,16 +208,16 @@ std::shared_ptr<Texture> Texture::CreateUav(
     HRESULT hr = device->CreateTexture2D(&d3dDesc, nullptr, texture.GetAddressOf());
     RETURN_NULL_IF_FAILED(hr, "[Texture] UAVテクスチャ作成失敗");
 
-    // SRV作成（直接ComPtr生成）
-    ComPtr<ID3D11ShaderResourceView> srv = ShaderResourceView::CreateViewFromTexture2D(texture.Get());
+    // SRV作成
+    View<SRV> srv = View<SRV>::Create(texture.Get());
     RETURN_NULL_IF_NULL(srv.Get(), "[Texture] SRV作成失敗");
 
-    // UAV作成（直接ComPtr生成）
-    ComPtr<ID3D11UnorderedAccessView> uav = UnorderedAccessView::CreateViewFromTexture2D(texture.Get());
+    // UAV作成
+    View<UAV> uav = View<UAV>::Create(texture.Get());
     RETURN_NULL_IF_NULL(uav.Get(), "[Texture] UAV作成失敗");
 
     return std::make_shared<Texture>(
-        std::move(texture), std::move(srv), nullptr, nullptr, std::move(uav), desc);
+        std::move(texture), std::move(srv), View<RTV>{}, View<DSV>{}, std::move(uav), desc);
 }
 
 //! キューブマップを作成（SRV付き）
@@ -253,11 +253,11 @@ std::shared_ptr<Texture> Texture::CreateCube(
     srvDesc.TextureCube.MipLevels = 1;
     srvDesc.TextureCube.MostDetailedMip = 0;
 
-    ComPtr<ID3D11ShaderResourceView> srv = View<SRV>::Create(texture.Get(), &srvDesc);
+    View<SRV> srv = View<SRV>::Create(texture.Get(), &srvDesc);
     RETURN_NULL_IF_NULL(srv.Get(), "[Texture] キューブマップSRV作成失敗");
 
     return std::make_shared<Texture>(
-        std::move(texture), std::move(srv), nullptr, nullptr, nullptr, desc);
+        std::move(texture), std::move(srv), View<RTV>{}, View<DSV>{}, View<UAV>{}, desc);
 }
 
 //----------------------------------------------------------------------------
@@ -268,10 +268,10 @@ Texture::~Texture()
     LOG_INFO("[Texture] 解放開始: " + std::to_string(width_) + "x" + std::to_string(height_));
 
     // 明示的な解放順序：ビュー → リソース
-    if (uav_) { LOG_INFO("  UAV解放"); uav_.Reset(); }
-    if (dsv_) { LOG_INFO("  DSV解放"); dsv_.Reset(); }
-    if (rtv_) { LOG_INFO("  RTV解放"); rtv_.Reset(); }
-    if (srv_) { LOG_INFO("  SRV解放"); srv_.Reset(); }
+    if (uav_.IsValid()) { LOG_INFO("  UAV解放"); uav_ = View<UAV>{}; }
+    if (dsv_.IsValid()) { LOG_INFO("  DSV解放"); dsv_ = View<DSV>{}; }
+    if (rtv_.IsValid()) { LOG_INFO("  RTV解放"); rtv_ = View<RTV>{}; }
+    if (srv_.IsValid()) { LOG_INFO("  SRV解放"); srv_ = View<SRV>{}; }
     if (resource_) {
         // リソースの現在のRefcountを確認（AddRef→Releaseで取得）
         resource_->AddRef();
