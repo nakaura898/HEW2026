@@ -1,33 +1,22 @@
 #include "input_manager.h"
 
-// 静的メンバの定義
-InputManager* InputManager::instance_ = nullptr;
-
 InputManager::InputManager() noexcept
     : keyboard_(std::make_unique<Keyboard>())
     , mouse_(std::make_unique<Mouse>())
-    , gamepadManager_(nullptr)  
+    , gamepadManager_(nullptr)
 {
 }
 
-bool InputManager::Initialize() noexcept
+void InputManager::Create()
 {
-    if (instance_ != nullptr) {
-        // 既に初期化済み
-        return false;
+    if (!instance_) {
+        instance_ = std::unique_ptr<InputManager>(new InputManager());
     }
-
-    instance_ = new (std::nothrow) InputManager();
-    return instance_ != nullptr;
 }
 
-
-void InputManager::Uninit() noexcept
+void InputManager::Destroy()
 {
-    if (instance_ != nullptr) {
-        delete instance_;
-        instance_ = nullptr;
-    }
+    instance_.reset();
 }
 
 void InputManager::Update(float deltaTime) noexcept

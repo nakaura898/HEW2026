@@ -35,10 +35,16 @@ namespace
 //============================================================================
 // FileSystemManager 実装
 //============================================================================
-FileSystemManager& FileSystemManager::Get() noexcept
+void FileSystemManager::Create()
 {
-    static FileSystemManager instance;
-    return instance;
+    if (!instance_) {
+        instance_ = std::unique_ptr<FileSystemManager>(new FileSystemManager());
+    }
+}
+
+void FileSystemManager::Destroy()
+{
+    instance_.reset();
 }
 
 std::wstring FileSystemManager::GetExecutableDirectory()

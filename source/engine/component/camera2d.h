@@ -8,16 +8,16 @@
 #include "engine/math/math_types.h"
 
 // 前方宣言
-class Transform2D;
+class Transform;
 
 //============================================================================
 //! @brief 2Dカメラコンポーネント
 //!
 //! 2D空間でのビュー変換を管理する。
-//! Transform2Dコンポーネントと連携し、位置・回転はTransform2Dから取得。
+//! Transformコンポーネントと連携し、位置・回転はTransformから取得。
 //! ズームとビューポートサイズはCamera2D固有の設定。
 //!
-//! @note 同じGameObjectにTransform2Dが必要
+//! @note 同じGameObjectにTransformが必要
 //============================================================================
 class Camera2D : public Component {
 public:
@@ -37,7 +37,7 @@ public:
     void OnAttach() override;
 
     //------------------------------------------------------------------------
-    // 位置（Transform2Dに委譲）
+    // 位置（Transformに委譲）
     //------------------------------------------------------------------------
 
     [[nodiscard]] Vector2 GetPosition() const noexcept;
@@ -46,7 +46,7 @@ public:
     void Translate(const Vector2& delta) noexcept;
 
     //------------------------------------------------------------------------
-    // 回転（Transform2Dに委譲）
+    // 回転（Transformに委譲）
     //------------------------------------------------------------------------
 
     [[nodiscard]] float GetRotation() const noexcept;
@@ -105,7 +105,7 @@ public:
 private:
     [[nodiscard]] Matrix BuildViewMatrix() const;
 
-    Transform2D* transform_ = nullptr;  //!< 位置・回転の参照先
+    Transform* transform_ = nullptr;  //!< 位置・回転の参照先
     float zoom_ = 1.0f;
 
     float viewportWidth_ = 1280.0f;

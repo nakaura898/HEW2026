@@ -4,21 +4,16 @@
 #include "engine/component/camera2d.h"
 #include <memory>
 
-#include"game/ui/ui_button.h"
-
+// 前方宣言
+class UIButtonComponent;
 
 class Title_Scene : public Scene
 {
 //プライベート
 private:
-	//コンポーネント呼び出し
-	//カメラ
-	//std::unique_ptr<Camera2D> camera_;
-
-
-	//スタートボタンテスト
-	std::unique_ptr<UIButton> startButton_;
-
+	//スタートボタン（GameObjectベース）
+	std::unique_ptr<GameObject> startButtonObj_;
+	UIButtonComponent* startButton_ = nullptr;
 
 	// カメラ
 	std::unique_ptr<GameObject> cameraObj_;

@@ -4,7 +4,7 @@
 //----------------------------------------------------------------------------
 #include "camera2d.h"
 #include "game_object.h"
-#include "transform2d.h"
+#include "transform.h"
 
 namespace {
     //! @brief 最小ズームレベル
@@ -23,7 +23,7 @@ Camera2D::Camera2D(float viewportWidth, float viewportHeight)
 //----------------------------------------------------------------------------
 void Camera2D::OnAttach()
 {
-    transform_ = GetOwner()->GetComponent<Transform2D>();
+    transform_ = GetOwner()->GetComponent<Transform>();
 }
 
 //----------------------------------------------------------------------------

@@ -4,15 +4,29 @@
 //----------------------------------------------------------------------------
 #include "bond_type_selector.h"
 #include "bind_system.h"
-#include "game/systems/event/event_bus.h"
+#include "engine/event/event_bus.h"
 #include "game/systems/event/game_events.h"
 #include "common/logging/logging.h"
 
 //----------------------------------------------------------------------------
 BondTypeSelector& BondTypeSelector::Get()
 {
-    static BondTypeSelector instance;
-    return instance;
+    assert(instance_ && "BondTypeSelector::Create() not called");
+    return *instance_;
+}
+
+//----------------------------------------------------------------------------
+void BondTypeSelector::Create()
+{
+    if (!instance_) {
+        instance_.reset(new BondTypeSelector());
+    }
+}
+
+//----------------------------------------------------------------------------
+void BondTypeSelector::Destroy()
+{
+    instance_.reset();
 }
 
 //----------------------------------------------------------------------------

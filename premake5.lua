@@ -108,6 +108,11 @@ project "dx11"
     warnings "Extra"
     flags { "FatalWarnings" }
 
+    -- ComPtr<View>の誤用チェック（ビルド前）
+    prebuildcommands {
+        'call "%{wks.location}/../tools/check_raw_view_comptr.cmd"'
+    }
+
     buildoptions { "/utf-8", "/permissive-", "/FS" }
 
     -- リンカー警告を無視 (Windows SDK重複定義)

@@ -5,11 +5,8 @@
 #pragma once
 
 #include "dx11/gpu_common.h"
+#include "dx11/view/view.h"
 #include "gpu_resource.h"
-
-// 前方宣言
-class ShaderResourceView;
-class UnorderedAccessView;
 
 //===========================================================================
 //! @brief バッファ記述子
@@ -127,8 +124,8 @@ public:
 
     //! コンストラクタ（.cppで定義）
     Buffer(ComPtr<ID3D11Buffer> buffer,
-           std::unique_ptr<ShaderResourceView> srv,
-           std::unique_ptr<UnorderedAccessView> uav,
+           View<SRV> srv,
+           View<UAV> uav,
            const BufferDesc& desc);
 
     //! デストラクタ（.cppで定義）
@@ -159,12 +156,6 @@ public:
 
     //! UAVを取得
     [[nodiscard]] ID3D11UnorderedAccessView* Uav() const noexcept;
-
-    //! SRVラッパーを取得
-    [[nodiscard]] ShaderResourceView* GetSrvView() const noexcept { return srv_.get(); }
-
-    //! UAVラッパーを取得
-    [[nodiscard]] UnorderedAccessView* GetUavView() const noexcept { return uav_.get(); }
 
     //! SRVを持つか判定
     [[nodiscard]] bool HasSrv() const noexcept;
@@ -205,8 +196,8 @@ public:
 
 private:
     ComPtr<ID3D11Buffer> buffer_;
-    std::unique_ptr<ShaderResourceView> srv_;
-    std::unique_ptr<UnorderedAccessView> uav_;
+    View<SRV> srv_;
+    View<UAV> uav_;
     BufferDesc desc_;
 };
 

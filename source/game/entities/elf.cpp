@@ -4,7 +4,7 @@
 //----------------------------------------------------------------------------
 #include "elf.h"
 #include "player.h"
-#include "arrow_manager.h"
+#include "game/systems/animation/ranged_attack_behavior.h"
 #include "engine/texture/texture_manager.h"
 #include "common/logging/logging.h"
 
@@ -52,7 +52,7 @@ void Elf::SetupAnimator()
     if (!animator_) return;
 
     // アニメーション行設定
-    // Row 0: Idle (1フレーム)
+    // Row 0: Idle (2フレーム)
     // Row 1: Walk (4フレーム)
     // Row 2: Attack (3フレーム)
     // Row 3: Death (2フレーム)
@@ -67,25 +67,15 @@ void Elf::SetupAnimator()
 }
 
 //----------------------------------------------------------------------------
-void Elf::Update(float dt)
+void Elf::SetupStateMachine()
 {
-    // 攻撃アニメーション中に特定フレームで矢を発射
-    if (!arrowShot_ && (pendingTarget_ || pendingTargetPlayer_)) {
-        if (animator_ && animator_->GetRow() == 2 && animator_->GetColumn() >= kShootFrame) {
-            ShootArrow();
-        }
-    }
+    // 基底クラスのセットアップを呼び出し
+    Individual::SetupStateMachine();
 
-    // 攻撃アニメーション終了で状態リセット（Individual::Update前に実行）
-    if (arrowShot_ && animator_ && !animator_->IsPlaying()) {
-        pendingTarget_ = nullptr;
-        pendingTargetPlayer_ = nullptr;
-        arrowShot_ = false;
-        action_ = IndividualAction::Idle;
+    // RangedAttackBehaviorを設定
+    if (stateMachine_) {
+        stateMachine_->SetAttackBehavior(std::make_unique<RangedAttackBehavior>(this));
     }
-
-    // 基底クラスの更新
-    Individual::Update(dt);
 }
 
 //----------------------------------------------------------------------------
@@ -97,17 +87,8 @@ void Elf::Attack(Individual* target)
     // 攻撃状態に設定
     action_ = IndividualAction::Attack;
 
-    // 攻撃アニメーション開始
-    if (animator_) {
-        animator_->SetRow(2);  // Attack行
-        animator_->SetLooping(false);
-        animator_->Reset();
-    }
-
-    // 矢発射を予約（アニメーションの特定フレームで発射）
-    pendingTarget_ = target;
-    pendingTargetPlayer_ = nullptr;
-    arrowShot_ = false;
+    // StateMachineに攻撃開始を委譲
+    StartAttack(target);
 }
 
 //----------------------------------------------------------------------------
@@ -119,47 +100,19 @@ void Elf::AttackPlayer(Player* target)
     // 攻撃状態に設定
     action_ = IndividualAction::Attack;
 
-    // 攻撃アニメーション開始
-    if (animator_) {
-        animator_->SetRow(2);  // Attack行
-        animator_->SetLooping(false);
-        animator_->Reset();
-    }
-
-    // 矢発射を予約（アニメーションの特定フレームで発射）
-    pendingTarget_ = nullptr;
-    pendingTargetPlayer_ = target;
-    arrowShot_ = false;
-}
-
-//----------------------------------------------------------------------------
-void Elf::ShootArrow()
-{
-    Vector2 startPos = GetPosition();
-
-    if (pendingTarget_ && pendingTarget_->IsAlive()) {
-        ArrowManager::Get().Shoot(this, pendingTarget_, startPos, attackDamage_);
-        LOG_INFO("[Elf] " + id_ + " shoots arrow at " + pendingTarget_->GetId());
-    } else if (pendingTargetPlayer_ && pendingTargetPlayer_->IsAlive()) {
-        ArrowManager::Get().ShootAtPlayer(this, pendingTargetPlayer_, startPos, attackDamage_);
-        LOG_INFO("[Elf] " + id_ + " shoots arrow at Player");
-    }
-
-    arrowShot_ = true;
+    // StateMachineに攻撃開始を委譲
+    StartAttackPlayer(target);
 }
 
 //----------------------------------------------------------------------------
 bool Elf::GetCurrentAttackTargetPosition(Vector2& outPosition) const
 {
-    // Elfは pendingTarget_ / pendingTargetPlayer_ を使用
-    if (pendingTarget_ && pendingTarget_->IsAlive()) {
-        outPosition = pendingTarget_->GetPosition();
-        return true;
-    }
-
-    if (pendingTargetPlayer_ && pendingTargetPlayer_->IsAlive()) {
-        outPosition = pendingTargetPlayer_->GetPosition();
-        return true;
+    // StateMachineのAttackBehaviorからターゲット位置を取得
+    if (stateMachine_) {
+        IAttackBehavior* behavior = stateMachine_->GetAttackBehavior();
+        if (behavior && behavior->GetTargetPosition(outPosition)) {
+            return true;
+        }
     }
 
     // フォールバック: 基底クラスの実装

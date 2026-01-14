@@ -10,6 +10,7 @@
 #include "window.h"
 #include <memory>
 #include <cstdint>
+#include <cassert>
 
 //----------------------------------------------------------------------------
 //! @brief アプリケーション設定
@@ -18,8 +19,8 @@ struct ApplicationDesc
 {
     HINSTANCE hInstance = nullptr;        //!< アプリケーションインスタンス
     WindowDesc window;                    //!< ウィンドウ設定
-    uint32_t renderWidth = 1280;          //!< レンダリング解像度幅（固定）
-    uint32_t renderHeight = 720;          //!< レンダリング解像度高さ（固定）
+    uint32_t renderWidth = 1920;          //!< レンダリング解像度幅（固定）
+    uint32_t renderHeight = 1080;         //!< レンダリング解像度高さ（固定）
     bool enableDebugLayer = true;         //!< D3Dデバッグレイヤー有効化
     VSyncMode vsync = VSyncMode::On;      //!< 垂直同期モード
     float maxDeltaTime = 0.25f;           //!< deltaTime上限（秒）デバッグ時異常値防止
@@ -35,7 +36,20 @@ class Application final : private NonCopyableNonMovable
 {
 public:
     //! @brief シングルトンインスタンス取得
-    static Application& Get() noexcept;
+    static Application& Get()
+    {
+        assert(instance_ && "Application::Create() must be called first");
+        return *instance_;
+    }
+
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~Application() = default;
 
     //----------------------------------------------------------
     //! @name ライフサイクル
@@ -107,7 +121,10 @@ public:
 
 private:
     Application() = default;
-    ~Application() = default;
+    Application(const Application&) = delete;
+    Application& operator=(const Application&) = delete;
+
+    static inline std::unique_ptr<Application> instance_ = nullptr;
 
     template<typename TGame>
     void MainLoop(TGame& game);

@@ -8,6 +8,8 @@
 #include <set>
 #include <functional>
 #include <utility>
+#include <memory>
+#include <cassert>
 
 //----------------------------------------------------------------------------
 //! @brief 絶縁システム（シングルトン）
@@ -18,6 +20,15 @@ class InsulationSystem
 public:
     //! @brief シングルトンインスタンス取得
     static InsulationSystem& Get();
+
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~InsulationSystem() = default;
 
     //------------------------------------------------------------------------
     // 絶縁操作
@@ -69,13 +80,14 @@ public:
 
 private:
     InsulationSystem() = default;
-    ~InsulationSystem() = default;
     InsulationSystem(const InsulationSystem&) = delete;
     InsulationSystem& operator=(const InsulationSystem&) = delete;
 
     //! @brief 絶縁ペアのキーを生成（順序不問）
     [[nodiscard]] std::pair<std::string, std::string> MakePairKey(
         const BondableEntity& a, const BondableEntity& b) const;
+
+    static inline std::unique_ptr<InsulationSystem> instance_ = nullptr;
 
     //! @brief 絶縁ペアの集合
     std::set<std::pair<std::string, std::string>> insulatedPairs_;

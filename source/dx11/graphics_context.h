@@ -1,6 +1,24 @@
 //----------------------------------------------------------------------------
 //! @file   graphics_context.h
 //! @brief  グラフィックスコンテキスト
+//!
+//! @note スレッドセーフ性:
+//!       【警告】このクラスはスレッドセーフではありません。
+//!       - 全メソッド: メインスレッドからのみ呼び出し可能
+//!       - ID3D11DeviceContext4（Immediate Context）はシングルスレッド専用
+//!       - ワーカースレッドからの呼び出しは未定義動作を引き起こす
+//!
+//! @details D3D11 Immediate Contextは設計上シングルスレッドです。
+//!          マルチスレッドレンダリングが必要な場合は以下を検討:
+//!          1. コマンドをメインスレッドジョブとしてキューイング（推奨）
+//!          2. Deferred Contextを使用（オーバーヘッド大）
+//!
+//!          例（ワーカースレッドからの更新）:
+//!          @code
+//!          JobSystem::Get().SubmitJob(JobDesc::MainThread([data]{
+//!              GraphicsContext::Get().UpdateBuffer(buffer, data);
+//!          }));
+//!          @endcode
 //----------------------------------------------------------------------------
 #pragma once
 
@@ -291,10 +309,30 @@ public:
     [[nodiscard]] ID3D11DeviceContext4* GetContext() const noexcept { return context_.Get(); }
 
     //!@}
+    //----------------------------------------------------------
+    //! @name   ステートキャッシュ管理
+    //----------------------------------------------------------
+    //!@{
+
+    //! ステートキャッシュをリセット
+    void ResetStateCache() noexcept;
+
+    //!@}
 
 private:
     GraphicsContext() = default;
     ~GraphicsContext() = default;
 
     ComPtr<ID3D11DeviceContext4> context_;
+
+    // ステートキャッシュ
+    BlendState* cachedBlendState_ = nullptr;
+    DepthStencilState* cachedDepthStencilState_ = nullptr;
+    uint32_t cachedStencilRef_ = 0;
+    RasterizerState* cachedRasterizerState_ = nullptr;
+    SamplerState* cachedPSSampler0_ = nullptr;
+    Shader* cachedVS_ = nullptr;
+    Shader* cachedPS_ = nullptr;
+    ID3D11InputLayout* cachedInputLayout_ = nullptr;
+    D3D11_PRIMITIVE_TOPOLOGY cachedTopology_ = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
 };

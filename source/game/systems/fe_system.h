@@ -5,6 +5,8 @@
 #pragma once
 
 #include <functional>
+#include <memory>
+#include <cassert>
 
 // 前方宣言
 class Player;
@@ -18,6 +20,15 @@ class FESystem
 public:
     //! @brief シングルトンインスタンス取得
     static FESystem& Get();
+
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~FESystem() = default;
 
     //------------------------------------------------------------------------
     // 初期化
@@ -73,9 +84,10 @@ public:
 
 private:
     FESystem() = default;
-    ~FESystem() = default;
     FESystem(const FESystem&) = delete;
     FESystem& operator=(const FESystem&) = delete;
+
+    static inline std::unique_ptr<FESystem> instance_ = nullptr;
 
     Player* player_ = nullptr;
 

@@ -6,6 +6,8 @@
 
 #include <unordered_map>
 #include <functional>
+#include <memory>
+#include <cassert>
 
 // 前方宣言
 class Group;
@@ -19,6 +21,15 @@ class StaggerSystem
 public:
     //! @brief シングルトンインスタンス取得
     static StaggerSystem& Get();
+
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~StaggerSystem() = default;
 
     //------------------------------------------------------------------------
     // 更新
@@ -94,9 +105,10 @@ public:
 
 private:
     StaggerSystem() = default;
-    ~StaggerSystem() = default;
     StaggerSystem(const StaggerSystem&) = delete;
     StaggerSystem& operator=(const StaggerSystem&) = delete;
+
+    static inline std::unique_ptr<StaggerSystem> instance_ = nullptr;
 
     //! @brief 硬直情報（グループ -> 残り時間）
     std::unordered_map<Group*, float> staggerTimers_;

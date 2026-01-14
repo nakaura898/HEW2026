@@ -5,6 +5,8 @@
 #pragma once
 
 #include <vector>
+#include <memory>
+#include <cassert>
 
 // 前方宣言
 class Group;
@@ -20,6 +22,15 @@ class FriendsDamageSharing
 public:
     //! @brief シングルトンインスタンス取得
     static FriendsDamageSharing& Get();
+
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~FriendsDamageSharing() = default;
 
     //------------------------------------------------------------------------
     // フレンズグループ取得
@@ -57,10 +68,11 @@ public:
 
 private:
     FriendsDamageSharing() = default;
-    ~FriendsDamageSharing() = default;
     FriendsDamageSharing(const FriendsDamageSharing&) = delete;
     FriendsDamageSharing& operator=(const FriendsDamageSharing&) = delete;
 
     //! @brief BFSでフレンズ縁のみをたどってクラスタを構築
     std::vector<Group*> BuildFriendsClusterBFS(Group* start) const;
+
+    static inline std::unique_ptr<FriendsDamageSharing> instance_ = nullptr;
 };

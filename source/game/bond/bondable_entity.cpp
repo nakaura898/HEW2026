@@ -80,4 +80,12 @@ bool IsSame(const BondableEntity& a, const BondableEntity& b)
     }, a);
 }
 
+//----------------------------------------------------------------------------
+bool IsNull(const BondableEntity& entity)
+{
+    return std::visit([](auto* ptr) -> bool {
+        return ptr == nullptr;
+    }, entity);
+}
+
 } // namespace BondableHelper

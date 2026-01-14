@@ -10,6 +10,7 @@
 #include "dx11/state/rasterizer_state.h"
 #include "dx11/state/depth_stencil_state.h"
 #include <memory>
+#include <cassert>
 
 //===========================================================================
 //! レンダーステートマネージャー（シングルトン）
@@ -32,8 +33,21 @@
 class RenderStateManager final : private NonCopyableNonMovable
 {
 public:
-    //! シングルトンインスタンスを取得
-    static RenderStateManager& Get() noexcept;
+    //! シングルトンインスタンス取得
+    static RenderStateManager& Get()
+    {
+        assert(instance_ && "RenderStateManager::Create() must be called first");
+        return *instance_;
+    }
+
+    //! インスタンス生成
+    static void Create();
+
+    //! インスタンス破棄
+    static void Destroy();
+
+    //! デストラクタ
+    ~RenderStateManager() = default;
 
     //----------------------------------------------------------
     //! @name   初期化・終了
@@ -126,7 +140,10 @@ public:
 
 private:
     RenderStateManager() = default;
-    ~RenderStateManager() = default;
+    RenderStateManager(const RenderStateManager&) = delete;
+    RenderStateManager& operator=(const RenderStateManager&) = delete;
+
+    static inline std::unique_ptr<RenderStateManager> instance_ = nullptr;
 
     bool initialized_ = false;
 

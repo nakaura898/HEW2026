@@ -11,8 +11,22 @@
 //----------------------------------------------------------------------------
 FactionManager& FactionManager::Get()
 {
-    static FactionManager instance;
-    return instance;
+    assert(instance_ && "FactionManager::Create() not called");
+    return *instance_;
+}
+
+//----------------------------------------------------------------------------
+void FactionManager::Create()
+{
+    if (!instance_) {
+        instance_.reset(new FactionManager());
+    }
+}
+
+//----------------------------------------------------------------------------
+void FactionManager::Destroy()
+{
+    instance_.reset();
 }
 
 //----------------------------------------------------------------------------

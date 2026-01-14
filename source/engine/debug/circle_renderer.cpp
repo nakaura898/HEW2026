@@ -13,11 +13,7 @@
 #include <d3d11.h>
 
 //----------------------------------------------------------------------------
-CircleRenderer& CircleRenderer::Get()
-{
-    static CircleRenderer instance;
-    return instance;
-}
+// ※ Create()/Destroy()/Get()はヘッダーでインライン実装
 
 //----------------------------------------------------------------------------
 bool CircleRenderer::Initialize()

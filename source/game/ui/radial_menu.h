@@ -10,6 +10,8 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <memory>
+#include <cassert>
 
 // 前方宣言
 class SpriteBatch;
@@ -32,6 +34,15 @@ class RadialMenu
 public:
     //! @brief シングルトンインスタンス取得
     static RadialMenu& Get();
+
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~RadialMenu() = default;
 
     //! @brief 初期化
     void Initialize();
@@ -80,7 +91,6 @@ public:
 
 private:
     RadialMenu() = default;
-    ~RadialMenu() = default;
     RadialMenu(const RadialMenu&) = delete;
     RadialMenu& operator=(const RadialMenu&) = delete;
 
@@ -98,6 +108,8 @@ private:
     // パラメータ
     float radius_ = 250.0f;     //!< メニュー半径（大きめ）
     float deadZone_ = 60.0f;    //!< 中心のデッドゾーン
+
+    static inline std::unique_ptr<RadialMenu> instance_ = nullptr;
 
     // コールバック
     std::function<void(BondType)> onSelected_;

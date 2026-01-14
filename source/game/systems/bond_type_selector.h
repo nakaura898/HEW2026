@@ -6,6 +6,8 @@
 
 #include "game/bond/bond.h"
 #include <functional>
+#include <memory>
+#include <cassert>
 
 //----------------------------------------------------------------------------
 //! @brief 縁タイプ選択システム（シングルトン）
@@ -16,6 +18,15 @@ class BondTypeSelector
 public:
     //! @brief シングルトンインスタンス取得
     static BondTypeSelector& Get();
+
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~BondTypeSelector() = default;
 
     //------------------------------------------------------------------------
     // タイプ選択
@@ -55,9 +66,10 @@ public:
 
 private:
     BondTypeSelector() = default;
-    ~BondTypeSelector() = default;
     BondTypeSelector(const BondTypeSelector&) = delete;
     BondTypeSelector& operator=(const BondTypeSelector&) = delete;
+
+    static inline std::unique_ptr<BondTypeSelector> instance_ = nullptr;
 
     BondType currentType_ = BondType::Basic;    //!< 現在選択中のタイプ
 

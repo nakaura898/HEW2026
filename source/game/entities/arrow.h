@@ -5,11 +5,11 @@
 #pragma once
 
 #include "engine/component/game_object.h"
-#include "engine/component/transform2d.h"
+#include "engine/component/transform.h"
 #include "engine/component/sprite_renderer.h"
 #include "engine/component/collider2d.h"
 #include "engine/math/math_types.h"
-#include "dx11/gpu/texture.h"
+#include "engine/texture/texture_types.h"
 #include <memory>
 #include <string>
 
@@ -67,7 +67,7 @@ private:
 
     // GameObject
     std::unique_ptr<GameObject> gameObject_;
-    Transform2D* transform_ = nullptr;
+    Transform* transform_ = nullptr;
     SpriteRenderer* sprite_ = nullptr;
     Collider2D* collider_ = nullptr;
 

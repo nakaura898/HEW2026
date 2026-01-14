@@ -15,8 +15,7 @@
 #include "buffer.h"
 #include "texture.h"
 #include "shader.h"
-#include "dx11/view/shader_resource_view.h"
-#include "dx11/view/unordered_access_view.h"
+#include "dx11/view/view.h"
 
 // サイズ検証（コンパイル時）
 static_assert(sizeof(BufferDesc) == 24,   "BufferDesc must be 24 bytes");

@@ -9,10 +9,16 @@
 //----------------------------------------------------------------------------
 // シングルトン
 //----------------------------------------------------------------------------
-RenderStateManager& RenderStateManager::Get() noexcept
+void RenderStateManager::Create()
 {
-    static RenderStateManager instance;
-    return instance;
+    if (!instance_) {
+        instance_ = std::unique_ptr<RenderStateManager>(new RenderStateManager());
+    }
+}
+
+void RenderStateManager::Destroy()
+{
+    instance_.reset();
 }
 
 //----------------------------------------------------------------------------

@@ -16,8 +16,22 @@ static constexpr float kTwoPi = 2.0f * kPi;
 //----------------------------------------------------------------------------
 RadialMenu& RadialMenu::Get()
 {
-    static RadialMenu instance;
-    return instance;
+    assert(instance_ && "RadialMenu::Create() not called");
+    return *instance_;
+}
+
+//----------------------------------------------------------------------------
+void RadialMenu::Create()
+{
+    if (!instance_) {
+        instance_.reset(new RadialMenu());
+    }
+}
+
+//----------------------------------------------------------------------------
+void RadialMenu::Destroy()
+{
+    instance_.reset();
 }
 
 //----------------------------------------------------------------------------

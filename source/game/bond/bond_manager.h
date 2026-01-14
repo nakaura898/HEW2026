@@ -10,6 +10,7 @@
 #include <functional>
 #include <unordered_map>
 #include <string>
+#include <cassert>
 
 //----------------------------------------------------------------------------
 //! @brief 縁マネージャー（シングルトン）
@@ -20,6 +21,15 @@ class BondManager
 public:
     //! @brief シングルトンインスタンス取得
     static BondManager& Get();
+
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~BondManager() = default;
 
     //------------------------------------------------------------------------
     // 縁の作成・削除
@@ -62,8 +72,14 @@ public:
     //! @brief エンティティに関連する全ての縁を取得
     [[nodiscard]] std::vector<Bond*> GetBondsFor(const BondableEntity& entity) const;
 
-    //! @brief 全ての縁を取得
+    //! @brief 全ての縁を取得（参照版 - イテレーション中の変更禁止）
+    //! @warning イテレーション中にCreateBond()/RemoveBond()を呼ぶとクラッシュする可能性あり
+    //!          イテレーション中に変更の可能性がある場合はGetAllBondsCopy()を使用すること
     [[nodiscard]] const std::vector<std::unique_ptr<Bond>>& GetAllBonds() const { return bonds_; }
+
+    //! @brief 全ての縁を取得（コピー版 - イテレーション中の変更に安全）
+    //! @return 全ての縁へのポインタのコピー
+    [[nodiscard]] std::vector<Bond*> GetAllBondsCopy() const;
 
     //! @brief 縁の数を取得
     [[nodiscard]] size_t GetBondCount() const { return bonds_.size(); }
@@ -100,12 +116,13 @@ public:
 
 private:
     BondManager() = default;
-    ~BondManager() = default;
     BondManager(const BondManager&) = delete;
     BondManager& operator=(const BondManager&) = delete;
 
     //! @brief キャッシュを再構築
     void RebuildCache();
+
+    static inline std::unique_ptr<BondManager> instance_ = nullptr;
 
     std::vector<std::unique_ptr<Bond>> bonds_;  //!< 全ての縁
 

@@ -40,6 +40,9 @@ public:
     //! @param owner 所有するGroup
     explicit GroupAI(Group* owner);
 
+    //! @brief デストラクタ（イベント購読解除）
+    ~GroupAI();
+
     //------------------------------------------------------------------------
     // 更新
     //------------------------------------------------------------------------
@@ -91,6 +94,9 @@ public:
 
     //! @brief ターゲットを自動選択
     void FindTarget();
+
+    //! @brief 味方として敵グループをターゲット選択
+    void FindTargetAsAlly();
 
     //------------------------------------------------------------------------
     // パラメータ
@@ -166,6 +172,9 @@ private:
     //! @return 離れすぎていればtrue（攻撃中断すべき）
     [[nodiscard]] bool CheckLovePartnerDistance() const;
 
+    //! @brief プレイヤーとLove縁で結ばれているかチェック
+    [[nodiscard]] bool HasLoveBondWithPlayer() const;
+
     Group* owner_ = nullptr;        //!< 所有Group
     AITarget target_;               //!< 攻撃ターゲット（Group* or Player*）
     Player* player_ = nullptr;      //!< プレイヤー参照（Flee時の逃走方向）
@@ -178,6 +187,11 @@ private:
     Vector2 wanderTarget_;              //!< 徘徊目標位置
     float wanderTimer_ = 0.0f;          //!< 徘徊タイマー
     float wanderInterval_ = 3.0f;       //!< 目標変更間隔
+
+    // Love追従パラメータ
+    float loveFollowTimer_ = 0.0f;      //!< Love追従経過時間
+    bool isLoveFollowing_ = false;      //!< Love追従中フラグ
+    static constexpr float kMinLoveFollowDuration = 2.0f;  //!< 最小追従時間（秒）
 
     // 共通パラメータ
     float moveSpeed_ = 100.0f;          //!< 移動速度
@@ -194,6 +208,17 @@ private:
 
     bool wasMoving_ = false;            //!< 前フレームの移動状態（変化検出用）
 
+    //! @brief GroupDefeatedEventの購読ID（解除用）
+    uint32_t defeatedSubscriptionId_ = 0;
+
     //! @brief 移動状態の変化を検出して個体に通知
     void NotifyMovementChange();
+
+    //! @brief グループ全滅イベントハンドラ（ターゲットクリア用）
+    void OnGroupDefeated(Group* defeatedGroup);
+
+    //! @brief カメラ範囲内かチェック
+    //! @param margin マージン（ピクセル）
+    //! @return カメラ範囲内ならtrue
+    [[nodiscard]] bool IsInCameraView(float margin = 50.0f) const;
 };

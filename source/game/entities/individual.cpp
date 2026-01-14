@@ -8,12 +8,45 @@
 #include "game/ai/group_ai.h"
 #include "game/systems/bind_system.h"
 #include "game/systems/friends_damage_sharing.h"
-#include "game/systems/time_manager.h"
+#include "game/systems/event/game_events.h"
+#include "engine/time/time_manager.h"
+#include "engine/event/event_bus.h"
+#include "game/systems/relationship_context.h"
+#include "game/systems/game_constants.h"
+#include "game/relationships/relationship_facade.h"
+#include "game/systems/movement/formation.h"
 #include "game/bond/bondable_entity.h"
+#include "game/systems/animation/anim_state.h"
+#include "game/systems/animation/animation_decision_context.h"
 #include "engine/c_systems/sprite_batch.h"
 #include "engine/c_systems/collision_manager.h"
 #include "engine/c_systems/collision_layers.h"
 #include "common/logging/logging.h"
+
+namespace {
+//! @brief 向き反転方向を判定（水平成分が十分な場合のみ）
+//! @param dx 水平移動量
+//! @param dy 垂直移動量
+//! @return 1=右向き, -1=左向き, 0=反転しない
+int DetermineFlipDirection(float dx, float dy)
+{
+    constexpr float kHorizontalThreshold = 0.3f;
+    constexpr float kMinMovement = 0.001f;
+
+    float absDx = std::abs(dx);
+    float absDy = std::abs(dy);
+    float total = absDx + absDy;
+
+    // 移動量が微小な場合は反転しない
+    if (total < kMinMovement) return 0;
+
+    // 水平成分の比率が閾値未満なら反転しない（真上/真下への移動）
+    if (absDx / total < kHorizontalThreshold) return 0;
+
+    // 水平成分が十分 → 反転方向を返す
+    return (dx > 0.0f) ? 1 : -1;
+}
+} // namespace
 
 //----------------------------------------------------------------------------
 Individual::Individual(const std::string& id)
@@ -33,8 +66,8 @@ void Individual::Initialize(const Vector2& position)
     // GameObject作成
     gameObject_ = std::make_unique<GameObject>(id_);
 
-    // Transform2D
-    transform_ = gameObject_->AddComponent<Transform2D>();
+    // Transform
+    transform_ = gameObject_->AddComponent<Transform>();
     transform_->SetPosition(position);
 
     // SpriteRenderer
@@ -49,8 +82,9 @@ void Individual::Initialize(const Vector2& position)
         SetupAnimator();
     }
 
-    // AnimationController
-    SetupAnimationController();
+    // StateMachine
+    stateMachine_ = std::make_unique<IndividualStateMachine>(this, animator_);
+    SetupStateMachine();
 
     // Collider
     SetupCollider();
@@ -95,8 +129,10 @@ void Individual::Update(float dt)
 
     // 死亡状態でもアニメは更新
     if (!IsAlive()) {
-        animationController_.RequestState(AnimationState::Death);
-        animationController_.Update(scaledDt);
+        if (stateMachine_) {
+            stateMachine_->Die();
+            stateMachine_->Update(scaledDt);
+        }
         gameObject_->Update(scaledDt);
         prevPosition_ = GetPosition();
         return;
@@ -104,15 +140,6 @@ void Individual::Update(float dt)
 
     // 攻撃クールダウン更新
     UpdateAttackCooldown(scaledDt);
-
-    // 攻撃持続タイマー更新
-    if (isAttacking_ && attackDurationTimer_ > 0.0f) {
-        attackDurationTimer_ -= scaledDt;
-        if (attackDurationTimer_ <= 0.0f) {
-            // 攻撃終了
-            EndAttack();
-        }
-    }
 
     // 行動状態を更新（グループAIの状態に基づく）
     UpdateAction();
@@ -134,12 +161,14 @@ void Individual::Update(float dt)
     // 向き更新（意図ベース）
     UpdateFacingDirection();
 
-    // AnimationController更新（アニメ終了検出→ロック解除）
-    animationController_.Update(scaledDt);
+    // StateMachine更新（関係性を考慮したコンテキストベース）
+    if (stateMachine_) {
+        // アニメーション判定コンテキストを構築（個体状態＋グループ状態＋関係性）
+        AnimationDecisionContext ctx = BuildAnimationContext();
+        stateMachine_->UpdateWithContext(ctx);
 
-    // アニメーション状態決定（意図ベース）- ロック解除後に実行
-    AnimationState animState = DetermineAnimationState();
-    animationController_.RequestState(animState);
+        stateMachine_->Update(scaledDt);
+    }
 
     // GameObjectの更新（Animatorの更新など、スケール済み時間で）
     gameObject_->Update(scaledDt);
@@ -174,7 +203,15 @@ void Individual::AttackPlayer(Player* target)
 //----------------------------------------------------------------------------
 void Individual::TakeDamage(float damage)
 {
-    if (!IsAlive()) return;
+    if (!IsAlive()) {
+        LOG_WARN("[Individual] BUG: TakeDamage called on dead individual: " + id_);
+        return;
+    }
+
+    if (damage < 0.0f) {
+        LOG_WARN("[Individual] BUG: Negative damage: " + std::to_string(damage) + " to " + id_);
+        return;
+    }
 
     // フレンズ縁による分配ダメージを受信中でなければ、分配処理を試みる
     if (!isReceivingSharedDamage_) {
@@ -195,7 +232,9 @@ void Individual::TakeDamage(float damage)
     if (hp_ <= 0.0f) {
         action_ = IndividualAction::Death;
         LOG_INFO("[Individual] " + id_ + " died");
-        // TODO: OnIndividualDiedイベント発行
+
+        // 死亡イベント発行
+        EventBus::Get().Publish(IndividualDiedEvent{ this });
     }
 }
 
@@ -224,24 +263,28 @@ void Individual::SetupAnimator()
 }
 
 //----------------------------------------------------------------------------
-void Individual::SetupAnimationController()
+void Individual::SetupStateMachine()
 {
-    // Animatorを設定
-    animationController_.SetAnimator(animator_);
+    if (!stateMachine_) return;
 
     // デフォルトの行マッピング（派生クラスでオーバーライド可能）
     // Row 0: Idle, Row 1: Walk, Row 2: Attack, Row 3: Death
-    animationController_.SetRowMapping(AnimationState::Idle, 0);
-    animationController_.SetRowMapping(AnimationState::Walk, 1);
-    animationController_.SetRowMapping(AnimationState::Attack, 2);
-    animationController_.SetRowMapping(AnimationState::Death, 3);
+    stateMachine_->SetRowMapping(AnimState::Idle, 0);
+    stateMachine_->SetRowMapping(AnimState::Walk, 1);
+    stateMachine_->SetRowMapping(AnimState::AttackWindup, 2);
+    stateMachine_->SetRowMapping(AnimState::AttackActive, 2);
+    stateMachine_->SetRowMapping(AnimState::AttackRecovery, 2);
+    stateMachine_->SetRowMapping(AnimState::Death, 3);
 
-    // アニメーション終了時のコールバック
-    animationController_.SetOnAnimationFinished([this]() {
-        // 攻撃終了処理
-        if (action_ == IndividualAction::Attack) {
-            EndAttack();
-        }
+    // 攻撃終了時のコールバック
+    stateMachine_->SetOnAttackEnd([this]() {
+        EndAttack();
+    });
+
+    // 死亡時のコールバック
+    stateMachine_->SetOnDeath([this]() {
+        action_ = IndividualAction::Death;
+        LOG_INFO("[Individual] " + id_ + " death animation started");
     });
 }
 
@@ -333,26 +376,23 @@ void Individual::UpdateAction()
         return;
     }
 
-    // 攻撃モーション中は状態変えない（AnimationControllerがロック中の場合のみ）
-    if (action_ == IndividualAction::Attack && animationController_.IsLocked()) {
-        return;
-    }
-
     AIState groupState = ai->GetState();
 
-    // グループがFlee → Walk
-    if (groupState == AIState::Flee) {
+    // グループがFlee/Wander → 攻撃中でも強制的にWalkに変更（移動優先）
+    if (groupState == AIState::Flee || groupState == AIState::Wander) {
+        // 攻撃中またはStateMachineがロック中なら強制解除
+        if (IsAttacking() || (stateMachine_ && stateMachine_->IsLocked())) {
+            InterruptAttack();
+        }
         action_ = IndividualAction::Walk;
         attackTarget_ = nullptr;
         justEnteredAttackRange_ = false;
         return;
     }
 
-    // グループがWander → Walk（グループは徘徊中で移動している）
-    if (groupState == AIState::Wander) {
-        action_ = IndividualAction::Walk;
-        attackTarget_ = nullptr;
-        justEnteredAttackRange_ = false;
+    // 攻撃モーション中は状態変えない（StateMachineがロック中の場合のみ）
+    // ※Seek状態での攻撃中のみ適用
+    if (action_ == IndividualAction::Attack && stateMachine_ && stateMachine_->IsLocked()) {
         return;
     }
 
@@ -368,6 +408,14 @@ void Individual::UpdateAction()
 
     // ターゲットがない/無効な場合はWalk（グループは移動中）
     if (!targetGroup || targetGroup->IsDefeated()) {
+        action_ = IndividualAction::Walk;
+        attackTarget_ = nullptr;
+        justEnteredAttackRange_ = false;
+        return;
+    }
+
+    // グループが移動中は攻撃しない（移動と攻撃を分離）
+    if (ai->IsMoving()) {
         action_ = IndividualAction::Walk;
         attackTarget_ = nullptr;
         justEnteredAttackRange_ = false;
@@ -392,9 +440,9 @@ void Individual::UpdateAction()
         action_ = IndividualAction::Attack;
         // 攻撃開始時にターゲット個体を選択
         SelectAttackTarget();
-        // ターゲットが見つかったら攻撃開始
-        if (attackTarget_) {
-            StartAttack();
+        // ターゲットが見つかったら攻撃開始（未攻撃時のみ）
+        if (attackTarget_ && !IsAttacking()) {
+            StartAttack(attackTarget_);
         }
     } else {
         // 射程外 → Walk
@@ -409,6 +457,20 @@ bool Individual::CanAttackNow() const
 {
     // 攻撃範囲に入った直後、またはクールダウン完了
     return justEnteredAttackRange_ || attackCooldown_ <= 0.0f;
+}
+
+//----------------------------------------------------------------------------
+bool Individual::CanInterruptAttack() const
+{
+    // 攻撃していなければ中断可能
+    if (!IsAttacking()) return true;
+
+    // StateMachineに問い合わせ
+    if (stateMachine_) {
+        return stateMachine_->CanInterruptAttack();
+    }
+
+    return true;
 }
 
 //----------------------------------------------------------------------------
@@ -434,7 +496,7 @@ void Individual::UpdateDesiredVelocity()
     if (!IsAlive() || !ownerGroup_) return;
 
     // 攻撃中は移動しない
-    if (isAttacking_) {
+    if (IsAttacking()) {
         return;
     }
 
@@ -465,7 +527,8 @@ void Individual::UpdateDesiredVelocity()
             Vector2 diff = targetPos - myPos;
             float distance = diff.Length();
 
-            if (distance > kMinDistanceThreshold) {
+            // スロットに十分近ければ停止（Idleと同じ閾値）
+            if (distance > kFormationThreshold) {
                 diff.Normalize();
                 desiredVelocity_ = diff * moveSpeed_;
             }
@@ -540,32 +603,59 @@ void Individual::SelectAttackTarget()
 
     if (std::holds_alternative<Group*>(aiTarget)) {
         targetGroup = std::get<Group*>(aiTarget);
+    } else {
+        // ターゲットがPlayerの場合、Groupターゲットはなし
+        return;
     }
 
-    if (!targetGroup || targetGroup->IsDefeated()) return;
+    if (!targetGroup || targetGroup->IsDefeated()) {
+        LOG_DEBUG("[SelectAttackTarget] " + id_ + " no valid targetGroup");
+        return;
+    }
 
     // ターゲットグループからランダムに生存個体を選ぶ
     attackTarget_ = targetGroup->GetRandomAliveIndividual();
+
+    if (!attackTarget_) {
+        LOG_DEBUG("[SelectAttackTarget] " + id_ + " no alive individual in " + targetGroup->GetId());
+    }
 }
 
 //----------------------------------------------------------------------------
-void Individual::StartAttack()
+bool Individual::IsAttacking() const
 {
-    isAttacking_ = true;
-    attackDurationTimer_ = kAttackDuration;  // 攻撃持続時間を設定
-    // AnimationControllerが攻撃アニメをロック中になる
-    // RequestState(Attack)は Update() で呼ばれる
+    if (stateMachine_) {
+        return stateMachine_->IsAttacking();
+    }
+    return false;
+}
+
+//----------------------------------------------------------------------------
+bool Individual::StartAttack(Individual* target)
+{
+    if (!stateMachine_) return false;
+
+    // StateMachineに攻撃開始を委譲
+    bool started = stateMachine_->StartAttack(target);
+    if (started) {
+        attackTarget_ = target;
+    }
+    return started;
+}
+
+//----------------------------------------------------------------------------
+bool Individual::StartAttackPlayer(Player* target)
+{
+    if (!stateMachine_) return false;
+
+    // StateMachineに攻撃開始を委譲
+    bool started = stateMachine_->StartAttackPlayer(target);
+    return started;
 }
 
 //----------------------------------------------------------------------------
 void Individual::EndAttack()
 {
-    isAttacking_ = false;
-    attackDurationTimer_ = 0.0f;
-
-    // アニメーションロックを解除
-    animationController_.ForceUnlock();
-
     // 攻撃終了後、ターゲットが死亡していれば再選択
     if (attackTarget_ && !attackTarget_->IsAlive()) {
         SelectAttackTarget();
@@ -578,15 +668,14 @@ void Individual::EndAttack()
 //----------------------------------------------------------------------------
 void Individual::InterruptAttack()
 {
+    // StateMachineに中断を委譲
+    if (stateMachine_) {
+        stateMachine_->ForceInterrupt();
+    }
+
     // 攻撃状態をリセット
-    isAttacking_ = false;
-    attackDurationTimer_ = 0.0f;
     action_ = IndividualAction::Idle;
     attackTarget_ = nullptr;
-
-    // アニメーションロックを強制解除し、即座にIdleアニメーションをリクエスト
-    animationController_.ForceUnlock();
-    animationController_.RequestState(AnimationState::Idle);
 }
 
 //----------------------------------------------------------------------------
@@ -658,66 +747,26 @@ IndividualIntent Individual::GetIndividualIntent() const
 //----------------------------------------------------------------------------
 AnimationState Individual::DetermineAnimationState() const
 {
-    IndividualIntent indIntent = GetIndividualIntent();
-    GroupIntent grpIntent = GetGroupIntent();
-
-#ifdef _DEBUG
-    // デバッグ: 意図とアニメーション状態をログ
-    if (++debugLogCounter_ % 60 == 0) {  // 1秒に1回
-        std::string indIntentStr;
-        switch (indIntent) {
-        case IndividualIntent::AtSlot: indIntentStr = "AtSlot"; break;
-        case IndividualIntent::MovingToSlot: indIntentStr = "MovingToSlot"; break;
-        case IndividualIntent::ChasingTarget: indIntentStr = "ChasingTarget"; break;
-        case IndividualIntent::Attacking: indIntentStr = "Attacking"; break;
-        case IndividualIntent::Dead: indIntentStr = "Dead"; break;
-        }
-        std::string grpIntentStr;
-        switch (grpIntent) {
-        case GroupIntent::Idle: grpIntentStr = "Idle"; break;
-        case GroupIntent::Wander: grpIntentStr = "Wander"; break;
-        case GroupIntent::Seek: grpIntentStr = "Seek"; break;
-        case GroupIntent::Flee: grpIntentStr = "Flee"; break;
-        }
-        std::string ctrlStateStr;
-        switch (animationController_.GetState()) {
-        case AnimationState::Idle: ctrlStateStr = "Idle"; break;
-        case AnimationState::Walk: ctrlStateStr = "Walk"; break;
-        case AnimationState::Attack: ctrlStateStr = "Attack"; break;
-        case AnimationState::Death: ctrlStateStr = "Death"; break;
-        default: ctrlStateStr = "?"; break;
-        }
-        LOG_INFO("[AnimState] " + id_ + " IndIntent=" + indIntentStr + " GrpIntent=" + grpIntentStr +
-                 " action=" + std::to_string(static_cast<int>(action_)) +
-                 " ctrlState=" + ctrlStateStr + " locked=" + (animationController_.IsLocked() ? "Y" : "N"));
+    // StateMachineで状態管理するため、この関数は後方互換性のみ
+    if (!stateMachine_) {
+        return AnimationState::Idle;
     }
-#endif
 
-    // 死亡・攻撃は最優先
-    if (indIntent == IndividualIntent::Dead) {
+    AnimState state = stateMachine_->GetState();
+
+    switch (state) {
+    case AnimState::Death:
         return AnimationState::Death;
-    }
-    if (indIntent == IndividualIntent::Attacking) {
+    case AnimState::AttackWindup:
+    case AnimState::AttackActive:
+    case AnimState::AttackRecovery:
         return AnimationState::Attack;
-    }
-
-    // グループが実際に移動中 → Walk
-    if (grpIntent != GroupIntent::Idle) {
+    case AnimState::Walk:
         return AnimationState::Walk;
+    case AnimState::Idle:
+    default:
+        return AnimationState::Idle;
     }
-
-    // グループ停止中：個体の状態で判定
-    if (indIntent == IndividualIntent::MovingToSlot ||
-        indIntent == IndividualIntent::ChasingTarget) {
-        return AnimationState::Walk;
-    }
-
-    // 実際に位置が変化している場合もWalk（LovePull等による移動）
-    if (isActuallyMoving_) {
-        return AnimationState::Walk;
-    }
-
-    return AnimationState::Idle;
 }
 
 //----------------------------------------------------------------------------
@@ -732,11 +781,10 @@ void Individual::UpdateFacingDirection()
         Vector2 targetPos;
         if (GetCurrentAttackTargetPosition(targetPos)) {
             float dx = targetPos.x - GetPosition().x;
-            if (dx > 0.0f) {
-                facingRight_ = true;
-            } else if (dx < 0.0f) {
-                facingRight_ = false;
-            }
+            float dy = targetPos.y - GetPosition().y;
+            int flipDir = DetermineFlipDirection(dx, dy);
+            if (flipDir > 0) facingRight_ = true;
+            else if (flipDir < 0) facingRight_ = false;
         }
     }
     // 2. グループ移動中はグループの移動先方向を向く（個体速度ではなくAIターゲット方向）
@@ -746,24 +794,98 @@ void Individual::UpdateFacingDirection()
             Vector2 targetPos = ai->GetTargetPosition();
             Vector2 groupPos = ownerGroup_->GetPosition();
             float dx = targetPos.x - groupPos.x;
-            if (dx > 0.0f) {
-                facingRight_ = true;
-            } else if (dx < 0.0f) {
-                facingRight_ = false;
-            }
+            float dy = targetPos.y - groupPos.y;
+            int flipDir = DetermineFlipDirection(dx, dy);
+            if (flipDir > 0) facingRight_ = true;
+            else if (flipDir < 0) facingRight_ = false;
         }
     }
     // 3. 実際に移動中（LovePull等）は移動方向を向く
     else if (isActuallyMoving_) {
         Vector2 currentPos = GetPosition();
         float dx = currentPos.x - prevPosition_.x;
-        if (dx > 0.0f) {
-            facingRight_ = true;
-        } else if (dx < 0.0f) {
-            facingRight_ = false;
-        }
+        float dy = currentPos.y - prevPosition_.y;
+        int flipDir = DetermineFlipDirection(dx, dy);
+        if (flipDir > 0) facingRight_ = true;
+        else if (flipDir < 0) facingRight_ = false;
     }
     // それ以外は現在の向きを維持
 
     sprite_->SetFlipX(facingRight_);
+}
+
+//----------------------------------------------------------------------------
+AnimationDecisionContext Individual::BuildAnimationContext() const
+{
+    AnimationDecisionContext ctx;
+
+    //------------------------------------------------------------------------
+    // 個体状態
+    //------------------------------------------------------------------------
+    ctx.velocity = desiredVelocity_ + separationOffset_;
+    ctx.desiredVelocity = desiredVelocity_;
+    ctx.isActuallyMoving = isActuallyMoving_;
+
+    // スロット距離を計算
+    if (ownerGroup_) {
+        Formation& formation = ownerGroup_->GetFormation();
+        Vector2 slotPos = formation.GetSlotPosition(this);
+        Vector2 myPos = GetPosition();
+        ctx.distanceToSlot = (slotPos - myPos).Length();
+    }
+
+    //------------------------------------------------------------------------
+    // グループ状態
+    //------------------------------------------------------------------------
+    ctx.isGroupMoving = isGroupMoving_;
+    if (ownerGroup_) {
+        GroupAI* ai = ownerGroup_->GetAI();
+        if (ai) {
+            ctx.groupAIState = ai->GetState();
+            ctx.groupTargetPosition = ai->GetTargetPosition();
+        }
+    }
+
+    //------------------------------------------------------------------------
+    // Loveクラスター状態（関係性）
+    //------------------------------------------------------------------------
+    ctx.isInLoveCluster = RelationshipFacade::Get().HasLovePartners(ownerGroup_);
+    if (ctx.isInLoveCluster && ownerGroup_) {
+        std::vector<Group*> cluster = RelationshipFacade::Get().GetLoveCluster(ownerGroup_);
+
+        // クラスター中心を計算
+        if (!cluster.empty()) {
+            Vector2 clusterCenter = Vector2::Zero;
+            for (Group* g : cluster) {
+                if (g) {
+                    clusterCenter.x += g->GetPosition().x;
+                    clusterCenter.y += g->GetPosition().y;
+                }
+            }
+            float count = static_cast<float>(cluster.size());
+            ctx.loveClusterCenter = Vector2(clusterCenter.x / count, clusterCenter.y / count);
+            ctx.distanceToClusterCenter = (ownerGroup_->GetPosition() - ctx.loveClusterCenter).Length();
+
+            // クラスターが移動中かどうか（距離が閾値を超えている）
+            ctx.isLoveClusterMoving = (ctx.distanceToClusterCenter > GameConstants::kLoveFollowStartDistance);
+        }
+    }
+
+    //------------------------------------------------------------------------
+    // 戦闘関係（関係性）
+    //------------------------------------------------------------------------
+    ctx.isAttacking = IsAttacking();
+    ctx.attackTarget = RelationshipContext::Get().GetAttackTarget(this);
+    ctx.playerTarget = RelationshipContext::Get().GetPlayerTarget(this);
+
+    if (ctx.attackTarget && ctx.attackTarget->IsAlive()) {
+        ctx.attackTargetPosition = ctx.attackTarget->GetPosition();
+    } else if (ctx.playerTarget && ctx.playerTarget->IsAlive()) {
+        ctx.attackTargetPosition = ctx.playerTarget->GetPosition();
+    }
+
+    ctx.isUnderAttack = RelationshipContext::Get().IsUnderAttack(this);
+    ctx.attackers = RelationshipContext::Get().GetAttackers(this);
+
+    return ctx;
 }

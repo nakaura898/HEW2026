@@ -58,6 +58,5 @@ public:
     //!@}
 
 private:
-    SceneManager& sceneManager_;              //!< シーンマネージャー参照
     std::unique_ptr<Scene> currentScene_;     //!< 現在のシーン（所有）
 };

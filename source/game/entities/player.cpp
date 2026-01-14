@@ -1,4 +1,4 @@
-//----------------------------------------------------------------------------
+﻿//----------------------------------------------------------------------------
 //! @file   player.cpp
 //! @brief  Playerクラス実装
 //----------------------------------------------------------------------------
@@ -13,6 +13,7 @@
 #include "engine/c_systems/collision_layers.h"
 #include "game/systems/game_constants.h"
 #include "common/logging/logging.h"
+#include <cmath>
 
 //----------------------------------------------------------------------------
 Player::Player()
@@ -35,7 +36,7 @@ void Player::Initialize(const Vector2& position)
     gameObject_ = std::make_unique<GameObject>("Player");
 
     // Transform
-    transform_ = gameObject_->AddComponent<Transform2D>();
+    transform_ = gameObject_->AddComponent<Transform>();
     transform_->SetPosition(position);
     transform_->SetScale(0.3f);
 
@@ -87,10 +88,9 @@ void Player::Update(float dt, Camera2D& camera)
 //----------------------------------------------------------------------------
 void Player::HandleInput(float dt, Camera2D& /*camera*/)
 {
-    InputManager* inputMgr = InputManager::GetInstance();
-    if (!inputMgr || !transform_) return;
+    if (!transform_) return;
 
-    Keyboard& keyboard = inputMgr->GetKeyboard();
+    Keyboard& keyboard = InputManager::Get().GetKeyboard();
 
     // 移動入力
     Vector2 move = Vector2::Zero;
@@ -106,14 +106,26 @@ void Player::HandleInput(float dt, Camera2D& /*camera*/)
         transform_->Translate(move);
 
         // 移動方向に応じてスプライト反転（テクスチャは左向き）
-        if (sprite_ && move.x != 0.0f) {
-            sprite_->SetFlipX(move.x > 0.0f);
+        // 水平成分が30%以上の場合のみ反転（真上/真下への移動では反転しない）
+        if (sprite_) {
+            float absMoveX = std::abs(move.x);
+            float absMoveY = std::abs(move.y);
+            float total = absMoveX + absMoveY;
+            constexpr float kHorizontalThreshold = 0.3f;
+
+            if (total > 0.001f && absMoveX / total >= kHorizontalThreshold) {
+                sprite_->SetFlipX(move.x > 0.0f);
+            }
         }
     }
 
-    // Love縁グループが攻撃中の場合、移動を制限（移動有無に関わらず毎フレーム適用）
-    // Love縁のある全グループをチェック
+    // Love縁グループとの距離を常に制限（攻撃中でなくても）
+    // 複数のLove縁がある場合は、全ての制約を累積して平均化
     std::vector<Bond*> bonds = BondManager::Get().GetBondsFor(this);
+    Vector2 totalPull = Vector2::Zero;
+    int pullCount = 0;
+    Vector2 originalPlayerPos = transform_->GetPosition();
+
     for (Bond* bond : bonds) {
         if (bond->GetType() != BondType::Love) continue;
 
@@ -125,31 +137,44 @@ void Player::HandleInput(float dt, Camera2D& /*camera*/)
         if (!groupPtr || !*groupPtr) continue;
         Group* group = *groupPtr;
 
-        // グループ内に攻撃中の個体がいるかチェック
-        bool groupAttacking = false;
-        for (Individual* ind : group->GetAliveIndividuals()) {
-            if (ind->IsAttacking()) {
-                groupAttacking = true;
-                break;
-            }
+        // 死亡したグループはスキップ（GetPosition()がZeroを返すため）
+        if (group->IsDefeated()) continue;
+
+        // グループとの距離を制限
+        Vector2 groupPos = group->GetPosition();
+        Vector2 diff = originalPlayerPos - groupPos;
+        float distance = diff.Length();
+
+        // ゼロ距離エッジケースを考慮
+        constexpr float kMinDistance = 0.0001f;
+        if (distance > GameConstants::kLoveInterruptDistance && distance > kMinDistance) {
+            // 制限距離に向かって徐々に戻る（急なワープを防ぐ）
+            diff.Normalize();
+            Vector2 constrainedPos = groupPos + diff * GameConstants::kLoveInterruptDistance;
+
+            // 現在位置から制限位置への引き戻しベクトルを累積
+            Vector2 toConstrained = constrainedPos - originalPlayerPos;
+            totalPull += toConstrained;
+            pullCount++;
         }
+    }
 
-        if (groupAttacking) {
-            // 攻撃中のグループとの距離を制限
-            Vector2 playerPos = transform_->GetPosition();
-            Vector2 groupPos = group->GetPosition();
-            Vector2 diff = playerPos - groupPos;
-            float distance = diff.Length();
+    // 累積された引き戻しを平均化して適用
+    if (pullCount > 0) {
+        Vector2 averagePull = totalPull / static_cast<float>(pullCount);
+        float distToConstrained = averagePull.Length();
 
-            // ゼロ距離エッジケースを考慮（正規化時の精度問題回避）
-            constexpr float kMinDistance = 0.0001f;
-            if (distance > GameConstants::kLoveInterruptDistance && distance > kMinDistance) {
-                // 制限距離に押し戻す
-                diff.Normalize();
-                Vector2 constrainedPos = groupPos + diff * GameConstants::kLoveInterruptDistance;
-                transform_->SetPosition(constrainedPos);
-            }
-            break;  // 1つでも攻撃中なら制限適用
+        // 最大移動速度（プレイヤーの移動速度より速め）
+        constexpr float kMaxPullSpeed = 400.0f;
+        float maxMove = kMaxPullSpeed * dt;
+
+        if (distToConstrained > maxMove) {
+            // 徐々に制限位置へ移動
+            averagePull.Normalize();
+            transform_->SetPosition(originalPlayerPos + averagePull * maxMove);
+        } else {
+            // 十分近いのでそのまま設定
+            transform_->SetPosition(originalPlayerPos + averagePull);
         }
     }
 }
@@ -169,7 +194,15 @@ void Player::Render(SpriteBatch& spriteBatch)
 //----------------------------------------------------------------------------
 void Player::TakeDamage(float damage)
 {
-    if (!IsAlive()) return;
+    if (!IsAlive()) {
+        LOG_WARN("[Player] BUG: TakeDamage called on dead player");
+        return;
+    }
+
+    if (damage < 0.0f) {
+        LOG_WARN("[Player] BUG: Negative damage: " + std::to_string(damage));
+        return;
+    }
 
     hp_ -= damage;
     if (hp_ < 0.0f) {
@@ -194,6 +227,11 @@ Vector2 Player::GetPosition() const
 //----------------------------------------------------------------------------
 bool Player::ConsumeFe(float amount)
 {
+    if (amount < 0.0f) {
+        LOG_WARN("[Player] BUG: Negative FE consume amount: " + std::to_string(amount));
+        return false;
+    }
+
     if (fe_ < amount) return false;
 
     fe_ -= amount;
@@ -204,6 +242,11 @@ bool Player::ConsumeFe(float amount)
 //----------------------------------------------------------------------------
 void Player::RecoverFe(float amount)
 {
+    if (amount < 0.0f) {
+        LOG_WARN("[Player] BUG: Negative FE recover amount: " + std::to_string(amount));
+        return;
+    }
+
     fe_ += amount;
     if (fe_ > maxFe_) {
         fe_ = maxFe_;

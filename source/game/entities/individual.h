@@ -5,13 +5,14 @@
 #pragma once
 
 #include "engine/component/game_object.h"
-#include "engine/component/transform2d.h"
+#include "engine/component/transform.h"
 #include "engine/component/sprite_renderer.h"
 #include "engine/component/animator.h"
 #include "engine/component/collider2d.h"
-#include "dx11/gpu/texture.h"
-#include "game/systems/animation/animation_controller.h"
+#include "engine/texture/texture_types.h"
+#include "game/systems/animation/individual_state_machine.h"
 #include "game/systems/animation/individual_intent.h"
+#include "game/systems/animation/animation_controller.h"  // AnimationState enum
 #include <memory>
 #include <string>
 #include <vector>
@@ -21,6 +22,7 @@
 class Group;
 class Player;
 class SpriteBatch;
+struct AnimationDecisionContext;
 
 //----------------------------------------------------------------------------
 //! @brief 個体の行動状態
@@ -150,12 +152,19 @@ public:
     void SelectAttackTarget();
 
     //! @brief 攻撃中か判定
-    [[nodiscard]] bool IsAttacking() const { return isAttacking_; }
+    [[nodiscard]] bool IsAttacking() const;
 
-    //! @brief 攻撃開始
-    void StartAttack();
+    //! @brief 攻撃開始（Individual対象）
+    //! @param target 攻撃対象
+    //! @return 攻撃開始できたらtrue
+    bool StartAttack(Individual* target);
 
-    //! @brief 攻撃終了
+    //! @brief 攻撃開始（Player対象）
+    //! @param target 攻撃対象プレイヤー
+    //! @return 攻撃開始できたらtrue
+    bool StartAttackPlayer(Player* target);
+
+    //! @brief 攻撃終了（コールバックから呼ばれる）
     void EndAttack();
 
     //! @brief 攻撃を強制中断（Love追従時などに使用）
@@ -165,14 +174,17 @@ public:
     //! @brief 攻撃可能か（クールダウン完了かつ範囲に入った直後）
     [[nodiscard]] bool CanAttackNow() const;
 
+    //! @brief 攻撃を中断可能か（一定時間経過後）
+    [[nodiscard]] bool CanInterruptAttack() const;
+
     //! @brief 攻撃クールダウンを開始
     void StartAttackCooldown(float duration);
 
     //! @brief 攻撃クールダウンを更新
     void UpdateAttackCooldown(float dt);
 
-    //! @brief Transform2D取得
-    [[nodiscard]] Transform2D* GetTransform() const { return transform_; }
+    //! @brief Transform取得
+    [[nodiscard]] Transform* GetTransform() const { return transform_; }
 
     //! @brief Collider2D取得
     [[nodiscard]] Collider2D* GetCollider() const { return collider_; }
@@ -223,9 +235,11 @@ public:
     //! @brief 分離力を設定
     void SetSeparationForce(float force) { separationForce_ = force; }
 
-    //! @brief AnimationController取得
-    [[nodiscard]] AnimationController& GetAnimationController() { return animationController_; }
-    [[nodiscard]] const AnimationController& GetAnimationController() const { return animationController_; }
+    //! @brief StateMachine取得
+    [[nodiscard]] IndividualStateMachine* GetStateMachine() const { return stateMachine_.get(); }
+
+    //! @brief Animator取得
+    [[nodiscard]] Animator* GetAnimator() const { return animator_; }
 
     //! @brief フレンズ分配ダメージ受信中フラグ設定（FriendsDamageSharing用）
     void SetReceivingSharedDamage(bool receiving) { isReceivingSharedDamage_ = receiving; }
@@ -258,6 +272,14 @@ public:
     //! @brief 実際に位置が変化しているかどうか取得（フレーム間の実移動量に基づく）
     [[nodiscard]] bool IsActuallyMoving() const { return isActuallyMoving_; }
 
+    //------------------------------------------------------------------------
+    // アニメーション判定コンテキスト
+    //------------------------------------------------------------------------
+
+    //! @brief アニメーション判定コンテキストを構築
+    //! @return 判定に必要な全コンテキスト（個体状態・グループ状態・関係性）
+    [[nodiscard]] AnimationDecisionContext BuildAnimationContext() const;
+
 protected:
     // 定数
     static constexpr float kDefaultColliderSize = 32.0f;    //!< デフォルトコライダーサイズ
@@ -271,8 +293,8 @@ protected:
     //! @brief アニメーションをセットアップ（派生クラスで実装）
     virtual void SetupAnimator();
 
-    //! @brief AnimationControllerをセットアップ（派生クラスでオーバーライド可）
-    virtual void SetupAnimationController();
+    //! @brief StateMachineをセットアップ（派生クラスでオーバーライド可）
+    virtual void SetupStateMachine();
 
     //! @brief コライダーをセットアップ
     virtual void SetupCollider();
@@ -282,7 +304,7 @@ protected:
 
     // GameObject & コンポーネント
     std::unique_ptr<GameObject> gameObject_;
-    Transform2D* transform_ = nullptr;
+    Transform* transform_ = nullptr;
     SpriteRenderer* sprite_ = nullptr;
     Animator* animator_ = nullptr;
     Collider2D* collider_ = nullptr;
@@ -302,8 +324,6 @@ protected:
     // 状態
     IndividualAction action_ = IndividualAction::Idle;
     IndividualAction prevAction_ = IndividualAction::Idle;  //!< 前フレームの行動
-    bool isAttacking_ = false;          //!< 攻撃モーション中
-    float attackDurationTimer_ = 0.0f;  //!< 攻撃モーション残り時間
     bool isReceivingSharedDamage_ = false;  //!< フレンズ分配ダメージ受信中（無限ループ防止）
     bool facingRight_ = false;          //!< 向き状態（true=右向き）
     bool isGroupMoving_ = false;        //!< グループが移動中か（GroupAIから設定）
@@ -330,8 +350,8 @@ protected:
     int animCols_ = 1;
     int animFrameInterval_ = 6;
 
-    // AnimationController
-    AnimationController animationController_;
+    // StateMachine
+    std::unique_ptr<IndividualStateMachine> stateMachine_;
 
 #ifdef _DEBUG
     // デバッグログ用カウンター（const関数内で使用するためmutable）

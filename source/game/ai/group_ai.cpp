@@ -1,4 +1,4 @@
-//----------------------------------------------------------------------------
+﻿//----------------------------------------------------------------------------
 //! @file   group_ai.cpp
 //! @brief  グループAI実装
 //----------------------------------------------------------------------------
@@ -8,15 +8,16 @@
 #include "game/entities/player.h"
 #include "game/systems/stagger_system.h"
 #include "game/systems/combat_system.h"
-#include "game/systems/love_bond_system.h"
-#include "game/systems/time_manager.h"
+#include "engine/time/time_manager.h"
 #include "game/systems/game_constants.h"
-#include "game/bond/bond_manager.h"
-#include "game/bond/bond.h"
+#include "engine/event/event_bus.h"
+#include "game/systems/event/game_events.h"
+#include "game/relationships/relationship_facade.h"
 #include "engine/component/camera2d.h"
 #include "common/logging/logging.h"
 #include <random>
 #include <cmath>
+#include <limits>
 
 namespace {
     //! @brief 画面端からの可視マージン
@@ -30,6 +31,22 @@ GroupAI::GroupAI(Group* owner)
     : owner_(owner)
 {
     SetNewWanderTarget();
+
+    // GroupDefeatedEventを購読（ターゲットが倒された時にクリア）
+    defeatedSubscriptionId_ = EventBus::Get().Subscribe<GroupDefeatedEvent>(
+        [this](const GroupDefeatedEvent& e) {
+            OnGroupDefeated(e.group);
+        });
+}
+
+//----------------------------------------------------------------------------
+GroupAI::~GroupAI()
+{
+    // イベント購読を解除
+    if (defeatedSubscriptionId_ != 0) {
+        EventBus::Get().Unsubscribe<GroupDefeatedEvent>(defeatedSubscriptionId_);
+        defeatedSubscriptionId_ = 0;
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -51,23 +68,33 @@ void GroupAI::Update(float dt)
     }
 
     // Love縁相手との距離チェック（離れすぎたら追従に切り替え）
-    // ただし攻撃モーション中の個体がいる場合は、攻撃完了を待つ
-    if (state_ == AIState::Seek) {
-        if (CheckLovePartnerDistance()) {
-            // 攻撃中の個体がいるかチェック
-            bool anyAttacking = false;
+    if (state_ == AIState::Seek || state_ == AIState::Flee) {
+        bool tooFar = CheckLovePartnerDistance();
+        if (tooFar) {
+            // 全員が攻撃中断可能かチェック（攻撃開始から一定時間経過）
+            bool canInterrupt = true;
             for (Individual* ind : owner_->GetAliveIndividuals()) {
-                if (ind->IsAttacking()) {
-                    anyAttacking = true;
+                if (!ind->CanInterruptAttack()) {
+                    canInterrupt = false;
                     break;
                 }
             }
 
-            // 全員の攻撃が終わってから追従に切り替え
-            if (!anyAttacking) {
+            if (canInterrupt) {
+                LOG_INFO("[GroupAI] " + owner_->GetId() + " returning to Wander (Love follow)");
+                // 攻撃中の個体は中断
+                for (Individual* ind : owner_->GetAliveIndividuals()) {
+                    if (ind->IsAttacking()) {
+                        ind->InterruptAttack();
+                    }
+                }
                 SetState(AIState::Wander);
                 ClearTarget();
                 inCombat_ = false;
+                // 追従開始状態にリセット
+                isLoveFollowing_ = true;
+                loveFollowTimer_ = 0.0f;
+                EventBus::Get().Publish(LoveFollowingChangedEvent{ owner_, true });
             }
         }
     }
@@ -76,6 +103,8 @@ void GroupAI::Update(float dt)
     CheckStateTransition();
 
     // 状態に応じた更新（スケール済み時間で）
+    // LOG_DEBUG("[GroupAI::Update] " + owner_->GetId() + " state=" +
+    //           std::to_string(static_cast<int>(state_)) + " (0=Wander,1=Seek,2=Flee)");
     switch (state_) {
     case AIState::Wander:
         UpdateWander(scaledDt);
@@ -104,6 +133,9 @@ void GroupAI::SetState(AIState state)
              std::to_string(static_cast<int>(oldState)) + " -> " +
              std::to_string(static_cast<int>(state)));
 
+    // EventBusに状態変更を通知
+    EventBus::Get().Publish(AIStateChangedEvent{ owner_, state_ });
+
     if (onStateChanged_) {
         onStateChanged_(state_);
     }
@@ -112,6 +144,14 @@ void GroupAI::SetState(AIState state)
 //----------------------------------------------------------------------------
 void GroupAI::EnterCombat()
 {
+    if (!owner_) {
+        LOG_WARN("[GroupAI] BUG: EnterCombat called with null owner");
+        return;
+    }
+    if (owner_->IsDefeated()) {
+        LOG_WARN("[GroupAI] BUG: EnterCombat called on defeated group: " + owner_->GetId());
+        return;
+    }
     inCombat_ = true;
     if (state_ == AIState::Wander) {
         SetState(AIState::Seek);
@@ -130,6 +170,11 @@ void GroupAI::ExitCombat()
 void GroupAI::SetTarget(Group* target)
 {
     if (target) {
+        if (target->IsDefeated()) {
+            LOG_WARN("[GroupAI] BUG: SetTarget called with defeated group: " + target->GetId());
+            ClearTarget();
+            return;
+        }
         target_ = target;
         if (inCombat_) {
             SetState(AIState::Seek);
@@ -143,6 +188,11 @@ void GroupAI::SetTarget(Group* target)
 void GroupAI::SetTargetPlayer(Player* target)
 {
     if (target) {
+        if (!target->IsAlive()) {
+            LOG_WARN("[GroupAI] BUG: SetTargetPlayer called with dead player");
+            ClearTarget();
+            return;
+        }
         target_ = target;
         if (inCombat_) {
             SetState(AIState::Seek);
@@ -169,29 +219,32 @@ void GroupAI::FindTarget()
 {
     if (!owner_) return;
 
+    // 味方グループは専用のターゲット検索を使用
+    if (owner_->IsAlly()) {
+        FindTargetAsAlly();
+        return;
+    }
+
     // ラブパートナーがいる場合は共有ターゲットを使用
-    LoveBondSystem& loveSys = LoveBondSystem::Get();
-    if (loveSys.HasLovePartners(owner_)) {
-        std::vector<Group*> cluster = loveSys.GetLoveCluster(owner_);
-        AITarget sharedTarget = loveSys.DetermineSharedTarget(cluster);
+    RelationshipFacade& facade = RelationshipFacade::Get();
+    if (facade.HasLovePartners(owner_)) {
+        std::vector<Group*> cluster = facade.GetLoveCluster(owner_);
+        AITarget sharedTarget = facade.DetermineSharedTarget(cluster);
 
         // 共有ターゲットを設定
         if (std::holds_alternative<Group*>(sharedTarget)) {
             Group* targetGroup = std::get<Group*>(sharedTarget);
             if (targetGroup) {
                 target_ = targetGroup;
-                LOG_INFO("[GroupAI] " + owner_->GetId() + " (Love) targeting " + targetGroup->GetId());
                 return;
             }
         } else if (std::holds_alternative<Player*>(sharedTarget)) {
             Player* targetPlayer = std::get<Player*>(sharedTarget);
             if (targetPlayer) {
                 target_ = targetPlayer;
-                LOG_INFO("[GroupAI] " + owner_->GetId() + " (Love) targeting Player");
                 return;
             }
         }
-        // 共有ターゲットがない場合は通常のロジックにフォールバック
     }
 
     // CombatSystemを使ってターゲットを検索
@@ -217,6 +270,42 @@ void GroupAI::FindTarget()
 }
 
 //----------------------------------------------------------------------------
+void GroupAI::FindTargetAsAlly()
+{
+    if (!owner_) return;
+
+    // CombatSystemから敵グループを検索
+    CombatSystem& combat = CombatSystem::Get();
+    Vector2 myPos = owner_->GetPosition();
+
+    Group* bestTarget = nullptr;
+    float closestDistance = (std::numeric_limits<float>::max)();
+
+    // すべてのグループから敵（非味方）を検索
+    for (Group* candidate : combat.GetAllGroups()) {
+        if (!candidate || candidate == owner_) continue;
+        if (candidate->IsDefeated()) continue;
+        if (candidate->IsAlly()) continue;  // 味方は攻撃しない
+
+        // 索敵範囲チェック
+        float distance = (candidate->GetPosition() - myPos).Length();
+        if (distance > detectionRange_) continue;
+
+        // 最も近い敵を選択
+        if (distance < closestDistance) {
+            closestDistance = distance;
+            bestTarget = candidate;
+        }
+    }
+
+    if (bestTarget) {
+        target_ = bestTarget;
+    } else {
+        ClearTarget();
+    }
+}
+
+//----------------------------------------------------------------------------
 Vector2 GroupAI::GetTargetPosition() const
 {
     // Wander状態の場合
@@ -225,8 +314,8 @@ Vector2 GroupAI::GetTargetPosition() const
         if (player_) {
             BondableEntity groupEntity = owner_;
             BondableEntity playerEntity = player_;
-            Bond* playerBond = BondManager::Get().GetBond(groupEntity, playerEntity);
-            if (playerBond && playerBond->GetType() == BondType::Love) {
+            const EdgeData* edge = RelationshipFacade::Get().GetEdge(groupEntity, playerEntity);
+            if (edge && edge->type == BondType::Love) {
                 return player_->GetPosition();
             }
         }
@@ -249,10 +338,32 @@ bool GroupAI::IsTargetValid() const
 {
     if (std::holds_alternative<Group*>(target_)) {
         Group* group = std::get<Group*>(target_);
-        return group && !group->IsDefeated();
+        if (!group || group->IsDefeated()) return false;
+        
+        // 味方グループは攻撃対象として無効
+        // 自分が味方なら、味方グループは攻撃しない
+        // 自分が敵なら、味方グループは攻撃しない（プレイヤー側）
+        if (owner_ && owner_->IsAlly() && group->IsAlly()) {
+            return false;  // 味方同士は攻撃しない
+        }
+        if (owner_ && !owner_->IsAlly() && group->IsAlly()) {
+            // 敵が味方グループを攻撃しようとしている - これはOK
+        }
+        if (owner_ && owner_->IsAlly() && !group->IsAlly()) {
+            // 味方が敵グループを攻撃 - これはOK
+        }
+        
+        return true;
     } else if (std::holds_alternative<Player*>(target_)) {
         Player* player = std::get<Player*>(target_);
-        return player && player->IsAlive();
+        if (!player || !player->IsAlive()) return false;
+        
+        // 味方グループはプレイヤーを攻撃しない
+        if (owner_ && owner_->IsAlly()) {
+            return false;
+        }
+        
+        return true;
     }
     return false;
 }
@@ -267,11 +378,20 @@ void GroupAI::UpdateWander(float dt)
     if (player_) {
         BondableEntity groupEntity = owner_;
         BondableEntity playerEntity = player_;
-        Bond* playerBond = BondManager::Get().GetBond(groupEntity, playerEntity);
-        if (playerBond && playerBond->GetType() == BondType::Love) {
-            followPlayer = true;
+        const EdgeData* edge = RelationshipFacade::Get().GetEdge(groupEntity, playerEntity);
+        if (edge) {
+            // LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " has bond with player, type=" +
+            //           std::to_string(static_cast<int>(edge->type)) + " (2=Love)");
+            if (edge->type == BondType::Love) {
+                followPlayer = true;
+            }
         }
     }
+
+    // デバッグ: state確認
+    // LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " state=Wander, followPlayer=" +
+    //           std::string(followPlayer ? "true" : "false") +
+    //           ", player_=" + std::string(player_ ? "valid" : "null"));
 
     // プレイヤーとラブ縁がある場合はプレイヤーを追従
     if (followPlayer) {
@@ -280,18 +400,46 @@ void GroupAI::UpdateWander(float dt)
         Vector2 direction = playerPos - currentPos;
         float distance = direction.Length();
 
-        // プレイヤーから一定距離離れていたら近づく（プレイヤー速度で）
+        // プレイヤーから一定距離離れていたら追従開始
         if (distance > GameConstants::kLoveFollowStartDistance) {
+            // 追従開始時にタイマーをリセット
+            if (!isLoveFollowing_) {
+                isLoveFollowing_ = true;
+                loveFollowTimer_ = 0.0f;
+                EventBus::Get().Publish(LoveFollowingChangedEvent{ owner_, true });
+                // LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " started Love follow");
+            }
+
+            // 追従中はタイマーを更新
+            loveFollowTimer_ += dt;
+
             direction.Normalize();
             float moveAmount = GameConstants::kLoveFollowSpeed * dt;
             Vector2 newPos = currentPos + direction * moveAmount;
             owner_->SetPosition(newPos);
+            // LOG_DEBUG("[UpdateWander] " + owner_->GetId() + " MOVED to (" +
+            //           std::to_string(newPos.x) + "," + std::to_string(newPos.y) +
+            //           "), followTimer=" + std::to_string(loveFollowTimer_));
+        } else {
+            // プレイヤーに十分近い場合も追従中ならタイマーを更新
+            if (isLoveFollowing_) {
+                loveFollowTimer_ += dt;
+                // LOG_DEBUG("[UpdateWander] " + owner_->GetId() +
+                //           " within threshold, followTimer=" + std::to_string(loveFollowTimer_));
+            }
         }
         return;
+    } else {
+        // プレイヤー追従していない場合はフラグをリセット
+        if (isLoveFollowing_) {
+            isLoveFollowing_ = false;
+            loveFollowTimer_ = 0.0f;
+            EventBus::Get().Publish(LoveFollowingChangedEvent{ owner_, false });
+        }
     }
 
     // ラブパートナー（グループ同士）がいる場合
-    std::vector<Group*> loveCluster = LoveBondSystem::Get().GetLoveCluster(owner_);
+    std::vector<Group*> loveCluster = RelationshipFacade::Get().GetLoveCluster(owner_);
     bool hasLovePartners = loveCluster.size() > 1;
 
     // グループ同士のLove縁：離れすぎたらお互いを追いかける
@@ -391,10 +539,10 @@ void GroupAI::UpdateSeek(float dt)
             targetType = "Player";
             targetName = "Player";
         }
-        LOG_DEBUG("[UpdateSeek] " + owner_->GetId() +
-                  " -> " + targetType + ":" + targetName +
-                  " pos=(" + std::to_string(static_cast<int>(targetPos.x)) + "," +
-                  std::to_string(static_cast<int>(targetPos.y)) + ")");
+        // LOG_DEBUG("[UpdateSeek] " + owner_->GetId() +
+        //           " -> " + targetType + ":" + targetName +
+        //           " pos=(" + std::to_string(static_cast<int>(targetPos.x)) + "," +
+        //           std::to_string(static_cast<int>(targetPos.y)) + ")");
     }
 #endif
     Vector2 direction = targetPos - currentPos;
@@ -475,9 +623,23 @@ void GroupAI::CheckStateTransition()
 
     // HP閾値チェック（Flee）- 戦闘中かつHP低下
     if (hpRatio < fleeThreshold_ && inCombat_) {
+        // カメラ範囲内ならSeek状態を維持（攻撃継続）
+        // ただしターゲットがいない場合はWanderを許可
+        if (IsInCameraView()) {
+            if (HasTarget() && IsTargetValid()) {
+                if (state_ != AIState::Seek) {
+                    LOG_INFO("[GroupAI] " + owner_->GetId() + " HP low but in camera view with target, staying in Seek");
+                    SetState(AIState::Seek);
+                }
+                return;
+            }
+            // ターゲットがいない場合はWanderを許可（Seekに強制しない）
+        }
+
+        // カメラ範囲外ならFlee
         if (state_ != AIState::Flee) {
             LOG_INFO("[GroupAI] " + owner_->GetId() + " HP low (" +
-                     std::to_string(static_cast<int>(hpRatio * 100)) + "%), fleeing!");
+                     std::to_string(static_cast<int>(hpRatio * 100)) + "%) and out of view, fleeing!");
             SetState(AIState::Flee);
             // 脅威度を下げる
             owner_->SetThreatModifier(0.5f);
@@ -501,6 +663,16 @@ void GroupAI::CheckStateTransition()
         return;
     }
 
+    // Flee中にカメラ範囲内に入ったらSeekに戻る
+    if (state_ == AIState::Flee && IsInCameraView()) {
+        LOG_INFO("[GroupAI] " + owner_->GetId() + " entered camera view while fleeing, returning to Seek");
+        FindTarget();
+        if (HasTarget()) {
+            SetState(AIState::Seek);
+        }
+        return;
+    }
+
     // Seek中にターゲットがいなくなったらWanderに戻る
     if (state_ == AIState::Seek && !HasTarget()) {
         FindTarget();
@@ -519,10 +691,25 @@ void GroupAI::CheckStateTransition()
             // Love相手が遠いので追従優先
             return;
         }
+
+        // Love追従中は最小追従時間が経過するまで攻撃に戻らない
+        if (isLoveFollowing_ && loveFollowTimer_ < kMinLoveFollowDuration) {
+            // LOG_DEBUG("[GroupAI] " + owner_->GetId() +
+            //           " Love following, timer=" + std::to_string(loveFollowTimer_) +
+            //           "/" + std::to_string(kMinLoveFollowDuration));
+            return;
+        }
+
         FindTarget();
         if (HasTarget()) {
             LOG_INFO("[GroupAI] " + owner_->GetId() + " found target, entering combat");
             inCombat_ = true;
+            // 追従状態をリセット
+            if (isLoveFollowing_) {
+                isLoveFollowing_ = false;
+                loveFollowTimer_ = 0.0f;
+                EventBus::Get().Publish(LoveFollowingChangedEvent{ owner_, false });
+            }
             SetState(AIState::Seek);
         }
     }
@@ -562,8 +749,8 @@ bool GroupAI::IsMoving() const
         if (player_) {
             BondableEntity groupEntity = owner_;
             BondableEntity playerEntity = player_;
-            Bond* playerBond = BondManager::Get().GetBond(groupEntity, playerEntity);
-            if (playerBond && playerBond->GetType() == BondType::Love) {
+            const EdgeData* edge = RelationshipFacade::Get().GetEdge(groupEntity, playerEntity);
+            if (edge && edge->type == BondType::Love) {
                 Vector2 playerPos = player_->GetPosition();
                 float playerDist = (playerPos - owner_->GetPosition()).Length();
                 return playerDist > GameConstants::kLoveFollowStartDistance;
@@ -571,7 +758,7 @@ bool GroupAI::IsMoving() const
         }
 
         // グループ同士のLove縁（クラスタ中心への移動）
-        std::vector<Group*> loveCluster = LoveBondSystem::Get().GetLoveCluster(owner_);
+        std::vector<Group*> loveCluster = RelationshipFacade::Get().GetLoveCluster(owner_);
         if (loveCluster.size() > 1) {
             // クラスタ中心を計算
             Vector2 clusterCenter = Vector2::Zero;
@@ -595,14 +782,44 @@ bool GroupAI::IsMoving() const
     if (state_ == AIState::Seek) {
         // プレイヤーをターゲットにしている場合は通常の判定
         if (std::holds_alternative<Player*>(target_)) {
-            return distance > GameConstants::kLoveStopDistance;
+            bool result = distance > GameConstants::kLoveStopDistance;
+            // LOG_DEBUG("[IsMoving] " + owner_->GetId() + " Seek->Player dist=" +
+            //           std::to_string(distance) + " result=" + (result ? "true" : "false"));
+            return result;
         }
         // グループターゲットの場合は攻撃範囲で判定
         float attackRange = owner_->GetMaxAttackRange();
         if (attackRange < GameConstants::kMinMeleeAttackRange) {
             attackRange = GameConstants::kMinMeleeAttackRange;
         }
-        return distance > attackRange;
+        bool result = distance > attackRange;
+        // LOG_DEBUG("[IsMoving] " + owner_->GetId() + " Seek->Group dist=" +
+        //           std::to_string(distance) + " attackRange=" + std::to_string(attackRange) +
+        //           " result=" + (result ? "true" : "false"));
+        return result;
+    }
+
+    // Flee状態では実際に移動条件を満たしているかチェック
+    if (state_ == AIState::Flee) {
+        // カメラ内にいたら移動しない
+        if (camera_) {
+            Vector2 screenPos = camera_->WorldToScreen(currentPos);
+            float viewW = camera_->GetViewportWidth();
+            float viewH = camera_->GetViewportHeight();
+            bool isVisible = screenPos.x >= kVisibilityMargin && screenPos.x <= viewW - kVisibilityMargin &&
+                             screenPos.y >= kVisibilityMargin && screenPos.y <= viewH - kVisibilityMargin;
+            if (isVisible) {
+                return false;  // カメラ内なので移動しない
+            }
+        }
+        // プレイヤーに十分近い場合も停止
+        if (player_) {
+            float distToPlayer = (player_->GetPosition() - currentPos).Length();
+            if (distToPlayer <= fleeStopDistance_) {
+                return false;
+            }
+        }
+        return true;  // 移動条件を満たしている
     }
 
     // 通常は停止距離以上で移動中
@@ -618,6 +835,9 @@ void GroupAI::NotifyMovementChange()
 
     // 状態変化があれば全個体に通知
     if (wasMoving_ != isMoving) {
+        // LOG_DEBUG("[NotifyMovementChange] " + owner_->GetId() +
+        //           " isMoving changed: " + (wasMoving_ ? "true" : "false") +
+        //           " -> " + (isMoving ? "true" : "false"));
         wasMoving_ = isMoving;
 
         for (Individual* ind : owner_->GetAliveIndividuals()) {
@@ -637,8 +857,8 @@ bool GroupAI::CheckLovePartnerDistance() const
     if (player_) {
         BondableEntity groupEntity = owner_;
         BondableEntity playerEntity = player_;
-        Bond* playerBond = BondManager::Get().GetBond(groupEntity, playerEntity);
-        if (playerBond && playerBond->GetType() == BondType::Love) {
+        const EdgeData* edge = RelationshipFacade::Get().GetEdge(groupEntity, playerEntity);
+        if (edge && edge->type == BondType::Love) {
             float dist = (player_->GetPosition() - myPos).Length();
             if (dist > GameConstants::kLoveInterruptDistance) {
                 return true;
@@ -647,7 +867,7 @@ bool GroupAI::CheckLovePartnerDistance() const
     }
 
     // グループ同士のLove縁チェック
-    std::vector<Group*> loveCluster = LoveBondSystem::Get().GetLoveCluster(owner_);
+    std::vector<Group*> loveCluster = RelationshipFacade::Get().GetLoveCluster(owner_);
     if (loveCluster.size() > 1) {
         for (Group* partner : loveCluster) {
             if (partner == owner_) continue;
@@ -659,4 +879,42 @@ bool GroupAI::CheckLovePartnerDistance() const
     }
 
     return false;
+}
+
+//----------------------------------------------------------------------------
+bool GroupAI::HasLoveBondWithPlayer() const
+{
+    if (!owner_ || !player_) return false;
+
+    BondableEntity groupEntity = owner_;
+    BondableEntity playerEntity = player_;
+    const EdgeData* edge = RelationshipFacade::Get().GetEdge(groupEntity, playerEntity);
+    return edge && edge->type == BondType::Love;
+}
+
+//----------------------------------------------------------------------------
+void GroupAI::OnGroupDefeated(Group* defeatedGroup)
+{
+    // ターゲットが倒されたグループならクリア
+    if (std::holds_alternative<Group*>(target_)) {
+        Group* currentTarget = std::get<Group*>(target_);
+        if (currentTarget == defeatedGroup) {
+            LOG_INFO("[GroupAI] " + (owner_ ? owner_->GetId() : "unknown") +
+                     " target defeated, clearing");
+            ClearTarget();
+        }
+    }
+}
+
+//----------------------------------------------------------------------------
+bool GroupAI::IsInCameraView(float margin) const
+{
+    if (!camera_ || !owner_) return false;
+
+    Vector2 minBounds, maxBounds;
+    camera_->GetWorldBounds(minBounds, maxBounds);
+    Vector2 pos = owner_->GetPosition();
+
+    return (pos.x >= minBounds.x - margin && pos.x <= maxBounds.x + margin &&
+            pos.y >= minBounds.y - margin && pos.y <= maxBounds.y + margin);
 }

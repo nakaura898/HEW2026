@@ -5,17 +5,23 @@
 #include "application.h"
 #include "dx11/graphics_device.h"
 #include "dx11/graphics_context.h"
+#include "engine/texture/texture_manager.h"
 #include "common/logging/logging.h"
 #include <algorithm>
 
 //----------------------------------------------------------------------------
 // シングルトン
 //----------------------------------------------------------------------------
-
-Application& Application::Get() noexcept
+void Application::Create()
 {
-    static Application instance;
-    return instance;
+    if (!instance_) {
+        instance_ = std::unique_ptr<Application>(new Application());
+    }
+}
+
+void Application::Destroy()
+{
+    instance_.reset();
 }
 
 //----------------------------------------------------------------------------
@@ -60,7 +66,11 @@ bool Application::Initialize(const ApplicationDesc& desc)
         return false;
     }
 
-    // 4. Renderer 初期化（固定解像度レンダーターゲット付き）
+    // 4. TextureManager生成（Rendererが依存）
+    TextureManager::Create();
+
+    // 5. Renderer 初期化（固定解像度レンダーターゲット付き）
+    Renderer::Create();
     if (!Renderer::Get().Initialize(
             window_->GetHWND(),
             window_->GetWidth(),
@@ -75,12 +85,12 @@ bool Application::Initialize(const ApplicationDesc& desc)
         return false;
     }
 
-    // 5. リサイズコールバック設定
+    // 6. リサイズコールバック設定
     window_->SetResizeCallback([this](uint32_t width, uint32_t height) {
         OnResize(width, height);
     });
 
-    // 6. 時間管理初期化
+    // 7. 時間管理初期化
     Timer::Start();
 
     initialized_ = true;
@@ -109,6 +119,8 @@ void Application::Shutdown() noexcept
 
     // 逆順で終了
     Renderer::Get().Shutdown();
+    Renderer::Destroy();
+    TextureManager::Destroy();
     GraphicsContext::Get().Shutdown();
     GraphicsDevice::Get().Shutdown();
     window_.reset();
@@ -149,9 +161,7 @@ void Application::OnResize(uint32_t width, uint32_t height) noexcept
 
 void Application::ProcessInput()
 {
-    if (auto* inputMgr = InputManager::GetInstance()) {
-        inputMgr->Update(Timer::GetDeltaTime());
-    }
+    InputManager::Get().Update(Timer::GetDeltaTime());
 }
 
 //----------------------------------------------------------------------------

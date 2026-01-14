@@ -9,6 +9,7 @@
 #include <memory>
 #include <unordered_map>
 #include <string>
+#include <cassert>
 
 //----------------------------------------------------------------------------
 //! @brief FactionManager（シングルトン）
@@ -19,6 +20,15 @@ class FactionManager
 public:
     //! @brief シングルトンインスタンス取得
     static FactionManager& Get();
+
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~FactionManager() = default;
 
     //------------------------------------------------------------------------
     // エンティティ管理
@@ -60,7 +70,6 @@ public:
 
 private:
     FactionManager() = default;
-    ~FactionManager() = default;
     FactionManager(const FactionManager&) = delete;
     FactionManager& operator=(const FactionManager&) = delete;
 
@@ -71,6 +80,8 @@ private:
 
     //! @brief エンティティのインデックスを取得
     [[nodiscard]] int GetEntityIndex(BondableEntity entity) const;
+
+    static inline std::unique_ptr<FactionManager> instance_ = nullptr;
 
     std::vector<BondableEntity> entities_;              //!< 全エンティティ
     std::vector<std::unique_ptr<Faction>> factions_;    //!< 構築されたFaction群

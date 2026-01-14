@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <cassert>
 
 //===========================================================================
 //! ファイルシステムマネージャー（シングルトン）
@@ -33,8 +34,21 @@
 class FileSystemManager final : private NonCopyableNonMovable
 {
 public:
-    //! シングルトンインスタンスを取得
-    static FileSystemManager& Get() noexcept;
+    //! シングルトンインスタンス取得
+    static FileSystemManager& Get()
+    {
+        assert(instance_ && "FileSystemManager::Create() must be called first");
+        return *instance_;
+    }
+
+    //! インスタンス生成
+    static void Create();
+
+    //! インスタンス破棄
+    static void Destroy();
+
+    //! デストラクタ
+    ~FileSystemManager() = default;
 
     //----------------------------------------------------------
     //! @name   パスユーティリティ（static）
@@ -112,7 +126,10 @@ public:
 
 private:
     FileSystemManager() = default;
-    ~FileSystemManager() = default;
+    FileSystemManager(const FileSystemManager&) = delete;
+    FileSystemManager& operator=(const FileSystemManager&) = delete;
+
+    static inline std::unique_ptr<FileSystemManager> instance_ = nullptr;
 
     struct MountPoint {
         std::string name;

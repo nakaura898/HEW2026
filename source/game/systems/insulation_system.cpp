@@ -9,8 +9,22 @@
 //----------------------------------------------------------------------------
 InsulationSystem& InsulationSystem::Get()
 {
-    static InsulationSystem instance;
-    return instance;
+    assert(instance_ && "InsulationSystem::Create() not called");
+    return *instance_;
+}
+
+//----------------------------------------------------------------------------
+void InsulationSystem::Create()
+{
+    if (!instance_) {
+        instance_.reset(new InsulationSystem());
+    }
+}
+
+//----------------------------------------------------------------------------
+void InsulationSystem::Destroy()
+{
+    instance_.reset();
 }
 
 //----------------------------------------------------------------------------
@@ -31,11 +45,22 @@ std::pair<std::string, std::string> InsulationSystem::MakePairKey(
 //----------------------------------------------------------------------------
 void InsulationSystem::AddInsulation(const BondableEntity& a, const BondableEntity& b)
 {
+    if (BondableHelper::IsNull(a) || BondableHelper::IsNull(b)) {
+        LOG_WARN("[InsulationSystem] BUG: AddInsulation called with null entity");
+        return;
+    }
+
+    if (BondableHelper::IsSame(a, b)) {
+        LOG_WARN("[InsulationSystem] BUG: AddInsulation called with same entity");
+        return;
+    }
+
     auto key = MakePairKey(a, b);
 
     auto [it, inserted] = insulatedPairs_.insert(key);
     if (!inserted) {
-        return; // 既に絶縁済み
+        LOG_WARN("[InsulationSystem] Already insulated: " + key.first + " <-> " + key.second);
+        return;
     }
 
     LOG_INFO("[InsulationSystem] Insulation added: " + key.first + " <-> " + key.second);

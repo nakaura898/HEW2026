@@ -5,6 +5,7 @@
 #include "swap_chain.h"
 #include "graphics_device.h"
 #include "gpu/format.h"
+#include "view/view.h"
 #include "common/logging/logging.h"
 
 namespace
@@ -26,9 +27,8 @@ namespace
         rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
         rtvDesc.Texture2D.MipSlice = 0;
 
-        ComPtr<ID3D11RenderTargetView> rtv;
-        HRESULT hr = device->CreateRenderTargetView(texture.Get(), &rtvDesc, &rtv);
-        RETURN_NULL_IF_FAILED(hr, "[SwapChain] RTV作成失敗");
+        View<RTV> rtv = View<RTV>::Create(texture.Get(), &rtvDesc);
+        RETURN_NULL_IF_NULL(rtv.Get(), "[SwapChain] RTV作成失敗");
 
         TextureDesc mutraDesc;
         mutraDesc.width = desc.Width;
@@ -43,8 +43,8 @@ namespace
         mutraDesc.dimension = TextureDimension::Tex2D;
 
         return std::make_shared<Texture>(
-            std::move(texture), nullptr, std::move(rtv),
-            nullptr, nullptr, mutraDesc);
+            std::move(texture), View<SRV>{}, std::move(rtv),
+            View<DSV>{}, View<UAV>{}, mutraDesc);
     }
 } // namespace
 

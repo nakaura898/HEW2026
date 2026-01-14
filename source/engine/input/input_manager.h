@@ -4,6 +4,7 @@
 #include "mouse.h"
 #include "gamepad_manager.h"
 #include <memory>
+#include <cassert>
 
 /// @brief 入力管理クラス（シングルトン）
 ///
@@ -13,21 +14,26 @@
 /// - 入力状態の毎フレーム更新
 ///
 /// 使用方法:
-/// - InputManager::Init() で初期化
-/// - InputManager::GetInstance() でインスタンス取得
-/// - InputManager::Uninit() で終了処理
+/// - InputManager::Create() で生成
+/// - InputManager::Get() でインスタンス取得
+/// - InputManager::Destroy() で破棄
 class InputManager {
 public:
     /// @brief シングルトンインスタンスを取得
-    /// @return InputManagerのポインタ（未初期化の場合はnullptr）
-    static InputManager* GetInstance() noexcept { return instance_; }
+    static InputManager& Get()
+    {
+        assert(instance_ && "InputManager::Create() must be called first");
+        return *instance_;
+    }
 
-    /// @brief 初期化
-    /// @return 成功した場合はtrue
-    static bool Initialize() noexcept;
+    /// @brief インスタンス生成
+    static void Create();
 
-    /// @brief 終了処理
-    static void Uninit() noexcept;
+    /// @brief インスタンス破棄
+    static void Destroy();
+
+    /// @brief デストラクタ
+    ~InputManager() noexcept = default;
 
     // コピー禁止
     InputManager(const InputManager&) = delete;
@@ -69,10 +75,7 @@ private:
     /// @brief コンストラクタ（private）
     InputManager() noexcept;
 
-    /// @brief デストラクタ（private）
-    ~InputManager() noexcept = default;
-
-    static InputManager* instance_;
+    static inline std::unique_ptr<InputManager> instance_ = nullptr;
 
     std::unique_ptr<Keyboard> keyboard_;
     std::unique_ptr<Mouse> mouse_;

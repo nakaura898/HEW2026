@@ -9,7 +9,7 @@
 #include "engine/c_systems/sprite_batch.h"
 #include "engine/c_systems/collision_manager.h"
 #include "engine/c_systems/collision_layers.h"
-#include "game/systems/time_manager.h"
+#include "engine/time/time_manager.h"
 #include "common/logging/logging.h"
 #include <cmath>
 
@@ -37,7 +37,7 @@ void Arrow::Initialize(const Vector2& startPos, const Vector2& targetPos)
 {
     // GameObject作成
     gameObject_ = std::make_unique<GameObject>("Arrow");
-    transform_ = gameObject_->AddComponent<Transform2D>(startPos);
+    transform_ = gameObject_->AddComponent<Transform>(startPos);
     sprite_ = gameObject_->AddComponent<SpriteRenderer>();
 
     // コライダー設定（矢のサイズに合わせた小さなAABB）

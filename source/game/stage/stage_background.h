@@ -4,8 +4,8 @@
 //----------------------------------------------------------------------------
 #pragma once
 
-#include "dx11/gpu/texture.h"
-#include "dx11/gpu/shader.h"
+#include "engine/texture/texture_types.h"
+#include "engine/shader/shader_types.h"
 #include "engine/math/math_types.h"
 #include "engine/math/color.h"
 #include <vector>

@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./build_debug.cmd)"
+      "Bash(./build_debug.cmd)",
+      "Bash(gh pr status:*)"
     ]
   }
 }

@@ -12,11 +12,7 @@
 #include <cmath>
 
 //----------------------------------------------------------------------------
-DebugDraw& DebugDraw::Get()
-{
-    static DebugDraw instance;
-    return instance;
-}
+// ※ Create()/Destroy()/Get()はヘッダーでインライン実装
 
 //----------------------------------------------------------------------------
 void DebugDraw::Shutdown()

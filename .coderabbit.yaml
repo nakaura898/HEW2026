@@ -1,41 +1,4 @@
-# CodeRabbit設定
-# https://docs.coderabbit.ai/configuration
-
-language: ja-JP
-
 reviews:
-  auto_review:
-    enabled: true
-    base_branches:
-      - master
-
-  # ガチレビュー設定
-  profile: assertive          # 厳しめのレビュー（chill/assertive）
-  request_changes_workflow: false  # コメントのみ（承認/拒否はしない）
-  high_level_summary: true    # 概要サマリーを出力
-  poem: false                 # 詩は不要
-
-  # レビュー対象外
-  path_filters:
-    - "!external/**"
-    - "!build/**"
-    - "!bin/**"
-    - "!obj/**"
-    - "!*.sln"
-    - "!*.vcxproj*"
-
-  # レビュー観点
-  review_instructions: |
-    以下の観点で厳しくレビューしてください：
-    - バグや潜在的な問題
-    - パフォーマンス改善の余地
-    - メモリリーク・リソースリークの可能性
-    - コードの可読性
-    - DirectX11のベストプラクティス
-
-    問題を見つけたら、具体的な修正案（コード例）を必ず提示してください。
-
-    ※このプロジェクトはシングルスレッド前提です。スレッドセーフティの指摘は不要です。
-
-chat:
-  auto_reply: true  # コメントに自動返信
+  path_instructions:
+    - path: "source/engine/**"
+      instructions: "エンジン層のコード。パフォーマンスとメモリ管理に注意。"

@@ -11,11 +11,16 @@
 //----------------------------------------------------------------------------
 // シングルトン
 //----------------------------------------------------------------------------
-
-Renderer& Renderer::Get() noexcept
+void Renderer::Create()
 {
-    static Renderer instance;
-    return instance;
+    if (!instance_) {
+        instance_ = std::unique_ptr<Renderer>(new Renderer());
+    }
+}
+
+void Renderer::Destroy()
+{
+    instance_.reset();
 }
 
 //----------------------------------------------------------------------------
@@ -73,8 +78,13 @@ bool Renderer::Initialize(
         return false;
     }
 
-    // 固定解像度レンダーターゲットを作成
-    if (!CreateRenderTargets(renderWidth, renderHeight)) {
+    // 深度バッファはバックバッファと同じサイズで作成（RTV/DSVサイズ一致が必須）
+    Texture* backBuffer = swapChain_->GetBackBuffer();
+    uint32_t depthWidth = backBuffer ? backBuffer->Width() : windowWidth;
+    uint32_t depthHeight = backBuffer ? backBuffer->Height() : windowHeight;
+
+    // 固定解像度レンダーターゲットを作成（深度はバックバッファサイズ）
+    if (!CreateRenderTargets(renderWidth, renderHeight, depthWidth, depthHeight)) {
         LOG_ERROR("[Renderer] レンダーターゲットの作成に失敗しました");
         swapChain_.reset();
         return false;
@@ -93,19 +103,20 @@ bool Renderer::Initialize(
 // レンダーターゲット作成
 //----------------------------------------------------------------------------
 
-bool Renderer::CreateRenderTargets(uint32_t width, uint32_t height)
+bool Renderer::CreateRenderTargets(uint32_t colorWidth, uint32_t colorHeight,
+                                    uint32_t depthWidth, uint32_t depthHeight)
 {
     // カラーバッファ（SRV付きでブリット用に使用可能）
     colorBuffer_ = TextureManager::Get().CreateRenderTarget(
-        width, height, DXGI_FORMAT_R8G8B8A8_UNORM);
+        colorWidth, colorHeight, DXGI_FORMAT_R8G8B8A8_UNORM);
     if (!colorBuffer_) {
         LOG_ERROR("[Renderer] カラーバッファの作成に失敗しました");
         return false;
     }
 
-    // 深度バッファ
+    // 深度バッファ（バックバッファと同じサイズで作成）
     depthBuffer_ = TextureManager::Get().CreateDepthStencil(
-        width, height, DXGI_FORMAT_D24_UNORM_S8_UINT);
+        depthWidth, depthHeight, DXGI_FORMAT_D24_UNORM_S8_UINT);
     if (!depthBuffer_) {
         LOG_ERROR("[Renderer] 深度バッファの作成に失敗しました");
         colorBuffer_.reset();
@@ -179,9 +190,20 @@ void Renderer::Resize(uint32_t width, uint32_t height)
         return;
     }
 
-    // スワップチェーンのみリサイズ（カラー/深度バッファは固定解像度のまま）
+    // スワップチェーンをリサイズ
     if (!swapChain_->Resize(width, height)) {
         LOG_ERROR("[Renderer] スワップチェーンのリサイズに失敗しました");
+        return;
+    }
+
+    // 深度バッファを新しいバックバッファサイズで再作成
+    Texture* backBuffer = swapChain_->GetBackBuffer();
+    if (backBuffer) {
+        depthBuffer_ = TextureManager::Get().CreateDepthStencil(
+            backBuffer->Width(), backBuffer->Height(), DXGI_FORMAT_D24_UNORM_S8_UINT);
+        if (!depthBuffer_) {
+            LOG_ERROR("[Renderer] 深度バッファの再作成に失敗しました");
+        }
     }
 }
 

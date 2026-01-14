@@ -30,7 +30,7 @@ void Result_Scene::OnExit()
 //更新
 void Result_Scene::Update()
 {
-	auto& input = *InputManager::GetInstance();
+	auto& input = InputManager::Get();
 
 	// SpaceまたはEnterが押されたら
 	if (input.GetKeyboard().IsKeyDown(Key::Enter) || input.GetKeyboard().IsKeyDown(Key::Space))

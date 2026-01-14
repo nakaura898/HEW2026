@@ -124,11 +124,11 @@ public:
     // Transform同期設定
     //------------------------------------------------------------------------
 
-    //! @brief Transform2Dとの自動同期を設定
+    //! @brief Transformとの自動同期を設定
     //! @param sync trueで自動同期、falseで手動更新モード
     void SetSyncWithTransform(bool sync) noexcept { syncWithTransform_ = sync; }
 
-    //! @brief Transform2Dとの自動同期状態を取得
+    //! @brief Transformとの自動同期状態を取得
     [[nodiscard]] bool IsSyncWithTransform() const noexcept { return syncWithTransform_; }
 
 private:
@@ -140,7 +140,7 @@ private:
     uint8_t initLayer_ = CollisionConstants::kDefaultLayer;
     uint8_t initMask_ = CollisionConstants::kDefaultMask;
     bool initTrigger_ = false;
-    bool syncWithTransform_ = true;  //!< Transform2Dと自動同期するか
+    bool syncWithTransform_ = true;  //!< Transformと自動同期するか
 
     void* userData_ = nullptr;  //!< ユーザー定義データ
 };

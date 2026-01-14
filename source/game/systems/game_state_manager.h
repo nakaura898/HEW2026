@@ -6,6 +6,8 @@
 
 #include <functional>
 #include <vector>
+#include <memory>
+#include <cassert>
 
 // 前方宣言
 class Group;
@@ -31,6 +33,15 @@ public:
     //! @brief シングルトンインスタンス取得
     static GameStateManager& Get();
 
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~GameStateManager() = default;
+
     //------------------------------------------------------------------------
     // 初期化・更新
     //------------------------------------------------------------------------
@@ -50,15 +61,6 @@ public:
 
     //! @brief プレイヤーを設定
     void SetPlayer(Player* player) { player_ = player; }
-
-    //! @brief 敵グループを登録
-    void RegisterEnemyGroup(Group* group);
-
-    //! @brief 敵グループを登録解除
-    void UnregisterEnemyGroup(Group* group);
-
-    //! @brief 全敵グループをクリア
-    void ClearEnemyGroups();
 
     //------------------------------------------------------------------------
     // 状態取得
@@ -106,7 +108,6 @@ public:
 
 private:
     GameStateManager() = default;
-    ~GameStateManager() = default;
     GameStateManager(const GameStateManager&) = delete;
     GameStateManager& operator=(const GameStateManager&) = delete;
 
@@ -119,9 +120,10 @@ private:
     //! @brief 全敵がプレイヤーネットワーク内か判定
     [[nodiscard]] bool AreAllEnemiesInPlayerNetwork() const;
 
+    static inline std::unique_ptr<GameStateManager> instance_ = nullptr;
+
     GameState state_ = GameState::Playing;  //!< 現在の状態
     Player* player_ = nullptr;              //!< プレイヤー参照
-    std::vector<Group*> enemyGroups_;       //!< 敵グループリスト
 
     static inline GameState lastResult_ = GameState::Playing;  //!< 最後の結果（シーン間で共有）
 

@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <memory>
 #include <typeindex>
+#include <cassert>
 
 // 前方宣言
 class ShaderProgram;
@@ -50,7 +51,21 @@ class GlobalShader;
 class ShaderManager final : private NonCopyableNonMovable
 {
 public:
-    static ShaderManager& Get() noexcept;
+    //! シングルトンインスタンス取得
+    static ShaderManager& Get()
+    {
+        assert(instance_ && "ShaderManager::Create() must be called first");
+        return *instance_;
+    }
+
+    //! インスタンス生成
+    static void Create();
+
+    //! インスタンス破棄
+    static void Destroy();
+
+    //! デストラクタ
+    ~ShaderManager();
 
     //----------------------------------------------------------
     //! @name   初期化・終了
@@ -224,7 +239,10 @@ public:
 
 private:
     ShaderManager() = default;
-    ~ShaderManager() = default;
+    ShaderManager(const ShaderManager&) = delete;
+    ShaderManager& operator=(const ShaderManager&) = delete;
+
+    static inline std::unique_ptr<ShaderManager> instance_ = nullptr;
 
     //! シェーダーを作成
     [[nodiscard]] ShaderPtr CreateShaderFromBytecode(

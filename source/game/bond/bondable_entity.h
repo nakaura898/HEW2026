@@ -46,4 +46,7 @@ namespace BondableHelper
 
     //! @brief 2つのエンティティが同一か判定
     [[nodiscard]] bool IsSame(const BondableEntity& a, const BondableEntity& b);
+
+    //! @brief エンティティがnullか判定
+    [[nodiscard]] bool IsNull(const BondableEntity& entity);
 }

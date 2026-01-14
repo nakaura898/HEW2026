@@ -12,16 +12,14 @@
 #include "dx11/gpu/format.h"
 #include "common/utility/hash.h"
 #include <DirectXTex.h>
-#include "dx11/view/shader_resource_view.h"
-#include "dx11/view/render_target_view.h"
-#include "dx11/view/depth_stencil_view.h"
-#include "dx11/view/unordered_access_view.h"
+#include "dx11/view/view.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
 #include <algorithm>
+#include <vector>
 
 namespace
 {
@@ -45,10 +43,10 @@ namespace
         HRESULT hr = device->CreateTexture2D(&desc, initialData, &texture);
         RETURN_NULL_IF_FAILED(hr, "[TextureManager] Texture2D作成失敗");
 
-        ComPtr<ID3D11ShaderResourceView> srv;
-        ComPtr<ID3D11RenderTargetView> rtv;
-        ComPtr<ID3D11DepthStencilView> dsv;
-        ComPtr<ID3D11UnorderedAccessView> uav;
+        View<SRV> srv;
+        View<RTV> rtv;
+        View<DSV> dsv;
+        View<UAV> uav;
 
         // SRV作成（Viewクラスを使用）
         if (desc.BindFlags & D3D11_BIND_SHADER_RESOURCE) {
@@ -65,40 +63,32 @@ namespace
                 srvDesc.Texture2D.MipLevels = desc.MipLevels ? desc.MipLevels : static_cast<UINT>(-1);
             }
 
-            auto srvWrapper = ShaderResourceView::Create(texture.Get(), srvDesc);
-            if (srvWrapper && srvWrapper->IsValid()) {
-                srv = srvWrapper->Detach();
-            } else {
+            srv = View<SRV>::Create(texture.Get(), &srvDesc);
+            if (!srv.IsValid()) {
                 LOG_ERROR("[TextureManager] SRV作成失敗");
             }
         }
 
-        // RTV作成（Viewクラスを使用）
+        // RTV作成
         if (desc.BindFlags & D3D11_BIND_RENDER_TARGET) {
-            auto rtvWrapper = RenderTargetView::CreateFromTexture2D(texture.Get(), nullptr);
-            if (rtvWrapper && rtvWrapper->IsValid()) {
-                rtv = rtvWrapper->Detach();
-            } else {
+            rtv = View<RTV>::Create(texture.Get());
+            if (!rtv.IsValid()) {
                 LOG_ERROR("[TextureManager] RTV作成失敗");
             }
         }
 
-        // DSV作成（Viewクラスを使用）
+        // DSV作成
         if (desc.BindFlags & D3D11_BIND_DEPTH_STENCIL) {
-            auto dsvWrapper = DepthStencilView::CreateFromTexture2D(texture.Get(), nullptr);
-            if (dsvWrapper && dsvWrapper->IsValid()) {
-                dsv = dsvWrapper->Detach();
-            } else {
+            dsv = View<DSV>::Create(texture.Get());
+            if (!dsv.IsValid()) {
                 LOG_ERROR("[TextureManager] DSV作成失敗");
             }
         }
 
-        // UAV作成（Viewクラスを使用）
+        // UAV作成
         if (desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS) {
-            auto uavWrapper = UnorderedAccessView::CreateFromTexture2D(texture.Get(), nullptr);
-            if (uavWrapper && uavWrapper->IsValid()) {
-                uav = uavWrapper->Detach();
-            } else {
+            uav = View<UAV>::Create(texture.Get());
+            if (!uav.IsValid()) {
                 LOG_ERROR("[TextureManager] UAV作成失敗");
             }
         }
@@ -112,11 +102,19 @@ namespace
 //============================================================================
 // TextureManager 実装
 //============================================================================
-TextureManager& TextureManager::Get() noexcept
+void TextureManager::Create()
 {
-    static TextureManager instance;
-    return instance;
+    if (!instance_) {
+        instance_ = std::unique_ptr<TextureManager>(new TextureManager());
+    }
 }
+
+void TextureManager::Destroy()
+{
+    instance_.reset();
+}
+
+TextureManager::~TextureManager() = default;
 
 void TextureManager::Initialize(IReadableFileSystem* fileSystem)
 {
@@ -139,6 +137,32 @@ void TextureManager::Initialize(IReadableFileSystem* fileSystem)
 
 void TextureManager::Shutdown()
 {
+#ifdef _DEBUG
+    // シャットダウン前にキャッシュ状態をログ出力（リーク検出用）
+    if (cache_ && stats_.textureCount > 0) {
+        LOG_WARN("[TextureManager] Shutdown with " + std::to_string(stats_.textureCount) +
+                 " textures still cached. Ensure all TexturePtr are released before shutdown.");
+    }
+    // スロットストレージの状態もログ出力
+    size_t activeSlots = 0;
+    for (const auto& slot : slots_) {
+        if (slot.inUse) activeSlots++;
+    }
+    if (activeSlots > 0) {
+        LOG_INFO("[TextureManager] Releasing " + std::to_string(activeSlots) + " textures in slots");
+    }
+#endif
+
+    // スコープをクリア
+    scopes_.clear();
+    currentScope_ = kGlobalScope;
+    nextScopeId_ = 1;
+
+    // スロットをクリア
+    slots_.clear();
+    std::queue<uint16_t>().swap(freeIndices_);
+    handleCache_.clear();
+
     if (cache_) {
         cache_->Clear();
     }
@@ -148,6 +172,265 @@ void TextureManager::Shutdown()
     fileSystem_ = nullptr;
     initialized_ = false;
     stats_ = {};
+}
+
+//============================================================================
+// スコープ管理
+//============================================================================
+TextureManager::ScopeId TextureManager::BeginScope()
+{
+    ScopeId id = nextScopeId_++;
+    scopes_[id] = ScopeData{};
+    currentScope_ = id;
+    return id;
+}
+
+void TextureManager::EndScope(ScopeId scopeId)
+{
+    auto it = scopes_.find(scopeId);
+    if (it == scopes_.end()) return;
+
+    // このスコープの全テクスチャのrefcountを減らす
+    for (TextureHandle handle : it->second.textures) {
+        DecrementRefCount(handle);
+    }
+    scopes_.erase(it);
+
+    // GC実行
+    GarbageCollect();
+
+    // 現在スコープをグローバルに戻す
+    if (currentScope_ == scopeId) {
+        currentScope_ = kGlobalScope;
+    }
+}
+
+//============================================================================
+// ハンドルベースAPI
+//============================================================================
+TextureHandle TextureManager::Load(const std::string& path, bool sRGB)
+{
+    return LoadInScope(path, sRGB, currentScope_);
+}
+
+TextureHandle TextureManager::LoadGlobal(const std::string& path, bool sRGB)
+{
+    return LoadInScope(path, sRGB, kGlobalScope);
+}
+
+Texture* TextureManager::Get(TextureHandle handle) const noexcept
+{
+    if (!handle.IsValid()) return nullptr;
+
+    uint16_t index = handle.GetIndex();
+    if (index >= slots_.size()) return nullptr;
+
+    const TextureSlot& slot = slots_[index];
+    if (!slot.inUse) return nullptr;
+
+    // 世代番号チェック（古いハンドルの誤使用を検出）
+    if (slot.generation != handle.GetGeneration()) {
+        return nullptr;
+    }
+
+    return slot.texture.get();
+}
+
+void TextureManager::GarbageCollect()
+{
+    // 解放対象のスロットインデックスを収集
+    std::vector<uint16_t> freedIndices;
+
+    for (size_t i = 0; i < slots_.size(); ++i) {
+        TextureSlot& slot = slots_[i];
+        if (slot.inUse && slot.refCount == 0) {
+            slot.texture.reset();
+            slot.inUse = false;
+            slot.generation++;  // 世代を進める
+            freeIndices_.push(static_cast<uint16_t>(i));
+            freedIndices.push_back(static_cast<uint16_t>(i));
+        }
+    }
+
+    // handleCache_から解放されたスロットのエントリを削除
+    if (!freedIndices.empty()) {
+        for (auto it = handleCache_.begin(); it != handleCache_.end(); ) {
+            uint16_t index = it->second.GetIndex();
+            bool shouldErase = std::find(freedIndices.begin(), freedIndices.end(), index) != freedIndices.end();
+            if (shouldErase) {
+                it = handleCache_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+}
+
+//============================================================================
+// 内部ヘルパー
+//============================================================================
+TextureHandle TextureManager::AllocateSlot(TexturePtr texture)
+{
+    uint16_t index;
+
+    if (!freeIndices_.empty()) {
+        // 空きスロットを再利用
+        index = freeIndices_.front();
+        freeIndices_.pop();
+    } else {
+        // 新しいスロットを追加
+        if (slots_.size() >= 0xFFFF) {
+            LOG_ERROR("[TextureManager] スロット上限（65535）に達しました");
+            return TextureHandle::Invalid();
+        }
+        index = static_cast<uint16_t>(slots_.size());
+        slots_.push_back(TextureSlot{});
+    }
+
+    TextureSlot& slot = slots_[index];
+    slot.texture = std::move(texture);
+    slot.refCount = 0;  // AddToScopeで増加される
+    slot.inUse = true;
+    // generationは保持（再利用時に既に++されている）
+
+    return TextureHandle::Create(index, slot.generation);
+}
+
+void TextureManager::AddToScope(TextureHandle handle, ScopeId scope)
+{
+    IncrementRefCount(handle);
+
+    if (scope == kGlobalScope) {
+        // グローバルスコープは永続（refcount増やすがEndScopeされない）
+        return;
+    }
+
+    auto it = scopes_.find(scope);
+    if (it != scopes_.end()) {
+        it->second.textures.push_back(handle);
+    }
+}
+
+void TextureManager::IncrementRefCount(TextureHandle handle)
+{
+    if (!handle.IsValid()) return;
+
+    uint16_t index = handle.GetIndex();
+    if (index < slots_.size() && slots_[index].inUse) {
+        slots_[index].refCount++;
+    }
+}
+
+void TextureManager::DecrementRefCount(TextureHandle handle)
+{
+    if (!handle.IsValid()) return;
+
+    uint16_t index = handle.GetIndex();
+    if (index < slots_.size() && slots_[index].inUse && slots_[index].refCount > 0) {
+        slots_[index].refCount--;
+    }
+}
+
+TextureHandle TextureManager::LoadInScope(const std::string& path, bool sRGB, ScopeId scope)
+{
+    if (!initialized_) {
+        LOG_ERROR("[TextureManager] 初期化されていません");
+        return TextureHandle::Invalid();
+    }
+
+    uint64_t cacheKey = ComputeCacheKey(path, sRGB, false);
+
+    // ハンドルキャッシュ検索
+    auto it = handleCache_.find(cacheKey);
+    if (it != handleCache_.end()) {
+        TextureHandle cached = it->second;
+        if (Get(cached)) {
+            // 既存テクスチャをこのスコープに追加
+            AddToScope(cached, scope);
+            stats_.hitCount++;
+            return cached;
+        }
+        // 無効なハンドル（GCで解放済み）→キャッシュから削除
+        handleCache_.erase(it);
+    }
+    stats_.missCount++;
+
+    // ファイル読み込み
+    auto fileResult = fileSystem_->read(path);
+    if (!fileResult.success || fileResult.bytes.empty()) {
+        LOG_ERROR("[TextureManager] ファイルの読み込みに失敗: " + path);
+        return TextureHandle::Invalid();
+    }
+
+    // ローダー選択
+    ITextureLoader* loader = GetLoaderForExtension(path);
+    if (!loader) {
+        LOG_ERROR("[TextureManager] 対応するローダーがありません: " + path);
+        return TextureHandle::Invalid();
+    }
+
+    // デコード
+    TextureData texData;
+    if (!loader->Load(fileResult.bytes.data(), fileResult.bytes.size(), texData)) {
+        LOG_ERROR("[TextureManager] テクスチャのデコードに失敗: " + path);
+        return TextureHandle::Invalid();
+    }
+
+    if (texData.isCubemap) {
+        LOG_ERROR("[TextureManager] Loadでキューブマップをロードしようとしました: " + path);
+        return TextureHandle::Invalid();
+    }
+
+    // フォーマット決定
+    DXGI_FORMAT format = sRGB ? Format(texData.format).addSrgb() : Format(texData.format).removeSrgb();
+
+    // D3D11 Desc作成
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = texData.width;
+    desc.Height = texData.height;
+    desc.MipLevels = texData.mipLevels;
+    desc.ArraySize = 1;
+    desc.Format = format;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.CPUAccessFlags = 0;
+    desc.MiscFlags = 0;
+
+    // TextureDesc作成
+    TextureDesc mutraDesc;
+    mutraDesc.width = texData.width;
+    mutraDesc.height = texData.height;
+    mutraDesc.depth = 1;
+    mutraDesc.mipLevels = texData.mipLevels;
+    mutraDesc.arraySize = 1;
+    mutraDesc.format = format;
+    mutraDesc.usage = D3D11_USAGE_DEFAULT;
+    mutraDesc.bindFlags = D3D11_BIND_SHADER_RESOURCE;
+    mutraDesc.cpuAccess = 0;
+    mutraDesc.dimension = TextureDimension::Tex2D;
+
+    // テクスチャ作成（ヘルパー関数を使用）
+    TexturePtr texturePtr = CreateTextureWithViews(desc, texData.subresources.data(), mutraDesc);
+    if (!texturePtr) {
+        LOG_ERROR("[TextureManager] テクスチャ作成失敗: " + path);
+        return TextureHandle::Invalid();
+    }
+
+    // スロットに割り当て
+    TextureHandle handle = AllocateSlot(std::move(texturePtr));
+    if (!handle.IsValid()) {
+        return TextureHandle::Invalid();
+    }
+
+    // キャッシュに登録
+    handleCache_[cacheKey] = handle;
+
+    // スコープに追加
+    AddToScope(handle, scope);
+
+    return handle;
 }
 
 TexturePtr TextureManager::LoadTexture2D(
@@ -466,29 +749,23 @@ TexturePtr TextureManager::CreateDepthStencil(
     RETURN_NULL_IF_FAILED(hr, "[TextureManager] DepthStencil Texture2D作成失敗");
 
     // DSV作成（Viewクラスを使用、元のフォーマットで）
-    ComPtr<ID3D11DepthStencilView> dsv;
     D3D11_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
     dsvDesc.Format = format;
     dsvDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
     dsvDesc.Texture2D.MipSlice = 0;
-    auto dsvWrapper = DepthStencilView::Create(texture.Get(), dsvDesc);
-    if (dsvWrapper && dsvWrapper->IsValid()) {
-        dsv = dsvWrapper->Detach();
-    } else {
+    View<DSV> dsv = View<DSV>::Create(texture.Get(), &dsvDesc);
+    if (!dsv.IsValid()) {
         LOG_ERROR("[TextureManager] DSV作成失敗");
     }
 
     // SRV作成（Viewクラスを使用）
-    ComPtr<ID3D11ShaderResourceView> srv;
     D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Format = TextureDesc::GetSrvFormat(format);
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MostDetailedMip = 0;
     srvDesc.Texture2D.MipLevels = 1;
-    auto srvWrapper = ShaderResourceView::Create(texture.Get(), srvDesc);
-    if (srvWrapper && srvWrapper->IsValid()) {
-        srv = srvWrapper->Detach();
-    } else {
+    View<SRV> srv = View<SRV>::Create(texture.Get(), &srvDesc);
+    if (!srv.IsValid()) {
         LOG_ERROR("[TextureManager] SRV作成失敗");
     }
 
@@ -505,8 +782,8 @@ TexturePtr TextureManager::CreateDepthStencil(
     mutraDesc.dimension = TextureDimension::Tex2D;
 
     return std::make_shared<Texture>(
-        std::move(texture), std::move(srv), nullptr,
-        std::move(dsv), nullptr, mutraDesc);
+        std::move(texture), std::move(srv), View<RTV>{},
+        std::move(dsv), View<UAV>{}, mutraDesc);
 }
 
 void TextureManager::ClearCache()
@@ -660,9 +937,8 @@ TexturePtr TextureManager::CompressToBC1(Texture* source)
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MipLevels = 1;
 
-    ComPtr<ID3D11ShaderResourceView> srv;
-    hr = device->CreateShaderResourceView(compressedTexture.Get(), &srvDesc, &srv);
-    if (FAILED(hr)) {
+    View<SRV> srv = View<SRV>::Create(compressedTexture.Get(), &srvDesc);
+    if (!srv.IsValid()) {
         LOG_ERROR("[TextureManager] BC1圧縮: SRVの作成に失敗");
         return nullptr;
     }
@@ -678,10 +954,10 @@ TexturePtr TextureManager::CompressToBC1(Texture* source)
 
     auto result = std::make_shared<Texture>(
         compressedTexture,
-        srv,
-        ComPtr<ID3D11RenderTargetView>(nullptr),
-        ComPtr<ID3D11DepthStencilView>(nullptr),
-        ComPtr<ID3D11UnorderedAccessView>(nullptr),
+        std::move(srv),
+        View<RTV>{},
+        View<DSV>{},
+        View<UAV>{},
         desc);
 
     LOG_INFO("[TextureManager] BC1圧縮完了: " + std::to_string(width) + "x" + std::to_string(height) +
@@ -797,9 +1073,8 @@ TexturePtr TextureManager::CompressToBC3(Texture* source)
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MipLevels = 1;
 
-    ComPtr<ID3D11ShaderResourceView> srv;
-    hr = device->CreateShaderResourceView(compressedTexture.Get(), &srvDesc, &srv);
-    if (FAILED(hr)) {
+    View<SRV> srv = View<SRV>::Create(compressedTexture.Get(), &srvDesc);
+    if (!srv.IsValid()) {
         LOG_ERROR("[TextureManager] BC3圧縮: SRVの作成に失敗");
         return nullptr;
     }
@@ -815,10 +1090,10 @@ TexturePtr TextureManager::CompressToBC3(Texture* source)
 
     auto result = std::make_shared<Texture>(
         compressedTexture,
-        srv,
-        ComPtr<ID3D11RenderTargetView>(nullptr),
-        ComPtr<ID3D11DepthStencilView>(nullptr),
-        ComPtr<ID3D11UnorderedAccessView>(nullptr),
+        std::move(srv),
+        View<RTV>{},
+        View<DSV>{},
+        View<UAV>{},
         desc);
 
     LOG_INFO("[TextureManager] BC3圧縮完了: " + std::to_string(width) + "x" + std::to_string(height) +
@@ -930,9 +1205,8 @@ TexturePtr TextureManager::CompressToBC7(Texture* source)
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MipLevels = 1;
 
-    ComPtr<ID3D11ShaderResourceView> srv;
-    hr = device->CreateShaderResourceView(compressedTexture.Get(), &srvDesc, &srv);
-    if (FAILED(hr)) {
+    View<SRV> srv = View<SRV>::Create(compressedTexture.Get(), &srvDesc);
+    if (!srv.IsValid()) {
         LOG_ERROR("[TextureManager] BC7圧縮: SRVの作成に失敗");
         return nullptr;
     }
@@ -948,10 +1222,10 @@ TexturePtr TextureManager::CompressToBC7(Texture* source)
 
     auto result = std::make_shared<Texture>(
         compressedTexture,
-        srv,
-        ComPtr<ID3D11RenderTargetView>(nullptr),
-        ComPtr<ID3D11DepthStencilView>(nullptr),
-        ComPtr<ID3D11UnorderedAccessView>(nullptr),
+        std::move(srv),
+        View<RTV>{},
+        View<DSV>{},
+        View<UAV>{},
         desc);
 
     LOG_INFO("[TextureManager] BC7圧縮完了: " + std::to_string(width) + "x" + std::to_string(height) +

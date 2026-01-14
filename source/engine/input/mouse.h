@@ -51,7 +51,7 @@ public:
 
     /// @brief マウスのX,Y座標を取得
     /// @return　(マウスのX座標、マウスのY座標)
-    Vector2 GestPosition() const noexcept { return Vector2(static_cast<float>(x_), static_cast<float>(y_)); }
+    Vector2 GetPosition() const noexcept { return Vector2(static_cast<float>(x_), static_cast<float>(y_)); }
 
     /// @brief ホイールスクロール量を取得
     /// @return このフレームのホイールスクロール量（正=上、負=下）

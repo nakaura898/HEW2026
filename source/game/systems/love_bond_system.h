@@ -9,6 +9,8 @@
 #include <set>
 #include <unordered_map>
 #include <functional>
+#include <memory>
+#include <cassert>
 
 // 前方宣言
 class Group;
@@ -24,6 +26,15 @@ class LoveBondSystem
 public:
     //! @brief シングルトンインスタンス取得
     static LoveBondSystem& Get();
+
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~LoveBondSystem() = default;
 
     //------------------------------------------------------------------------
     // 初期化・更新
@@ -70,9 +81,11 @@ public:
     //! @brief ラブクラスタの数を取得
     [[nodiscard]] size_t GetClusterCount() const { return loveClusters_.size(); }
 
+    //! @brief キャッシュをクリア（シーン終了時に呼び出し必須）
+    void Clear();
+
 private:
     LoveBondSystem() = default;
-    ~LoveBondSystem() = default;
     LoveBondSystem(const LoveBondSystem&) = delete;
     LoveBondSystem& operator=(const LoveBondSystem&) = delete;
 
@@ -88,6 +101,8 @@ private:
 
     //! @brief ターゲットの脅威度を取得
     [[nodiscard]] float GetTargetThreat(const AITarget& target) const;
+
+    static inline std::unique_ptr<LoveBondSystem> instance_ = nullptr;
 
     Player* player_ = nullptr;                              //!< プレイヤー参照
     std::vector<std::vector<Group*>> loveClusters_;         //!< ラブ縁で繋がったグループのクラスタ

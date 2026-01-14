@@ -10,6 +10,8 @@
 #ifdef _DEBUG
 
 #include "dx11/gpu/texture.h"
+#include <memory>
+#include <cassert>
 
 //----------------------------------------------------------------------------
 //! @brief デバッグ描画クラス（Debugビルドのみ）
@@ -18,7 +20,28 @@ class DebugDraw
 {
 public:
     //! @brief シングルトン取得
-    static DebugDraw& Get();
+    static DebugDraw& Get()
+    {
+        assert(instance_ && "DebugDraw::Create() must be called first");
+        return *instance_;
+    }
+
+    //! @brief インスタンス生成
+    static void Create()
+    {
+        if (!instance_) {
+            instance_ = std::unique_ptr<DebugDraw>(new DebugDraw());
+        }
+    }
+
+    //! @brief インスタンス破棄
+    static void Destroy()
+    {
+        instance_.reset();
+    }
+
+    //! @brief デストラクタ
+    ~DebugDraw() = default;
 
     //! @brief リソース解放
     void Shutdown();
@@ -82,9 +105,10 @@ public:
 
 private:
     DebugDraw() = default;
-    ~DebugDraw() = default;
     DebugDraw(const DebugDraw&) = delete;
     DebugDraw& operator=(const DebugDraw&) = delete;
+
+    static inline std::unique_ptr<DebugDraw> instance_ = nullptr;
 
     void EnsureInitialized();
 

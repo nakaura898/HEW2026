@@ -15,6 +15,8 @@
 #include "dx11/state/rasterizer_state.h"
 #include "dx11/state/depth_stencil_state.h"
 #include <vector>
+#include <memory>
+#include <cassert>
 #include <wrl/client.h>
 
 struct ID3D11InputLayout;
@@ -25,7 +27,29 @@ struct ID3D11InputLayout;
 class CircleRenderer
 {
 public:
-    static CircleRenderer& Get();
+    //! @brief シングルトン取得
+    static CircleRenderer& Get()
+    {
+        assert(instance_ && "CircleRenderer::Create() must be called first");
+        return *instance_;
+    }
+
+    //! @brief インスタンス生成
+    static void Create()
+    {
+        if (!instance_) {
+            instance_ = std::unique_ptr<CircleRenderer>(new CircleRenderer());
+        }
+    }
+
+    //! @brief インスタンス破棄
+    static void Destroy()
+    {
+        instance_.reset();
+    }
+
+    //! @brief デストラクタ
+    ~CircleRenderer() = default;
 
     bool Initialize();
     void Shutdown();
@@ -45,9 +69,10 @@ public:
 
 private:
     CircleRenderer() = default;
-    ~CircleRenderer() = default;
     CircleRenderer(const CircleRenderer&) = delete;
     CircleRenderer& operator=(const CircleRenderer&) = delete;
+
+    static inline std::unique_ptr<CircleRenderer> instance_ = nullptr;
 
     struct CircleVertex {
         Vector3 position;

@@ -122,11 +122,19 @@ namespace
 //============================================================================
 // ShaderManager 実装
 //============================================================================
-ShaderManager& ShaderManager::Get() noexcept
+void ShaderManager::Create()
 {
-    static ShaderManager instance;
-    return instance;
+    if (!instance_) {
+        instance_ = std::unique_ptr<ShaderManager>(new ShaderManager());
+    }
 }
+
+void ShaderManager::Destroy()
+{
+    instance_.reset();
+}
+
+ShaderManager::~ShaderManager() = default;
 
 void ShaderManager::Initialize(
     IReadableFileSystem* fileSystem,

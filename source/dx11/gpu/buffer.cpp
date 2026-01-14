@@ -5,8 +5,7 @@
 #include "buffer.h"
 #include "dx11/gpu_common.h"
 #include "dx11/graphics_device.h"
-#include "dx11/view/shader_resource_view.h"
-#include "dx11/view/unordered_access_view.h"
+#include "dx11/view/view.h"
 #include "common/logging/logging.h"
 
 //----------------------------------------------------------------------------
@@ -14,8 +13,8 @@
 //----------------------------------------------------------------------------
 
 Buffer::Buffer(ComPtr<ID3D11Buffer> buffer,
-               std::unique_ptr<ShaderResourceView> srv,
-               std::unique_ptr<UnorderedAccessView> uav,
+               View<SRV> srv,
+               View<UAV> uav,
                const BufferDesc& desc)
     : buffer_(std::move(buffer))
     , srv_(std::move(srv))
@@ -31,19 +30,19 @@ Buffer& Buffer::operator=(Buffer&&) noexcept = default;
 //----------------------------------------------------------------------------
 
 ID3D11ShaderResourceView* Buffer::Srv() const noexcept {
-    return srv_ ? srv_->Get() : nullptr;
+    return srv_.Get();
 }
 
 ID3D11UnorderedAccessView* Buffer::Uav() const noexcept {
-    return uav_ ? uav_->Get() : nullptr;
+    return uav_.Get();
 }
 
 bool Buffer::HasSrv() const noexcept {
-    return srv_ != nullptr && srv_->IsValid();
+    return srv_.IsValid();
 }
 
 bool Buffer::HasUav() const noexcept {
-    return uav_ != nullptr && uav_->IsValid();
+    return uav_.IsValid();
 }
 
 //----------------------------------------------------------------------------
@@ -78,7 +77,7 @@ std::shared_ptr<Buffer> Buffer::Create(
     RETURN_NULL_IF_FAILED(hr, "[Buffer] バッファ作成失敗");
 
     // SRV作成
-    std::unique_ptr<ShaderResourceView> srv;
+    View<SRV> srv;
     if (desc.bindFlags & D3D11_BIND_SHADER_RESOURCE) {
         D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -86,11 +85,11 @@ std::shared_ptr<Buffer> Buffer::Create(
         srvDesc.Buffer.FirstElement = 0;
         srvDesc.Buffer.NumElements = desc.stride > 0 ? desc.size / desc.stride : desc.size;
 
-        srv = ShaderResourceView::Create(buffer.Get(), srvDesc);
+        srv = View<SRV>::Create(buffer.Get(), &srvDesc);
     }
 
     // UAV作成
-    std::unique_ptr<UnorderedAccessView> uav;
+    View<UAV> uav;
     if (desc.bindFlags & D3D11_BIND_UNORDERED_ACCESS) {
         D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
         uavDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -98,7 +97,7 @@ std::shared_ptr<Buffer> Buffer::Create(
         uavDesc.Buffer.FirstElement = 0;
         uavDesc.Buffer.NumElements = desc.stride > 0 ? desc.size / desc.stride : desc.size;
 
-        uav = UnorderedAccessView::Create(buffer.Get(), uavDesc);
+        uav = View<UAV>::Create(buffer.Get(), &uavDesc);
     }
 
     return std::make_shared<Buffer>(
@@ -137,7 +136,7 @@ std::shared_ptr<Buffer> Buffer::CreateStructured(
     RETURN_NULL_IF_FAILED(hr, "[Buffer] 構造化バッファ作成失敗");
 
     // SRV作成
-    std::unique_ptr<ShaderResourceView> srv;
+    View<SRV> srv;
     if (desc.bindFlags & D3D11_BIND_SHADER_RESOURCE) {
         D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -145,11 +144,11 @@ std::shared_ptr<Buffer> Buffer::CreateStructured(
         srvDesc.Buffer.FirstElement = 0;
         srvDesc.Buffer.NumElements = elementCount;
 
-        srv = ShaderResourceView::Create(buffer.Get(), srvDesc);
+        srv = View<SRV>::Create(buffer.Get(), &srvDesc);
     }
 
     // UAV作成
-    std::unique_ptr<UnorderedAccessView> uav;
+    View<UAV> uav;
     if (desc.bindFlags & D3D11_BIND_UNORDERED_ACCESS) {
         D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
         uavDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -157,7 +156,7 @@ std::shared_ptr<Buffer> Buffer::CreateStructured(
         uavDesc.Buffer.FirstElement = 0;
         uavDesc.Buffer.NumElements = elementCount;
 
-        uav = UnorderedAccessView::Create(buffer.Get(), uavDesc);
+        uav = View<UAV>::Create(buffer.Get(), &uavDesc);
     }
 
     return std::make_shared<Buffer>(
@@ -194,7 +193,7 @@ std::shared_ptr<Buffer> Buffer::CreateVertex(
     HRESULT hr = device->CreateBuffer(&d3dDesc, pInitData, buffer.GetAddressOf());
     RETURN_NULL_IF_FAILED(hr, "[Buffer] 頂点バッファ作成失敗");
 
-    return std::make_shared<Buffer>(std::move(buffer), nullptr, nullptr, desc);
+    return std::make_shared<Buffer>(std::move(buffer), View<SRV>{}, View<UAV>{}, desc);
 }
 
 //! インデックスバッファを作成
@@ -225,7 +224,7 @@ std::shared_ptr<Buffer> Buffer::CreateIndex(
     HRESULT hr = device->CreateBuffer(&d3dDesc, pInitData, buffer.GetAddressOf());
     RETURN_NULL_IF_FAILED(hr, "[Buffer] インデックスバッファ作成失敗");
 
-    return std::make_shared<Buffer>(std::move(buffer), nullptr, nullptr, desc);
+    return std::make_shared<Buffer>(std::move(buffer), View<SRV>{}, View<UAV>{}, desc);
 }
 
 //! 定数バッファを作成
@@ -246,5 +245,5 @@ std::shared_ptr<Buffer> Buffer::CreateConstant(uint32_t byteSize)
     HRESULT hr = device->CreateBuffer(&d3dDesc, nullptr, buffer.GetAddressOf());
     RETURN_NULL_IF_FAILED(hr, "[Buffer] 定数バッファ作成失敗");
 
-    return std::make_shared<Buffer>(std::move(buffer), nullptr, nullptr, desc);
+    return std::make_shared<Buffer>(std::move(buffer), View<SRV>{}, View<UAV>{}, desc);
 }

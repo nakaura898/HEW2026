@@ -1,6 +1,7 @@
 #pragma once
 
 #include "file_system_types.h"
+#include "engine/core/job_system.h"
 #include <memory>
 #include <span>
 #include <string>
@@ -123,10 +124,19 @@ public:
     //! @param [in] path ファイルパス
     //! @return 非同期ハンドル
     [[nodiscard]] virtual AsyncReadHandle readAsync(const std::string& path) {
-        // デフォルト実装: std::asyncで同期読み込みをラップ
-        auto future = std::async(std::launch::async, [this, path]() {
-            return this->read(path);
-        });
+        // JobSystemを使用して非同期読み込み
+        auto promise = std::make_shared<std::promise<FileReadResult>>();
+        auto future = promise->get_future();
+
+        IReadableFileSystem* self = this;
+        // ジョブハンドルは不要（promiseで完了を通知）
+        (void)JobSystem::Get().SubmitJob(
+            JobDesc::LowPriority([self, path, prom = std::move(promise)]() {
+                auto result = self->read(path);
+                prom->set_value(std::move(result));
+            }).SetName("FileReadAsync")
+        );
+
         return AsyncReadHandle(std::move(future));
     }
 
@@ -135,11 +145,19 @@ public:
     //! @param [in] callback 完了時コールバック
     //! @return 非同期ハンドル
     [[nodiscard]] virtual AsyncReadHandle readAsync(const std::string& path, AsyncReadCallback callback) {
-        auto future = std::async(std::launch::async, [this, path, cb = std::move(callback)]() {
-            auto result = this->read(path);
-            if (cb) cb(result);
-            return result;
-        });
+        auto promise = std::make_shared<std::promise<FileReadResult>>();
+        auto future = promise->get_future();
+
+        IReadableFileSystem* self = this;
+        // ジョブハンドルは不要（promiseで完了を通知）
+        (void)JobSystem::Get().SubmitJob(
+            JobDesc::LowPriority([self, path, cb = std::move(callback), prom = std::move(promise)]() {
+                auto result = self->read(path);
+                if (cb) cb(result);
+                prom->set_value(std::move(result));
+            }).SetName("FileReadAsyncCallback")
+        );
+
         return AsyncReadHandle(std::move(future));
     }
 

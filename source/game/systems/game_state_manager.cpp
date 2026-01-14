@@ -6,14 +6,29 @@
 #include "game/entities/group.h"
 #include "game/entities/player.h"
 #include "game/bond/bond_manager.h"
+#include "game/systems/wave_manager.h"
+#include "game/systems/group_manager.h"
 #include "common/logging/logging.h"
-#include <algorithm>
 
 //----------------------------------------------------------------------------
 GameStateManager& GameStateManager::Get()
 {
-    static GameStateManager instance;
-    return instance;
+    assert(instance_ && "GameStateManager::Create() not called");
+    return *instance_;
+}
+
+//----------------------------------------------------------------------------
+void GameStateManager::Create()
+{
+    if (!instance_) {
+        instance_.reset(new GameStateManager());
+    }
+}
+
+//----------------------------------------------------------------------------
+void GameStateManager::Destroy()
+{
+    instance_.reset();
 }
 
 //----------------------------------------------------------------------------
@@ -45,40 +60,24 @@ void GameStateManager::Update()
 void GameStateManager::Reset()
 {
     state_ = GameState::Playing;
-    enemyGroups_.clear();
     player_ = nullptr;
     LOG_INFO("[GameStateManager] Game reset");
 }
 
 //----------------------------------------------------------------------------
-void GameStateManager::RegisterEnemyGroup(Group* group)
-{
-    if (!group) return;
-
-    auto it = std::find(enemyGroups_.begin(), enemyGroups_.end(), group);
-    if (it == enemyGroups_.end()) {
-        enemyGroups_.push_back(group);
-    }
-}
-
-//----------------------------------------------------------------------------
-void GameStateManager::UnregisterEnemyGroup(Group* group)
-{
-    auto it = std::find(enemyGroups_.begin(), enemyGroups_.end(), group);
-    if (it != enemyGroups_.end()) {
-        enemyGroups_.erase(it);
-    }
-}
-
-//----------------------------------------------------------------------------
-void GameStateManager::ClearEnemyGroups()
-{
-    enemyGroups_.clear();
-}
-
-//----------------------------------------------------------------------------
 bool GameStateManager::CheckVictoryCondition() const
 {
+    // ウェーブシステムが有効な場合、全ウェーブクリアが必要
+    if (WaveManager::Get().GetTotalWaves() > 0) {
+        // 全ウェーブクリア + トランジション中でない
+        if (!WaveManager::Get().IsAllWavesCleared()) {
+            return false;
+        }
+        if (WaveManager::Get().IsTransitioning()) {
+            return false;
+        }
+    }
+
     // 条件1: 全敵全滅
     if (AreAllEnemiesDefeated()) {
         return true;
@@ -139,10 +138,13 @@ void GameStateManager::SetState(GameState state)
 //----------------------------------------------------------------------------
 bool GameStateManager::AreAllEnemiesDefeated() const
 {
-    if (enemyGroups_.empty()) return true;
+    std::vector<Group*> enemyGroups = GroupManager::Get().GetEnemyGroups();
+    if (enemyGroups.empty()) return true;
 
-    for (Group* group : enemyGroups_) {
-        if (group && !group->IsDefeated()) {
+    for (Group* group : enemyGroups) {
+        if (!group) continue;
+        // GetEnemyGroups()は既にIsEnemy()==trueのみ返すので、IsAllyチェックは不要
+        if (!group->IsDefeated()) {
             return false;
         }
     }
@@ -153,15 +155,17 @@ bool GameStateManager::AreAllEnemiesDefeated() const
 //----------------------------------------------------------------------------
 bool GameStateManager::AreAllEnemiesInPlayerNetwork() const
 {
-    if (!player_ || enemyGroups_.empty()) return false;
+    std::vector<Group*> enemyGroups = GroupManager::Get().GetEnemyGroups();
+    if (!player_ || enemyGroups.empty()) return false;
 
     // プレイヤーの縁ネットワークを取得
     BondableEntity playerEntity = player_;
     std::vector<BondableEntity> network = BondManager::Get().GetConnectedNetwork(playerEntity);
 
     // 全生存敵がネットワーク内にいるかチェック
-    for (Group* group : enemyGroups_) {
+    for (Group* group : enemyGroups) {
         if (!group || group->IsDefeated()) continue;
+        // GetEnemyGroups()は既にIsEnemy()==trueのみ返すので、IsAllyチェックは不要
 
         BondableEntity groupEntity = group;
         bool inNetwork = false;

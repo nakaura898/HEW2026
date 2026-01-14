@@ -58,24 +58,26 @@ public:
             }
             SetConsoleOutputCP(CP_UTF8);
 
+            // 出力ハンドルをキャッシュ
+            hConsole_ = GetStdHandle(STD_OUTPUT_HANDLE);
 
             //コンソール画面でのクイック編集モードの無効化
             //ハンドル取得
             HANDLE ConsoleHandle = GetStdHandle(STD_INPUT_HANDLE);
-            
+
             //コンソールがない場合
             if(ConsoleHandle == INVALID_HANDLE_VALUE)
             {
                 return;
             }
-            
+
             DWORD ConsoleMode;
             //コンソールモードの取得
             if(!GetConsoleMode(ConsoleHandle,&ConsoleMode))
             {
                 return;
             }
-            
+
             //ENABLE_QUICK_EDIT_MODEを取り除く
             ConsoleMode &= ~ENABLE_QUICK_EDIT_MODE;
 
@@ -91,8 +93,9 @@ public:
     }
 
     void write(LogLevel level, const std::string& message) override {
+        if (hConsole_ == INVALID_HANDLE_VALUE) return;
+
         // レベルに応じて色を変更
-        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
         WORD color = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;  // 白
         switch (level) {
             case LogLevel::Debug:   color = FOREGROUND_GREEN | FOREGROUND_BLUE; break;  // シアン
@@ -100,10 +103,13 @@ public:
             case LogLevel::Warning: color = FOREGROUND_RED | FOREGROUND_GREEN; break;  // 黄
             case LogLevel::Error:   color = FOREGROUND_RED; break;  // 赤
         }
-        SetConsoleTextAttribute(hConsole, color);
+        SetConsoleTextAttribute(hConsole_, color);
         printf("%s", message.c_str());
-        SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);  // リセット
+        SetConsoleTextAttribute(hConsole_, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);  // リセット
     }
+
+private:
+    HANDLE hConsole_ = INVALID_HANDLE_VALUE;
 };
 
 //----------------------------------------------------------------------------
@@ -212,8 +218,8 @@ class LogSystem {
 private:
     static inline LogLevel minLevel_ = LogLevel::Debug;
 
-#ifdef _DEBUG
     //! @brief ログ出力インスタンス取得（遅延初期化）
+    //! @note Debug/Release両方でファイルログ出力
     static FullLogOutput& GetOutput() {
         static FullLogOutput instance = []() {
             FullLogOutput out;
@@ -228,12 +234,6 @@ private:
         }();
         return instance;
     }
-#else
-    static DebugLogOutput& GetOutput() {
-        static DebugLogOutput instance;
-        return instance;
-    }
-#endif
 
 public:
     // 最小ログレベルを設定

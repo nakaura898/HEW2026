@@ -7,6 +7,7 @@
 #include "arrow.h"
 #include <vector>
 #include <memory>
+#include <cassert>
 
 // 前方宣言
 class SpriteBatch;
@@ -21,6 +22,15 @@ class ArrowManager
 public:
     //! @brief シングルトンインスタンス取得
     static ArrowManager& Get();
+
+    //! @brief インスタンス生成
+    static void Create();
+
+    //! @brief インスタンス破棄
+    static void Destroy();
+
+    //! @brief デストラクタ
+    ~ArrowManager() = default;
 
     //! @brief 矢を発射（Individual対象）
     //! @param owner 発射者
@@ -52,12 +62,13 @@ public:
 
 private:
     ArrowManager() = default;
-    ~ArrowManager() = default;
     ArrowManager(const ArrowManager&) = delete;
     ArrowManager& operator=(const ArrowManager&) = delete;
 
     //! @brief 無効な矢を削除
     void RemoveInactiveArrows();
+
+    static inline std::unique_ptr<ArrowManager> instance_ = nullptr;
 
     std::vector<std::unique_ptr<Arrow>> arrows_;
 };

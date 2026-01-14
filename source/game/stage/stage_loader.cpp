@@ -284,7 +284,7 @@ StageData StageLoader::LoadFromCSV(const std::string& basePath)
                 continue;
             }
 
-            // name,playerX,playerY,playerHp,playerFe,playerSpeed
+            // name,playerX,playerY,playerHp,playerFe,playerSpeed,maxBindCount,maxCutCount
             std::vector<std::string> parts = SplitByComma(line);
             if (parts.size() >= 3)
             {
@@ -296,6 +296,8 @@ StageData StageLoader::LoadFromCSV(const std::string& basePath)
                     if (parts.size() >= 4) stageData.playerHp = std::stof(parts[3]);
                     if (parts.size() >= 5) stageData.playerFe = std::stof(parts[4]);
                     if (parts.size() >= 6) stageData.playerSpeed = std::stof(parts[5]);
+                    if (parts.size() >= 7) stageData.maxBindCount = std::stoi(parts[6]);
+                    if (parts.size() >= 8) stageData.maxCutCount = std::stoi(parts[7]);
                 }
                 catch (const std::exception& e)
                 {
@@ -352,6 +354,7 @@ StageData StageLoader::LoadFromCSV(const std::string& basePath)
                     if (parts.size() >= 8) group.hp = std::stof(parts[7]);
                     if (parts.size() >= 9) group.attack = std::stof(parts[8]);
                     if (parts.size() >= 10) group.speed = std::stof(parts[9]);
+                    if (parts.size() >= 11) group.wave = std::stoi(parts[10]);
 
                     stageData.groups.push_back(group);
                     LOG_DEBUG("[StageLoader] グループ追加: " + group.id);
@@ -412,10 +415,18 @@ StageData StageLoader::LoadFromCSV(const std::string& basePath)
         LOG_WARN("[StageLoader] Bonds CSVが読めない: " + bondsPath);
     }
 
+    // グループをウェーブ別に振り分け
+    stageData.BuildWaves();
+
     std::string stageName = stageData.name.empty() ? "(無名)" : stageData.name;
+    std::string bindStr = (stageData.maxBindCount < 0) ? "無制限" : std::to_string(stageData.maxBindCount);
+    std::string cutStr = (stageData.maxCutCount < 0) ? "無制限" : std::to_string(stageData.maxCutCount);
     LOG_INFO("[StageLoader] CSV読み込み完了: " + stageName +
              " (グループ: " + std::to_string(stageData.groups.size()) +
-             ", 縁: " + std::to_string(stageData.bonds.size()) + ")");
+             ", 縁: " + std::to_string(stageData.bonds.size()) +
+             ", ウェーブ: " + std::to_string(stageData.waves.size()) +
+             ", 結ぶ上限: " + bindStr +
+             ", 切る上限: " + cutStr + ")");
 
     return stageData;
 }

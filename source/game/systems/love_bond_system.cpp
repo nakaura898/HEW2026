@@ -14,8 +14,22 @@
 //----------------------------------------------------------------------------
 LoveBondSystem& LoveBondSystem::Get()
 {
-    static LoveBondSystem instance;
-    return instance;
+    assert(instance_ && "LoveBondSystem::Create() not called");
+    return *instance_;
+}
+
+//----------------------------------------------------------------------------
+void LoveBondSystem::Create()
+{
+    if (!instance_) {
+        instance_.reset(new LoveBondSystem());
+    }
+}
+
+//----------------------------------------------------------------------------
+void LoveBondSystem::Destroy()
+{
+    instance_.reset();
 }
 
 //----------------------------------------------------------------------------
@@ -233,6 +247,13 @@ void LoveBondSystem::SyncClusterWanderTarget(const std::vector<Group*>& cluster)
         }
     }
 
-    LOG_INFO("[LoveBondSystem] Synced wander target for cluster at (" +
-             std::to_string(clusterCenter.x) + ", " + std::to_string(clusterCenter.y) + ")");
+}
+
+//----------------------------------------------------------------------------
+void LoveBondSystem::Clear()
+{
+    loveClusters_.clear();
+    clusterIndexCache_.clear();
+    player_ = nullptr;
+    LOG_INFO("[LoveBondSystem] Cleared all caches");
 }

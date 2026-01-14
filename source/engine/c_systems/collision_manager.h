@@ -2,7 +2,16 @@
 //! @file   collision_manager.h
 //! @brief  衝突判定マネージャー（DOD設計）
 //!
-//! @note スレッドセーフではない。メインスレッドからのみ呼び出すこと。
+//! @note スレッドセーフ性:
+//!       【警告】このクラスはスレッドセーフではありません。
+//!       - 全メソッド: メインスレッドからのみ呼び出し可能
+//!       - ワーカースレッドからの呼び出しは未定義動作
+//!
+//! @note コールバック実行タイミング:
+//!       衝突コールバック（onEnter_, onCollision_, onExit_）は、
+//!       FixedUpdate()の衝突検出完了後に遅延実行されます。
+//!       これにより、コールバック内でのコライダー削除が安全に行えます。
+//!       削除されたコライダーは世代チェックによりスキップされます。
 //----------------------------------------------------------------------------
 #pragma once
 
@@ -13,6 +22,8 @@
 #include <functional>
 #include <cstdint>
 #include <optional>
+#include <memory>
+#include <cassert>
 
 class Collider2D;
 class GameObject;
@@ -86,6 +97,29 @@ struct AABB {
 using CollisionCallback = std::function<void(Collider2D*, Collider2D*)>;
 
 //============================================================================
+//! @brief 衝突イベント種別
+//============================================================================
+enum class CollisionEventType : uint8_t {
+    Enter,  //!< 衝突開始
+    Stay,   //!< 衝突継続
+    Exit    //!< 衝突終了
+};
+
+//============================================================================
+//! @brief キューイングされた衝突イベント
+//!
+//! コールバック発火を遅延させるためのイベント情報。
+//! 世代情報を保持し、イベント発生後に削除されたコライダーをスキップ可能。
+//============================================================================
+struct CollisionEvent {
+    CollisionEventType type;        //!< イベント種別
+    uint16_t indexA;                //!< コライダーAのインデックス
+    uint16_t indexB;                //!< コライダーBのインデックス
+    uint16_t generationA;           //!< イベント発生時のA世代
+    uint16_t generationB;           //!< イベント発生時のB世代
+};
+
+//============================================================================
 //! @brief レイキャストヒット情報
 //============================================================================
 struct RaycastHit {
@@ -102,10 +136,29 @@ struct RaycastHit {
 //============================================================================
 class CollisionManager final : private NonCopyableNonMovable {
 public:
-    static CollisionManager& Get() noexcept {
-        static CollisionManager instance;
-        return instance;
+    //! @brief シングルトンインスタンス取得
+    static CollisionManager& Get()
+    {
+        assert(instance_ && "CollisionManager::Create() must be called first");
+        return *instance_;
     }
+
+    //! @brief インスタンス生成
+    static void Create()
+    {
+        if (!instance_) {
+            instance_ = std::unique_ptr<CollisionManager>(new CollisionManager());
+        }
+    }
+
+    //! @brief インスタンス破棄
+    static void Destroy()
+    {
+        instance_.reset();
+    }
+
+    //! @brief デストラクタ
+    ~CollisionManager() = default;
 
     //------------------------------------------------------------------------
     // 初期化・終了
@@ -212,10 +265,18 @@ public:
 
 private:
     CollisionManager() = default;
-    ~CollisionManager() = default;
+    CollisionManager(const CollisionManager&) = delete;
+    CollisionManager& operator=(const CollisionManager&) = delete;
+
+    static inline std::unique_ptr<CollisionManager> instance_ = nullptr;
 
     //! @brief 固定タイムステップの衝突判定（内部用）
     void FixedUpdate();
+
+    //! @brief キューイングされたイベントを処理
+    //! @note FixedUpdate()終了後に呼び出される。世代チェックにより
+    //!       コールバック中に削除されたコライダーは安全にスキップされる。
+    void ProcessEventQueue();
 
     //------------------------------------------------------------------------
     // インデックス管理
@@ -306,4 +367,11 @@ private:
     // 固定タイムステップ
     static constexpr float kFixedDeltaTime = 1.0f / 60.0f;  //!< 60Hz
     float accumulator_ = 0.0f;
+
+    // クエリ用バッファ（再利用でアロケーション削減）
+    mutable std::vector<uint16_t> queryBuffer_;
+
+    // 遅延イベントキュー（コールバックを衝突検出完了後に発火）
+    std::vector<CollisionEvent> eventQueue_;
+    bool processingEvents_ = false;  //!< 再入防止フラグ
 };

@@ -6,6 +6,7 @@
 #include "game/bond/bond_manager.h"
 #include "game/entities/group.h"
 #include "game/entities/individual.h"
+#include "game/entities/player.h"
 #include "common/logging/logging.h"
 #include <queue>
 #include <set>
@@ -13,8 +14,22 @@
 //----------------------------------------------------------------------------
 FriendsDamageSharing& FriendsDamageSharing::Get()
 {
-    static FriendsDamageSharing instance;
-    return instance;
+    assert(instance_ && "FriendsDamageSharing::Create() not called");
+    return *instance_;
+}
+
+//----------------------------------------------------------------------------
+void FriendsDamageSharing::Create()
+{
+    if (!instance_) {
+        instance_.reset(new FriendsDamageSharing());
+    }
+}
+
+//----------------------------------------------------------------------------
+void FriendsDamageSharing::Destroy()
+{
+    instance_.reset();
 }
 
 //----------------------------------------------------------------------------
@@ -39,6 +54,7 @@ std::vector<Group*> FriendsDamageSharing::BuildFriendsClusterBFS(Group* start) c
     std::vector<Group*> cluster;
     std::queue<Group*> toVisit;
     std::set<Group*> visited;
+    bool playerTraversed = false;  // プレイヤー経由の探索は一度だけ
 
     toVisit.push(start);
     visited.insert(start);
@@ -57,11 +73,35 @@ std::vector<Group*> FriendsDamageSharing::BuildFriendsClusterBFS(Group* start) c
             if (bond->GetType() != BondType::Friends) continue;
 
             BondableEntity otherEntity = bond->GetOther(currentEntity);
-            Group* otherGroup = BondableHelper::AsGroup(otherEntity);
 
+            // Group同士の直接接続
+            Group* otherGroup = BondableHelper::AsGroup(otherEntity);
             if (otherGroup && visited.find(otherGroup) == visited.end()) {
                 visited.insert(otherGroup);
                 toVisit.push(otherGroup);
+                continue;
+            }
+
+            // Player経由の接続（一度だけ探索）
+            Player* player = BondableHelper::AsPlayer(otherEntity);
+            if (player && !playerTraversed) {
+                playerTraversed = true;
+
+                // プレイヤーのFriends縁を全て取得
+                BondableEntity playerEntity = player;
+                std::vector<Bond*> playerBonds = BondManager::Get().GetBondsFor(playerEntity);
+
+                for (Bond* playerBond : playerBonds) {
+                    if (playerBond->GetType() != BondType::Friends) continue;
+
+                    BondableEntity playerOther = playerBond->GetOther(playerEntity);
+                    Group* playerConnectedGroup = BondableHelper::AsGroup(playerOther);
+
+                    if (playerConnectedGroup && visited.find(playerConnectedGroup) == visited.end()) {
+                        visited.insert(playerConnectedGroup);
+                        toVisit.push(playerConnectedGroup);
+                    }
+                }
             }
         }
     }
@@ -89,9 +129,6 @@ void FriendsDamageSharing::ApplyDamageWithSharing(Individual* targetIndividual, 
         return;
     }
 
-    LOG_INFO("[FriendsDamageSharing] Distributing " + std::to_string(static_cast<int>(damage)) +
-             " damage across " + std::to_string(friendsCluster.size()) + " groups");
-
     // 生存グループ数をカウント
     int aliveGroupCount = 0;
     for (Group* group : friendsCluster) {
@@ -100,7 +137,10 @@ void FriendsDamageSharing::ApplyDamageWithSharing(Individual* targetIndividual, 
         }
     }
 
-    if (aliveGroupCount == 0) return;
+    if (aliveGroupCount == 0) {
+        LOG_WARN("[FriendsDamageSharing] BUG: Cluster has no alive groups but was called");
+        return;
+    }
 
     // グループ間で均等分配
     float damagePerGroup = damage / static_cast<float>(aliveGroupCount);
@@ -114,10 +154,6 @@ void FriendsDamageSharing::ApplyDamageWithSharing(Individual* targetIndividual, 
         // グループ内で均等分配
         float damagePerIndividual = damagePerGroup / static_cast<float>(aliveIndividuals.size());
 
-        LOG_INFO("[FriendsDamageSharing] Group " + group->GetId() +
-                 ": " + std::to_string(static_cast<int>(damagePerIndividual)) +
-                 " damage per individual (" + std::to_string(aliveIndividuals.size()) + " individuals)");
-
         for (Individual* individual : aliveIndividuals) {
             ApplySharedDamage(individual, damagePerIndividual);
         }
@@ -129,8 +165,23 @@ void FriendsDamageSharing::ApplySharedDamage(Individual* individual, float damag
 {
     if (!individual || !individual->IsAlive()) return;
 
-    // 無限ループ防止フラグを設定してダメージ適用
-    individual->SetReceivingSharedDamage(true);
+    // RAII: 無限ループ防止フラグを確実にリセット（例外発生時も含む）
+    class SharedDamageGuard
+    {
+    public:
+        explicit SharedDamageGuard(Individual* ind) : individual_(ind)
+        {
+            individual_->SetReceivingSharedDamage(true);
+        }
+        ~SharedDamageGuard()
+        {
+            individual_->SetReceivingSharedDamage(false);
+        }
+
+    private:
+        Individual* individual_;
+    };
+
+    SharedDamageGuard guard(individual);
     individual->TakeDamage(damage);
-    individual->SetReceivingSharedDamage(false);
 }

@@ -1,4 +1,4 @@
-//----------------------------------------------------------------------------
+﻿//----------------------------------------------------------------------------
 //! @file   bond_manager.cpp
 //! @brief  縁マネージャー実装
 //----------------------------------------------------------------------------
@@ -12,13 +12,33 @@
 //----------------------------------------------------------------------------
 BondManager& BondManager::Get()
 {
-    static BondManager instance;
-    return instance;
+    assert(instance_ && "BondManager::Create() not called");
+    return *instance_;
+}
+
+//----------------------------------------------------------------------------
+void BondManager::Create()
+{
+    if (!instance_) {
+        instance_.reset(new BondManager());
+    }
+}
+
+//----------------------------------------------------------------------------
+void BondManager::Destroy()
+{
+    instance_.reset();
 }
 
 //----------------------------------------------------------------------------
 Bond* BondManager::CreateBond(BondableEntity a, BondableEntity b, BondType type)
 {
+    // nullエンティティチェック
+    if (BondableHelper::IsNull(a) || BondableHelper::IsNull(b)) {
+        LOG_WARN("[BondManager] BUG: Cannot create bond with null entity");
+        return nullptr;
+    }
+
     // 同一エンティティ同士は結べない
     if (BondableHelper::IsSame(a, b)) {
         LOG_WARN("[BondManager] Cannot create bond between same entity");
@@ -30,6 +50,14 @@ Bond* BondManager::CreateBond(BondableEntity a, BondableEntity b, BondType type)
         LOG_WARN("[BondManager] Bond already exists between " +
                     BondableHelper::GetId(a) + " and " + BondableHelper::GetId(b));
         return nullptr;
+    }
+
+    // 縁タイプ名を取得
+    std::string typeName;
+    switch (type) {
+        case BondType::Friends: typeName = "Friends"; break;
+        case BondType::Love: typeName = "Love"; break;
+        default: typeName = "Unknown"; break;
     }
 
     // 縁を作成
@@ -54,8 +82,22 @@ Bond* BondManager::CreateBond(BondableEntity a, BondableEntity b, BondType type)
     // キャッシュを再構築
     RebuildCache();
 
-    LOG_INFO("[BondManager] Bond created: " +
-             BondableHelper::GetId(a) + " <-> " + BondableHelper::GetId(b));
+    // 詳細ログ出力
+    LOG_INFO("[BondManager] === Bond Created ===");
+    LOG_INFO("[BondManager]   " + BondableHelper::GetId(a) + " <-[" + typeName + "]-> " + BondableHelper::GetId(b));
+    
+    // 現在の全縁状況をログ出力
+    LOG_INFO("[BondManager]   Current bonds (" + std::to_string(bonds_.size()) + " total):");
+    for (const auto& existingBond : bonds_) {
+        std::string existingTypeName;
+        switch (existingBond->GetType()) {
+            case BondType::Friends: existingTypeName = "Friends"; break;
+            case BondType::Love: existingTypeName = "Love"; break;
+            default: existingTypeName = "Unknown"; break;
+        }
+        LOG_INFO("[BondManager]     - " + BondableHelper::GetId(existingBond->GetEntityA()) +
+                 " <-[" + existingTypeName + "]-> " + BondableHelper::GetId(existingBond->GetEntityB()));
+    }
 
     // コールバック呼び出し
     if (onBondCreated_) {
@@ -227,4 +269,17 @@ bool BondManager::AreTransitivelyConnected(const BondableEntity& a, const Bondab
     }
 
     return false;
+}
+
+//----------------------------------------------------------------------------
+std::vector<Bond*> BondManager::GetAllBondsCopy() const
+{
+    std::vector<Bond*> result;
+    result.reserve(bonds_.size());
+
+    for (const std::unique_ptr<Bond>& bond : bonds_) {
+        result.push_back(bond.get());
+    }
+
+    return result;
 }
